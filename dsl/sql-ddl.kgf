@@ -1,0 +1,148 @@
+kgf 0.6
+language: sql-ddl
+sources: .sql
+
+=== lex
+SKIP /[ \t\r\n]+/
+
+# Comments - skip them
+SKIP /--[^\r\n]*/
+SKIP /\/\*[\s\S]*?\*\//
+
+# String literals
+TOKEN StringLit /'(?:[^'\\]|\\.)*'/
+
+# Numeric literals
+TOKEN NumberLit /[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/
+
+# DDL Keywords
+TOKEN KW_CREATE /\bCREATE\b/i
+TOKEN KW_TABLE /\bTABLE\b/i
+TOKEN KW_CONSTRAINT /\bCONSTRAINT\b/i
+TOKEN KW_PRIMARY /\bPRIMARY\b/i
+TOKEN KW_FOREIGN /\bFOREIGN\b/i
+TOKEN KW_KEY /\bKEY\b/i
+TOKEN KW_REFERENCES /\bREFERENCES\b/i
+TOKEN KW_UNIQUE /\bUNIQUE\b/i
+TOKEN KW_NOT /\bNOT\b/i
+TOKEN KW_NULL /\bNULL\b/i
+TOKEN KW_DEFAULT /\bDEFAULT\b/i
+TOKEN KW_ON /\bON\b/i
+TOKEN KW_DELETE /\bDELETE\b/i
+TOKEN KW_UPDATE /\bUPDATE\b/i
+TOKEN KW_CASCADE /\bCASCADE\b/i
+TOKEN KW_RESTRICT /\bRESTRICT\b/i
+TOKEN KW_SET /\bSET\b/i
+TOKEN KW_NO /\bNO\b/i
+TOKEN KW_ACTION /\bACTION\b/i
+
+# Type Keywords
+TOKEN KeywordType /\b(?:INT|INTEGER|BIGINT|SMALLINT|TINYINT|DECIMAL|NUMERIC|FLOAT|REAL|DOUBLE|PRECISION|CHAR|VARCHAR|TEXT|NCHAR|NVARCHAR|NTEXT|BINARY|VARBINARY|BLOB|CLOB|DATE|TIME|TIMESTAMP|DATETIME|INTERVAL|BOOLEAN|BOOL|BIT|UUID|JSON|JSONB|XML|ARRAY|SERIAL|BIGSERIAL)\b/i
+
+# Quoted identifiers
+TOKEN QuotedIdent /"[^"]+"/
+TOKEN BacktickIdent /`[^`]+`/
+TOKEN BracketIdent /\[[^\]]+\]/
+
+# Regular identifiers (must come after keywords)
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Punctuation
+TOKEN LPAREN /\(/
+TOKEN RPAREN /\)/
+TOKEN COMMA /,/
+TOKEN SEMICOLON /;/
+
+# Operators (for default values, etc.)
+TOKEN Operator /[+\-*\/%=<>!&|^~:]+/
+
+=== grammar
+Doc -> Statement*
+Statement -> CreateTableStmt / OtherStmt
+
+CreateTableStmt -> KW_CREATE KW_TABLE tableName:TableName LPAREN ColumnDefList RPAREN SEMICOLON?
+
+TableName -> QuotedIdent / BacktickIdent / BracketIdent / Ident
+
+ColumnDefList -> ColumnDef ( COMMA ColumnDef )*
+
+ColumnDef -> InlineConstraint / ColumnWithType
+
+ColumnWithType -> colName:ColName colType:ColType ColumnConstraints?
+
+ColName -> QuotedIdent / Ident
+
+ColType -> colTypeName:KeywordType (LPAREN TypeParams RPAREN)?
+TypeParams -> NumberLit ( COMMA NumberLit )*
+
+ColumnConstraints -> ColumnConstraint+
+ColumnConstraint -> PrimaryKeyInline / NotNullInline / UniqueInline / DefaultInline / ReferencesInline
+
+PrimaryKeyInline -> isPK:KW_PRIMARY KW_KEY
+
+NotNullInline -> isNotNull:KW_NOT KW_NULL
+
+UniqueInline -> isUnique:KW_UNIQUE
+
+DefaultInline -> KW_DEFAULT DefaultValue
+DefaultValue -> StringLit / NumberLit / Ident / LPAREN DefaultExpr RPAREN
+DefaultExpr -> ( Ident / StringLit / NumberLit / Operator / COMMA )*
+
+ReferencesInline -> KW_REFERENCES inlineRefTable:TableName LPAREN inlineRefCol:ColName RPAREN OnDeleteClause? OnUpdateClause?
+
+# Table-level constraints
+InlineConstraint -> KW_CONSTRAINT constraintName:ConstraintName ConstraintBody
+
+ConstraintName -> QuotedIdent / Ident
+
+ConstraintBody -> PrimaryKeyConstraint / ForeignKeyConstraint / UniqueConstraint
+
+PrimaryKeyConstraint -> KW_PRIMARY KW_KEY LPAREN pkCol:ColName ( COMMA ColName )* RPAREN
+
+ForeignKeyConstraint -> KW_FOREIGN KW_KEY LPAREN fkCol:ColName ( COMMA ColName )* RPAREN KW_REFERENCES refTable:TableName LPAREN refCol:ColName ( COMMA ColName )* RPAREN OnDeleteClause? OnUpdateClause?
+
+UniqueConstraint -> KW_UNIQUE LPAREN uniqueCol:ColName ( COMMA ColName )* RPAREN
+
+OnDeleteClause -> KW_ON KW_DELETE FKAction
+OnUpdateClause -> KW_ON KW_UPDATE FKAction
+FKAction -> KW_CASCADE / KW_RESTRICT / KW_SET KW_NULL / KW_NO KW_ACTION
+
+# Other statements (skip processing)
+OtherStmt -> ( Token )+ SEMICOLON
+Token -> StringLit / NumberLit / QuotedIdent / BacktickIdent / BracketIdent / KeywordType / Ident / LPAREN / RPAREN / COMMA / Operator / KW_CREATE / KW_TABLE / KW_CONSTRAINT / KW_PRIMARY / KW_FOREIGN / KW_KEY / KW_REFERENCES / KW_UNIQUE / KW_NOT / KW_NULL / KW_DEFAULT / KW_ON / KW_DELETE / KW_UPDATE / KW_CASCADE / KW_RESTRICT / KW_SET / KW_NO / KW_ACTION
+
+=== attrs
+on CreateTableStmt: def id=tableName kind=Table
+on ColumnWithType: def id=colName kind=Column
+
+=== semantics
+on CreateTableStmt {
+  let tbl = stripQuotes($tableName)
+  module tbl file file
+}
+
+on CreateTableStmt when $fkCol {
+  let tbl = stripQuotes($tableName)
+  let fk = stripQuotes($fkCol)
+  let ref = stripQuotes($refTable)
+  let refC = stripQuotes($refCol)
+  edge tableReferences from tbl to ref attrs obj("fkColumn", fk, "refColumn", refC)
+}
+
+on ColumnWithType {
+  let col = stripQuotes($colName)
+  let typ = $colTypeName
+  let pk = $isPK
+  let nn = $isNotNull
+  let uq = $isUnique
+  let inRef = $inlineRefTable
+  let inRefC = $inlineRefCol
+  edge hasColumn from file to col attrs obj("type", typ, "isPK", pk, "isNotNull", nn, "isUnique", uq, "refTable", inRef, "refCol", inRefC)
+}
+
+=== resolver
+relative_prefixes: ./
+exts: .sql
+indexes:
+bare_prefix:
+module_path_style: slash

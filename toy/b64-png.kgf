@@ -1,0 +1,157 @@
+kgf 0.6
+language: b64-png
+sources: .b64, .txt
+
+=== lex
+# Treat the input as base64-like text (whitespace tolerated).
+SKIP /[^A-Za-z0-9+\/=]+/
+
+# Common base64 prefixes for PNG and chunk type names.
+TOKEN PNG_SIG /iVBORw0KGgo={0,2}/
+# Prefer 4-char base64 quads to avoid misaligning subsequent matching.
+TOKEN IHDR_B64 /SUhE/
+TOKEN PLTE_B64 /UExU/
+TOKEN IDAT_B64 /SURB/
+TOKEN IEND_B64 /SUVO/
+TOKEN TEXT_B64 /dEVY/
+TOKEN ZTXT_B64 /elRY/
+TOKEN ITXT_B64 /aVRY/
+
+# Base64 quads (fallback to keep progress).
+TOKEN B64_QUAD /[A-Za-z0-9+\/]{4}|[A-Za-z0-9+\/]{3}=|[A-Za-z0-9+\/]{2}==/
+
+=== grammar
+Doc -> Item*
+
+Item -> PngSig
+     / ChunkIHDR
+     / ChunkPLTE
+     / ChunkIDAT
+     / ChunkIEND
+     / ChunktEXt
+     / ChunkzTXt
+     / ChunkiTXt
+     / Other
+
+PngSig -> sig:PNG_SIG
+ChunkIHDR -> ihdr:IHDR_B64
+ChunkPLTE -> plte:PLTE_B64
+ChunkIDAT -> idat:IDAT_B64
+ChunkIEND -> iend:IEND_B64
+ChunktEXt -> text:TEXT_B64
+ChunkzTXt -> ztxt:ZTXT_B64
+ChunkiTXt -> itxt:ITXT_B64
+
+Other -> B64_QUAD
+
+=== attrs
+# none
+
+=== semantics
+# Ensure the "file" node exists.
+on PngSig {
+  module $file file $file
+}
+
+# Link recognized nodes in appearance order (best-effort).
+on PngSig when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:sig@", $sig_pos) attrs obj("pos", $sig_pos, "len", $sig_len, "confidence", 0.6)
+}
+on PngSig {
+  module concat($file, "::b64png:sig@", $sig_pos) file null
+  edge maybeType from concat($file, "::b64png:sig@", $sig_pos) to "png" attrs obj("pos", $sig_pos, "len", $sig_len, "confidence", 0.9)
+  edge contains from $file to concat($file, "::b64png:sig@", $sig_pos) attrs obj("confidence", 0.7)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:sig@", $sig_pos)
+  bind ns "value" name "__b64png_container" to concat($file, "::b64png:sig@", $sig_pos)
+}
+
+on ChunkIHDR when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:IHDR@", $ihdr_pos) attrs obj("pos", $ihdr_pos, "len", $ihdr_len, "confidence", 0.5)
+}
+on ChunkIHDR when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:IHDR@", $ihdr_pos) attrs obj("confidence", 0.6)
+}
+on ChunkIHDR {
+  module concat($file, "::b64png:IHDR@", $ihdr_pos) file null
+  edge maybeType from concat($file, "::b64png:IHDR@", $ihdr_pos) to "png:chunk:IHDR" attrs obj("pos", $ihdr_pos, "len", $ihdr_len, "confidence", 0.7)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:IHDR@", $ihdr_pos)
+}
+
+on ChunkPLTE when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:PLTE@", $plte_pos) attrs obj("pos", $plte_pos, "len", $plte_len, "confidence", 0.5)
+}
+on ChunkPLTE when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:PLTE@", $plte_pos) attrs obj("confidence", 0.6)
+}
+on ChunkPLTE {
+  module concat($file, "::b64png:PLTE@", $plte_pos) file null
+  edge maybeType from concat($file, "::b64png:PLTE@", $plte_pos) to "png:chunk:PLTE" attrs obj("pos", $plte_pos, "len", $plte_len, "confidence", 0.6)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:PLTE@", $plte_pos)
+}
+
+on ChunkIDAT when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:IDAT@", $idat_pos) attrs obj("pos", $idat_pos, "len", $idat_len, "confidence", 0.5)
+}
+on ChunkIDAT when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:IDAT@", $idat_pos) attrs obj("confidence", 0.6)
+}
+on ChunkIDAT {
+  module concat($file, "::b64png:IDAT@", $idat_pos) file null
+  edge maybeType from concat($file, "::b64png:IDAT@", $idat_pos) to "png:chunk:IDAT" attrs obj("pos", $idat_pos, "len", $idat_len, "confidence", 0.6)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:IDAT@", $idat_pos)
+}
+
+on ChunkIEND when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:IEND@", $iend_pos) attrs obj("pos", $iend_pos, "len", $iend_len, "confidence", 0.5)
+}
+on ChunkIEND when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:IEND@", $iend_pos) attrs obj("confidence", 0.6)
+}
+on ChunkIEND {
+  module concat($file, "::b64png:IEND@", $iend_pos) file null
+  edge maybeType from concat($file, "::b64png:IEND@", $iend_pos) to "png:chunk:IEND" attrs obj("pos", $iend_pos, "len", $iend_len, "confidence", 0.8)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:IEND@", $iend_pos)
+}
+
+on ChunktEXt when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:tEXt@", $text_pos) attrs obj("pos", $text_pos, "len", $text_len, "confidence", 0.4)
+}
+on ChunktEXt when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:tEXt@", $text_pos) attrs obj("confidence", 0.5)
+}
+on ChunktEXt {
+  module concat($file, "::b64png:tEXt@", $text_pos) file null
+  edge maybeType from concat($file, "::b64png:tEXt@", $text_pos) to "png:chunk:tEXt" attrs obj("pos", $text_pos, "len", $text_len, "confidence", 0.4)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:tEXt@", $text_pos)
+}
+
+on ChunkzTXt when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:zTXt@", $ztxt_pos) attrs obj("pos", $ztxt_pos, "len", $ztxt_len, "confidence", 0.4)
+}
+on ChunkzTXt when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:zTXt@", $ztxt_pos) attrs obj("confidence", 0.5)
+}
+on ChunkzTXt {
+  module concat($file, "::b64png:zTXt@", $ztxt_pos) file null
+  edge maybeType from concat($file, "::b64png:zTXt@", $ztxt_pos) to "png:chunk:zTXt" attrs obj("pos", $ztxt_pos, "len", $ztxt_len, "confidence", 0.4)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:zTXt@", $ztxt_pos)
+}
+
+on ChunkiTXt when $scope("value", "__b64png_prev") {
+  edge next from $scope("value", "__b64png_prev") to concat($file, "::b64png:iTXt@", $itxt_pos) attrs obj("pos", $itxt_pos, "len", $itxt_len, "confidence", 0.4)
+}
+on ChunkiTXt when $scope("value", "__b64png_container") {
+  edge contains from $scope("value", "__b64png_container") to concat($file, "::b64png:iTXt@", $itxt_pos) attrs obj("confidence", 0.5)
+}
+on ChunkiTXt {
+  module concat($file, "::b64png:iTXt@", $itxt_pos) file null
+  edge maybeType from concat($file, "::b64png:iTXt@", $itxt_pos) to "png:chunk:iTXt" attrs obj("pos", $itxt_pos, "len", $itxt_len, "confidence", 0.4)
+  bind ns "value" name "__b64png_prev" to concat($file, "::b64png:iTXt@", $itxt_pos)
+}
+
+=== resolver
+relative_prefixes:
+exts: .b64, .txt
+indexes:
+bare_prefix:
+module_path_style: slash

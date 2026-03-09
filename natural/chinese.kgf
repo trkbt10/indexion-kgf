@@ -1,0 +1,70 @@
+kgf 0.6
+language: chinese
+sources: .txt, .md, .text
+
+# Chinese natural text tokenization (Simplified & Traditional)
+
+=== lex
+SKIP /[ \t　]+/
+TOKEN NL /\r?\n+/
+
+# Chinese punctuation
+TOKEN Punct /[。！？，、；：]+/
+TOKEN Quote /[""''「」『』【】]+/
+
+# Brackets
+TOKEN BracketOpen /[（《〈\[{<]/
+TOKEN BracketClose /[）》〉\]}>]/
+
+# Common particles (助词)
+TOKEN Particle /(的|地|得|着|了|过|吗|呢|吧|啊|呀|哦|哈|嘛|啦|哪|呗|咯|噢|喔|嘿|哎|唉|诶)/
+
+# Pronouns (代词)
+TOKEN Pronoun /(我|你|您|他|她|它|我们|你们|他们|她们|它们|自己|大家|这|那|这个|那个|这些|那些|哪|哪个|哪些|什么|谁|怎么|怎样|多少|几)/
+
+# Common prepositions (介词)
+TOKEN Preposition /(在|从|到|向|往|给|把|被|让|用|以|为|对|跟|和|与|按|比|除|沿|随|经|据)/
+
+# Conjunctions (连词)
+TOKEN Conjunction /(和|与|或|或者|而|但|但是|可是|然而|因为|所以|如果|虽然|虽|即使|既然|不但|而且|不仅|无论|不管|只要|只有|除非|否则|因此|于是|然后|接着|并且)/
+
+# Auxiliary words (副词)
+TOKEN Adverb /(很|非常|太|最|更|还|也|都|就|才|只|刚|正|在|已|已经|曾|曾经|将|将要|会|能|可以|应该|必须|不|没|没有|别|不要|一定|大概|可能|也许|似乎|几乎|完全|根本|简直|究竟|到底|终于|居然|竟然|果然|当然|仍然|依然|忽然|突然)/
+
+# Common verbs (动词)
+TOKEN Verb /(是|有|做|去|来|说|看|想|知道|觉得|认为|喜欢|希望|需要|可以|能够|开始|结束|发现|成为|使用|进行|发展|提供|表示|存在|出现|产生|形成|包括|属于|代表)/
+
+# Numbers
+TOKEN Number /[0-9０-９]+|[零一二三四五六七八九十百千万亿]+/
+
+# Units
+TOKEN Unit /(个|只|条|张|把|块|本|件|位|名|次|种|些|点|年|月|日|号|时|分|秒|元|角|分|米|厘米|毫米|公里|千米|克|公斤|斤|吨)/
+
+# Chinese characters (汉字)
+TOKEN Hanzi /[\u4e00-\u9fff]+/
+
+# Latin alphanumeric
+TOKEN Alnum /[a-zA-Z0-9]+/
+
+# URLs
+TOKEN Url /https?:\/\/[^\s<>"']+/
+
+# Catch-all
+TOKEN Other /[^\s]+/
+
+=== grammar
+Doc -> Sentence*
+Sentence -> Token* Punct? NL?
+Token -> Particle / Pronoun / Preposition / Conjunction / Adverb / Verb
+       / Number / Unit / Hanzi / Alnum / Quote / BracketOpen / BracketClose / Url / Other
+
+=== attrs
+
+=== semantics
+
+=== resolver
+relative_prefixes: ./, ../
+exts: .txt, .md, .text
+indexes:
+bare_prefix:
+module_path_style: slash

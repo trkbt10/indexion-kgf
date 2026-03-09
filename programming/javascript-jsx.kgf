@@ -1,0 +1,209 @@
+kgf 0.6
+language: javascript-jsx
+sources: .jsx
+
+=== lex
+# Whitespace and comments combined for efficiency
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# JSDoc comment block /** ... */
+TOKEN DocComment /\/\*\*[\s\S]*?\*\//
+
+# Regular comments
+TOKEN LineComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*(?!\*)[\s\S]*?\*\//
+
+# String literals (including template literals)
+TOKEN TemplateLit /`(?:[^`\\$]|\\.|\$(?!\{)|\$\{[^}]*\})*`/
+TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+
+# JSX tokens (order matters - more specific first)
+TOKEN JSX_FRAG_CLOSE /<\/>/
+TOKEN JSX_FRAG_OPEN /<>/
+TOKEN JSX_CLOSE_START /<\//
+TOKEN JSX_SELF_CLOSE /\/>/
+
+# Keywords
+TOKEN KW_import     /import\b/
+TOKEN KW_from       /from\b/
+TOKEN KW_export     /export\b/
+TOKEN KW_default    /default\b/
+TOKEN KW_function   /function\b/
+TOKEN KW_const      /const\b/
+TOKEN KW_let        /let\b/
+TOKEN KW_var        /var\b/
+TOKEN KW_as         /as\b/
+TOKEN KW_return     /return\b/
+TOKEN KW_new        /new\b/
+TOKEN KW_class      /class\b/
+TOKEN KW_extends    /extends\b/
+TOKEN KW_async      /async\b/
+TOKEN KW_await      /await\b/
+
+# Identifiers and literals
+TOKEN Ident         /[A-Za-z_$][A-Za-z0-9_$]*/
+TOKEN NumberLit     /(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
+
+# Punctuation
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LPAREN        /\(/
+TOKEN RPAREN        /\)/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN LT            /</
+TOKEN GT            />/
+TOKEN SEMI          /;/
+TOKEN COMMA         /,/
+TOKEN COLON         /:/
+TOKEN DOT           /\./
+TOKEN EQ            /=/
+TOKEN ARROW         /=>/
+TOKEN QMARK         /\?/
+TOKEN STAR          /\*/
+TOKEN PIPE          /\|/
+TOKEN AMP           /&/
+TOKEN SLASH         /\//
+TOKEN PLUS          /\+/
+TOKEN MINUS         /-/
+TOKEN BANG          /!/
+
+=== grammar
+Module          -> ( ImportDecl / ExportDecl / ExportFrom / FnDecl / VarDecl / ExprStmt )*
+
+ImportDecl      -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
+SideEffect      -> path:StringLit
+ImportNS        -> STAR KW_as ns:Ident KW_from from:StringLit
+ImportNamedDefault -> defId:Ident COMMA LBRACE ImportSpecList RBRACE KW_from from:StringLit
+ImportNamed     -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
+ImportDefault   -> defId:Ident KW_from from:StringLit
+ImportSpecList  -> ImportSpec ( COMMA ImportSpec )*
+ImportSpec      -> origin:Ident ( KW_as local:Ident )?
+
+ExportDecl      -> KW_export KW_default? ( FnDecl / ClassDecl / VarDecl )
+ExportFrom      -> KW_export ( STAR KW_from from:StringLit
+                             / LBRACE ExportSpecList RBRACE KW_from from:StringLit ) SEMI?
+ExportSpecList  -> ExportSpec ( COMMA ExportSpec )*
+ExportSpec      -> origin:Ident ( KW_as local:Ident )?
+
+VarDecl         -> (KW_const / KW_let / KW_var) VarList SEMI?
+VarList         -> VarItem ( COMMA VarItem )*
+VarItem         -> id:Ident (EQ Expr)?
+
+FnDecl          -> doc:DocComment? KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Block
+ClassDecl       -> doc:DocComment? KW_class id:Ident ExtendsClause? ClassBody
+ExtendsClause   -> KW_extends Ident
+ClassBody       -> LBRACE ClassMember* RBRACE
+ClassMember     -> doc:DocComment? ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
+MethodDecl      -> KW_async? id:Ident LPAREN ParamList? RPAREN Block
+PropertyDecl    -> id:Ident ( EQ Expr )? SEMI?
+
+ParamList       -> Param ( COMMA Param )*
+Param           -> id:Ident ( EQ Expr )?
+Block           -> LBRACE BlockItem* RBRACE
+BlockItem       -> VarDecl / ReturnStmt / ExprStmt
+ReturnStmt      -> KW_return Expr? SEMI?
+
+# JSX Elements
+JsxElement -> JsxSelfClosing / JsxOpenClose / JsxFragment
+JsxSelfClosing -> LT JsxTagName JsxAttr* JSX_SELF_CLOSE
+JsxOpenClose -> LT JsxTagName JsxAttr* GT JsxChild* JSX_CLOSE_START JsxTagName GT
+JsxFragment -> JSX_FRAG_OPEN JsxChild* JSX_FRAG_CLOSE
+JsxTagName -> Ident ( DOT Ident )*
+JsxAttr -> Ident ( EQ JsxAttrValue )?
+JsxAttrValue -> StringLit / TemplateLit / LBRACE Expr RBRACE
+JsxChild -> JsxElement / LBRACE Expr RBRACE / JsxText
+JsxText -> Atom+
+
+ExprStmt        -> Expr SEMI?
+Expr            -> ExprAtom+
+ExprAtom        -> Ident / NumberLit / StringLit / TemplateLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / SLASH / PLUS / MINUS / BANG
+CallExpr        -> callee:Ident LPAREN (Arg ( COMMA Arg )*)? RPAREN
+Arg             -> Expr
+NewExpr         -> KW_new Ident LPAREN (Arg ( COMMA Arg )*)? RPAREN
+Atom            -> Ident / NumberLit / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / SLASH / PLUS / MINUS / BANG / NL / LineComment / BlockComment / DocComment
+
+=== attrs
+on VarItem:    def id kind=Variable ns=value
+on FnDecl:     def id kind=Function ns=value doc=doc ; scope push=function
+on ClassDecl:  def id kind=Class ns=value doc=doc ; scope push=class
+on MethodDecl: def id kind=Method ns=value doc=doc
+on PropertyDecl: def id kind=Property ns=value doc=doc
+on Param:      def id kind=Param ns=value
+on Block:      scope pop
+
+on SideEffect:         import module=path
+on ImportNS:           import module=from
+on ImportNamedDefault: import module=from
+on ImportNamed:        import module=from
+on ImportDefault:      import module=from
+on ExportFrom:         reexport module=from
+
+=== semantics
+on SideEffect {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+on ImportNS {
+  edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+on ImportNamedDefault {
+  edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+on ImportNamed {
+  edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+on ImportDefault {
+  edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+
+on FnDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+on ClassDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  bind ns "value" name "current_class" to sym_id
+}
+
+on MethodDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc)
+}
+
+on PropertyDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", $doc)
+}
+
+=== resolver
+relative_prefixes: ./, ../, /
+module_path_style: slash
+project_config: package.json
+install_cmd: npm install {name}
+build_cmd: npm run build
+resolve:
+  - manifest: package.json @ main | module
+  - index: /index.js, /index.jsx, /index.mjs
+  - ext: .js, .jsx, .mjs, .cjs
+  - fallback: npm:
+
+=== ignore
+# Node.js
+node_modules/
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+# Cache
+.cache/
+.parcel-cache/
+# Coverage
+coverage/
+.nyc_output/

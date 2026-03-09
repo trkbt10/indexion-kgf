@@ -1,0 +1,32 @@
+kgf 0.6
+language: japanese-law
+sources: .txt
+
+=== lex
+SKIP /(\s+)+/
+TOKEN LawName /[一-龯ぁ-んァ-ンー・A-Za-z0-9]+?(?:法|条約)(?=（)/
+TOKEN ParenArticle /（第[一二三四五六七八九十百千〇零]+条(?:の[一二三四五六七八九十百千〇零]+)?[^）]*）/
+
+=== grammar
+Doc          -> Ref*
+Ref          -> LawRef / ArticleRef
+LawRef       -> law:LawName
+ArticleRef   -> art:ParenArticle
+
+=== attrs
+on LawRef:      import module=law
+on ArticleRef:  import module=art
+
+=== resolver
+relative_prefixes: law:, ./, ../, /
+exts: .txt
+indexes:
+bare_prefix:
+module_path_style: slash
+aliases:
+  -
+    pattern: ^（(第[一二三四五六七八九十百千〇零]+条(?:の[一二三四五六七八九十百千〇零]+)?).*
+    replace: law:$1
+  -
+    pattern: ^(.+?(?:法|条約))$
+    replace: law:$1

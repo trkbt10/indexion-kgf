@@ -1,0 +1,224 @@
+kgf 0.6
+language: julia
+sources: .jl
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments
+TOKEN Comment /#[^\r\n]*/
+TOKEN BlockComment /#=[\s\S]*?=#/
+
+# Docstrings
+TOKEN DocString /"""[\s\S]*?"""/
+
+# String/char literals
+TOKEN String /"([^"\\]|\\.)*"|"""[\s\S]*?"""|`[^`]*`|raw"[^"]*"/
+TOKEN Char /'([^'\\]|\\.)*'/
+
+# Symbols
+TOKEN Symbol /:[a-zA-Z_][a-zA-Z0-9_!]*/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?([imf][0-9]+)?/
+
+# Keywords
+TOKEN KW_module     /module\b/
+TOKEN KW_baremodule /baremodule\b/
+TOKEN KW_using      /using\b/
+TOKEN KW_import     /import\b/
+TOKEN KW_export     /export\b/
+TOKEN KW_function   /function\b/
+TOKEN KW_macro      /macro\b/
+TOKEN KW_struct     /struct\b/
+TOKEN KW_mutable    /mutable\b/
+TOKEN KW_abstract   /abstract\b/
+TOKEN KW_primitive  /primitive\b/
+TOKEN KW_type       /type\b/
+TOKEN KW_const      /const\b/
+TOKEN KW_let        /let\b/
+TOKEN KW_begin      /begin\b/
+TOKEN KW_end        /end\b/
+TOKEN KW_if         /if\b/
+TOKEN KW_elseif     /elseif\b/
+TOKEN KW_else       /else\b/
+TOKEN KW_for        /for\b/
+TOKEN KW_in         /in\b/
+TOKEN KW_while      /while\b/
+TOKEN KW_return     /return\b/
+TOKEN KW_try        /try\b/
+TOKEN KW_catch      /catch\b/
+TOKEN KW_finally    /finally\b/
+TOKEN KW_where      /where\b/
+
+# Built-in values
+TOKEN BoolLit /\b(?:true|false)\b/
+TOKEN NothingLit /\bnothing\b/
+
+# Identifiers
+TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
+TOKEN Ident /[a-z_][a-zA-Z0-9_!]*/
+
+# Operators
+TOKEN DCOLON /::/
+TOKEN ARROW  /->/
+TOKEN DARROW /=>/
+TOKEN Operator /[+\-*\/%&|^~!<>=:]+|\.\.\.?|&&|\|\||\/\/|\\\\/
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+TOKEN EQ       /=/
+TOKEN AT       /@/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / DocString
+     / ModuleDecl
+     / UsingDecl
+     / ImportDecl
+     / ExportDecl
+     / FunctionDecl
+     / MacroDecl
+     / StructDecl
+     / AbstractDecl
+     / ConstDecl
+     / Other
+
+# Module declaration
+ModuleDecl -> doc:DocString? NL? ( KW_module / KW_baremodule ) id:TypeIdent ModuleBody KW_end
+ModuleBody -> ( ModuleMember )*
+ModuleMember -> UsingDecl / ImportDecl / ExportDecl / FunctionDecl / MacroDecl / StructDecl / AbstractDecl / ConstDecl / NL / Comment / BlockComment
+
+# Using/Import/Export declarations
+UsingDecl -> KW_using ModulePath ( COLON Names )? ( COMMA ModulePath ( COLON Names )? )*
+ImportDecl -> KW_import path:ModulePath ( COLON Names )? ( COMMA ModulePath ( COLON Names )? )*
+ExportDecl -> KW_export Names
+ModulePath -> ( TypeIdent / Ident ) ( DOT ( TypeIdent / Ident ) )*
+Names -> ( TypeIdent / Ident ) ( COMMA ( TypeIdent / Ident ) )*
+
+# Function declaration
+FunctionDecl -> doc:DocString? NL? KW_function id:Ident TypeParams? LPAREN ParamList? RPAREN WhereClause? FunctionBody KW_end
+FunctionBody -> ( FunctionContent )*
+FunctionContent -> NL / Comment / Expr
+TypeParams -> LBRACE TypeParam ( COMMA TypeParam )* RBRACE
+TypeParam -> TypeIdent ( Operator Type )?
+WhereClause -> KW_where TypeConstraint ( COMMA TypeConstraint )*
+TypeConstraint -> TypeIdent Operator Type
+
+# Macro declaration
+MacroDecl -> doc:DocString? NL? KW_macro id:Ident LPAREN ParamList? RPAREN MacroBody KW_end
+MacroBody -> ( FunctionContent )*
+
+# Struct declaration
+StructDecl -> doc:DocString? NL? KW_mutable? KW_struct id:TypeIdent TypeParams? SuperType? StructBody KW_end
+SuperType -> Operator Type
+StructBody -> ( StructMember )*
+StructMember -> FieldDecl / FunctionDecl / NL / Comment
+FieldDecl -> field_doc:DocString? field_id:Ident ( DCOLON Type )?
+
+# Abstract type declaration
+AbstractDecl -> doc:DocString? NL? KW_abstract KW_type id:TypeIdent TypeParams? SuperType?
+
+# Const declaration
+ConstDecl -> doc:DocString? NL? KW_const id:Ident ( DCOLON Type )? EQ Expr
+
+# Parameters
+ParamList -> Param ( COMMA Param )*
+Param -> param_id:Ident ( DCOLON Type )? ( EQ Expr )?
+
+# Types
+Type -> TypeAtom ( Operator TypeAtom )*
+TypeAtom -> TypeIdent TypeArgs? / Ident / LBRACE Type ( COMMA Type )* RBRACE
+TypeArgs -> LBRACE Type ( COMMA Type )* RBRACE
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / TypeIdent / Number / String / DocString / Char / Symbol / BoolLit / NothingLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / EQ / ARROW / DARROW / AT / Operator
+
+Atom -> ExprAtom / NL / Comment / BlockComment / KW_module / KW_baremodule / KW_using / KW_import / KW_export / KW_function / KW_macro / KW_struct / KW_mutable / KW_abstract / KW_primitive / KW_type / KW_const / KW_let / KW_begin / KW_end / KW_if / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_return / KW_try / KW_catch / KW_finally / KW_where / SEMI
+
+Other -> Atom
+
+=== attrs
+on ModuleDecl:   def id kind=Module doc=doc
+on FunctionDecl: def id kind=Function doc=doc
+on MacroDecl:    def id kind=Macro doc=doc
+on StructDecl:   def id kind=Struct doc=doc
+on AbstractDecl: def id kind=AbstractType doc=doc
+on ConstDecl:    def id kind=Const doc=doc
+on FieldDecl:    def field_id kind=Field doc=field_doc
+on Param:        def param_id kind=Param
+
+on ImportDecl:   import module=path
+
+=== semantics
+# Import dependency
+on ImportDecl {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Module declaration
+on ModuleDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc)
+  bind ns "value" name "current_module" to sym_id
+}
+
+# Function declaration
+on FunctionDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Macro declaration
+on MacroDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Macro", "doc", $doc)
+}
+
+# Struct declaration
+on StructDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  bind ns "value" name "current_struct" to sym_id
+}
+
+# Abstract type declaration
+on AbstractDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "AbstractType", "doc", $doc)
+}
+
+# Const declaration
+on ConstDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+}
+
+# Struct field
+on FieldDecl when $scope("value", "current_struct") {
+  let parent = $scope("value", "current_struct")
+  let sym_id = concat(parent, ".", $field_id)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: dot
+resolve:
+  - manifest: Project.toml @ deps
+  - marker: Project.toml
+  - ext: .jl
+  - fallback: pkg:

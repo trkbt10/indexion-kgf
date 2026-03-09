@@ -1,0 +1,227 @@
+kgf 0.6
+language: png-hex
+sources: .hex
+
+=== lex
+SKIP /\\s+/
+
+# PNG signature bytes: 89 50 4E 47 0D 0A 1A 0A
+TOKEN PNG_SIG /89504E470D0A1A0A/
+
+# IHDR chunk (length=13 bytes, fixed layout): len + type + data(13) + crc
+TOKEN IHDR_SEG /0000000D49484452[0-9A-Fa-f]{34}/
+
+# Chunk type ASCII bytes (4 bytes, i.e. 8 hex chars)
+TOKEN IHDR /49484452/
+TOKEN PLTE /504C5445/
+TOKEN IDAT /49444154/
+TOKEN IEND /49454E44/
+TOKEN tEXt /74455874/
+TOKEN zTXt /7A545874/
+TOKEN iTXt /69545874/
+TOKEN tRNS /74524E53/
+TOKEN gAMA /67414D41/
+TOKEN sRGB /73524742/
+TOKEN pHYs /70485973/
+TOKEN acTL /6163544C/
+TOKEN fcTL /6663544C/
+TOKEN fdAT /66644154/
+
+# Fallback to consume progress
+TOKEN HEXBYTE /[0-9A-Fa-f]{2}/
+
+=== grammar
+Doc -> Item*
+
+Item -> Sig
+     / IHDRSegment
+     / ChunkIHDR
+     / ChunkPLTE
+     / ChunkIDAT
+     / ChunkIEND
+     / ChunktEXt
+     / ChunkzTXt
+     / ChunkiTXt
+     / ChunktRNS
+     / ChunkgAMA
+     / ChunksRGB
+     / ChunkpHYs
+     / ChunkacTL
+     / ChunkfcTL
+     / ChunkfdAT
+     / Other
+
+Sig -> sig:PNG_SIG
+IHDRSegment -> seg:IHDR_SEG
+ChunkIHDR -> ihdr:IHDR
+ChunkPLTE -> plte:PLTE
+ChunkIDAT -> idat:IDAT
+ChunkIEND -> iend:IEND
+ChunktEXt -> text:tEXt
+ChunkzTXt -> ztxt:zTXt
+ChunkiTXt -> itxt:iTXt
+ChunktRNS -> trns:tRNS
+ChunkgAMA -> gama:gAMA
+ChunksRGB -> srgb:sRGB
+ChunkpHYs -> phys:pHYs
+ChunkacTL -> actl:acTL
+ChunkfcTL -> fctl:fcTL
+ChunkfdAT -> fdat:fdAT
+
+Other -> HEXBYTE
+
+=== attrs
+# none
+
+=== semantics
+on Sig {
+  module $file file $file
+}
+
+on Sig {
+  module concat($file, "::png:sig@", $sig_pos) file null
+  edge maybeType from concat($file, "::png:sig@", $sig_pos) to "png" attrs obj("hexPos", $sig_pos, "hexLen", $sig_len, "bytePos", floor(div($sig_pos, 2)), "confidence", 0.95)
+  edge contains from $file to concat($file, "::png:sig@", $sig_pos) attrs obj("confidence", 0.7)
+  bind ns "value" name "__png_prev" to concat($file, "::png:sig@", $sig_pos)
+  bind ns "value" name "__png_container" to concat($file, "::png:sig@", $sig_pos)
+}
+
+on IHDRSegment {
+  let ihdrNode = concat($file, "::png:IHDR@", $seg_pos)
+  let widthHex = slice($seg, 16, 8)
+  let heightHex = slice($seg, 24, 8)
+  let bitDepthHex = slice($seg, 32, 2)
+  let colorTypeHex = slice($seg, 34, 2)
+  let compressionHex = slice($seg, 36, 2)
+  let filterHex = slice($seg, 38, 2)
+  let interlaceHex = slice($seg, 40, 2)
+  module $ihdrNode file null
+  edge maybeType from $ihdrNode to "png:chunk:IHDR" attrs obj("hexPos", $seg_pos, "hexLen", $seg_len, "bytePos", floor(div($seg_pos, 2)), "confidence", 0.98)
+  edge imageInfo from $file to $ihdrNode attrs obj("width", hexToInt($widthHex), "height", hexToInt($heightHex), "bitDepth", hexToInt($bitDepthHex), "colorType", hexToInt($colorTypeHex), "compression", hexToInt($compressionHex), "filter", hexToInt($filterHex), "interlaceMethod", hexToInt($interlaceHex), "interlaced", eq($interlaceHex, "01"), "confidence", 0.85)
+}
+on IHDRSegment when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:IHDR@", $seg_pos) attrs obj("hexPos", $seg_pos, "hexLen", $seg_len, "bytePos", floor(div($seg_pos, 2)), "confidence", 0.95)
+}
+on IHDRSegment when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:IHDR@", $seg_pos) attrs obj("confidence", 0.9)
+  bind ns "value" name "__png_prev" to concat($file, "::png:IHDR@", $seg_pos)
+}
+
+on ChunkIHDR when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:IHDR@", $ihdr_pos) attrs obj("hexPos", $ihdr_pos, "hexLen", $ihdr_len, "bytePos", floor(div($ihdr_pos, 2)), "confidence", 0.8)
+}
+on ChunkIHDR when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:IHDR@", $ihdr_pos) attrs obj("confidence", 0.8)
+}
+on ChunkIHDR {
+  module concat($file, "::png:IHDR@", $ihdr_pos) file null
+  edge maybeType from concat($file, "::png:IHDR@", $ihdr_pos) to "png:chunk:IHDR" attrs obj("hexPos", $ihdr_pos, "hexLen", $ihdr_len, "bytePos", floor(div($ihdr_pos, 2)), "confidence", 0.9)
+  bind ns "value" name "__png_prev" to concat($file, "::png:IHDR@", $ihdr_pos)
+}
+
+on ChunkPLTE when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:PLTE@", $plte_pos) attrs obj("hexPos", $plte_pos, "hexLen", $plte_len, "bytePos", floor(div($plte_pos, 2)), "confidence", 0.6)
+}
+on ChunkPLTE when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:PLTE@", $plte_pos) attrs obj("confidence", 0.6)
+}
+on ChunkPLTE {
+  module concat($file, "::png:PLTE@", $plte_pos) file null
+  edge maybeType from concat($file, "::png:PLTE@", $plte_pos) to "png:chunk:PLTE" attrs obj("hexPos", $plte_pos, "hexLen", $plte_len, "bytePos", floor(div($plte_pos, 2)), "confidence", 0.7)
+  bind ns "value" name "__png_prev" to concat($file, "::png:PLTE@", $plte_pos)
+}
+
+on ChunkIDAT when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:IDAT@", $idat_pos) attrs obj("hexPos", $idat_pos, "hexLen", $idat_len, "bytePos", floor(div($idat_pos, 2)), "confidence", 0.6)
+}
+on ChunkIDAT when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:IDAT@", $idat_pos) attrs obj("confidence", 0.6)
+}
+on ChunkIDAT {
+  module concat($file, "::png:IDAT@", $idat_pos) file null
+  edge maybeType from concat($file, "::png:IDAT@", $idat_pos) to "png:chunk:IDAT" attrs obj("hexPos", $idat_pos, "hexLen", $idat_len, "bytePos", floor(div($idat_pos, 2)), "confidence", 0.7)
+  bind ns "value" name "__png_prev" to concat($file, "::png:IDAT@", $idat_pos)
+}
+
+on ChunkIEND when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:IEND@", $iend_pos) attrs obj("hexPos", $iend_pos, "hexLen", $iend_len, "bytePos", floor(div($iend_pos, 2)), "confidence", 0.9)
+}
+on ChunkIEND when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:IEND@", $iend_pos) attrs obj("confidence", 0.6)
+}
+on ChunkIEND {
+  module concat($file, "::png:IEND@", $iend_pos) file null
+  edge maybeType from concat($file, "::png:IEND@", $iend_pos) to "png:chunk:IEND" attrs obj("hexPos", $iend_pos, "hexLen", $iend_len, "bytePos", floor(div($iend_pos, 2)), "confidence", 0.9)
+  bind ns "value" name "__png_prev" to concat($file, "::png:IEND@", $iend_pos)
+}
+
+on ChunksRGB when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:sRGB@", $srgb_pos) attrs obj("confidence", 0.4)
+}
+on ChunksRGB {
+  module concat($file, "::png:sRGB@", $srgb_pos) file null
+  edge maybeType from concat($file, "::png:sRGB@", $srgb_pos) to "png:chunk:sRGB" attrs obj("hexPos", $srgb_pos, "bytePos", floor(div($srgb_pos, 2)), "confidence", 0.5)
+  bind ns "value" name "__png_prev" to concat($file, "::png:sRGB@", $srgb_pos)
+}
+
+on ChunkgAMA when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:gAMA@", $gama_pos) attrs obj("confidence", 0.4)
+}
+on ChunkgAMA {
+  module concat($file, "::png:gAMA@", $gama_pos) file null
+  edge maybeType from concat($file, "::png:gAMA@", $gama_pos) to "png:chunk:gAMA" attrs obj("hexPos", $gama_pos, "bytePos", floor(div($gama_pos, 2)), "confidence", 0.5)
+  bind ns "value" name "__png_prev" to concat($file, "::png:gAMA@", $gama_pos)
+}
+
+on ChunkpHYs when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:pHYs@", $phys_pos) attrs obj("confidence", 0.4)
+}
+on ChunkpHYs {
+  module concat($file, "::png:pHYs@", $phys_pos) file null
+  edge maybeType from concat($file, "::png:pHYs@", $phys_pos) to "png:chunk:pHYs" attrs obj("hexPos", $phys_pos, "bytePos", floor(div($phys_pos, 2)), "confidence", 0.5)
+  bind ns "value" name "__png_prev" to concat($file, "::png:pHYs@", $phys_pos)
+}
+
+on ChunktRNS when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:tRNS@", $trns_pos) attrs obj("confidence", 0.4)
+}
+on ChunktRNS {
+  module concat($file, "::png:tRNS@", $trns_pos) file null
+  edge maybeType from concat($file, "::png:tRNS@", $trns_pos) to "png:chunk:tRNS" attrs obj("hexPos", $trns_pos, "bytePos", floor(div($trns_pos, 2)), "confidence", 0.5)
+  bind ns "value" name "__png_prev" to concat($file, "::png:tRNS@", $trns_pos)
+}
+
+on ChunkacTL when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:acTL@", $actl_pos) attrs obj("confidence", 0.4)
+}
+on ChunkacTL {
+  module concat($file, "::png:acTL@", $actl_pos) file null
+  edge maybeType from concat($file, "::png:acTL@", $actl_pos) to "png:chunk:acTL" attrs obj("hexPos", $actl_pos, "bytePos", floor(div($actl_pos, 2)), "confidence", 0.5)
+  edge maybeType from $file to "png:apng" attrs obj("confidence", 0.4)
+  bind ns "value" name "__png_prev" to concat($file, "::png:acTL@", $actl_pos)
+}
+
+on ChunkfcTL when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:fcTL@", $fctl_pos) attrs obj("confidence", 0.3)
+}
+on ChunkfcTL {
+  module concat($file, "::png:fcTL@", $fctl_pos) file null
+  edge maybeType from concat($file, "::png:fcTL@", $fctl_pos) to "png:chunk:fcTL" attrs obj("hexPos", $fctl_pos, "bytePos", floor(div($fctl_pos, 2)), "confidence", 0.4)
+  bind ns "value" name "__png_prev" to concat($file, "::png:fcTL@", $fctl_pos)
+}
+
+on ChunkfdAT when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:fdAT@", $fdat_pos) attrs obj("confidence", 0.3)
+}
+on ChunkfdAT {
+  module concat($file, "::png:fdAT@", $fdat_pos) file null
+  edge maybeType from concat($file, "::png:fdAT@", $fdat_pos) to "png:chunk:fdAT" attrs obj("hexPos", $fdat_pos, "bytePos", floor(div($fdat_pos, 2)), "confidence", 0.4)
+  bind ns "value" name "__png_prev" to concat($file, "::png:fdAT@", $fdat_pos)
+}
+
+=== resolver
+relative_prefixes:
+exts: .hex
+indexes:
+bare_prefix:
+module_path_style: slash

@@ -1,0 +1,76 @@
+kgf 0.6
+language: base64-utf8
+sources: .b64, .base64, .txt
+
+=== preprocess
+fst:base64Utf8Quartet
+
+=== preprocess_fst
+{
+  "name": "base64Utf8Quartet",
+  "classes": {
+    "WS": "\\s",
+    "B64": "[A-Za-z0-9+/_-]",
+    "PAD": "=",
+    "OTHER": "."
+  },
+  "initial": "Q0",
+  "states": {
+    "Q0": [
+      { "on": "WS", "to": "Q0", "actions": [{ "type": "emitInput" }] },
+      { "on": "PAD", "to": "Q0", "actions": [{ "type": "emitInput" }] },
+      { "on": "B64", "to": "Q1", "actions": [{ "type": "buf" }] },
+      { "on": "OTHER", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] }
+    ],
+    "Q1": [
+      { "on": "B64", "to": "Q2", "actions": [{ "type": "buf" }] },
+      { "on": "WS", "to": "Q1", "actions": [{ "type": "emitInput" }] },
+      { "on": "PAD", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] },
+      { "on": "OTHER", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] }
+    ],
+    "Q2": [
+      { "on": "B64", "to": "Q3", "actions": [{ "type": "buf" }] },
+      { "on": "PAD", "to": "Q3PAD2", "actions": [{ "type": "buf" }] },
+      { "on": "WS", "to": "Q2", "actions": [{ "type": "emitInput" }] },
+      { "on": "OTHER", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] }
+    ],
+    "Q3": [
+      { "on": "B64", "to": "Q0", "actions": [{ "type": "buf" }, { "type": "flush", "pad": 0 }] },
+      { "on": "PAD", "to": "Q0", "actions": [{ "type": "buf" }, { "type": "flush", "pad": 1 }] },
+      { "on": "WS", "to": "Q3", "actions": [{ "type": "emitInput" }] },
+      { "on": "OTHER", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] }
+    ],
+    "Q3PAD2": [
+      { "on": "PAD", "to": "Q0", "actions": [{ "type": "buf" }, { "type": "flush", "pad": 2 }] },
+      { "on": "WS", "to": "Q3PAD2", "actions": [{ "type": "emitInput" }] },
+      { "on": "B64", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] },
+      { "on": "OTHER", "to": "Q0", "actions": [{ "type": "emit", "value": "X" }] }
+    ]
+  }
+}
+
+=== lex
+SKIP /\\s+/
+
+# Token kinds are based on decoded UTF-8 classification per quartet.
+TOKEN ASCII /A+/
+TOKEN UTF8 /U+/
+TOKEN WS /W+/
+TOKEN CTRL /C+/
+TOKEN INVALID /X+/
+
+# Keep padding visible.
+TOKEN PAD /=+/
+
+=== grammar
+Doc -> (ASCII / UTF8 / WS / CTRL / INVALID / PAD)*
+
+=== attrs
+# none
+
+=== resolver
+relative_prefixes:
+exts: .b64, .base64, .txt
+indexes:
+bare_prefix:
+module_path_style: slash

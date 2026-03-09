@@ -1,0 +1,117 @@
+kgf 0.6
+language: pom-xml
+sources: pom.xml
+
+# KGF spec for Java Maven pom.xml files
+# Extracts project metadata and dependencies
+
+=== lex
+SKIP        /[ \t\r\n]+/
+
+# XML structure
+TOKEN XMLDecl       /<\?xml[^?]*\?>/
+TOKEN Comment       /<!--[\s\S]*?-->/
+
+# Project elements (require space or > after 'project' to avoid matching <project.build...>)
+TOKEN OpenProject   /<project(\s[^>]*)?>/
+TOKEN CloseProject  /<\/project>/
+TOKEN ModelVersion  /<modelVersion>([^<]+)<\/modelVersion>/
+TOKEN OpenGroupId    /<groupId>/
+TOKEN CloseGroupId   /<\/groupId>/
+TOKEN OpenArtifactId /<artifactId>/
+TOKEN CloseArtifactId /<\/artifactId>/
+TOKEN OpenVersionElem /<version>/
+TOKEN CloseVersionElem /<\/version>/
+TOKEN OpenPackaging  /<packaging>/
+TOKEN ClosePackaging /<\/packaging>/
+TOKEN OpenName       /<name>/
+TOKEN CloseName      /<\/name>/
+TOKEN OpenDescription /<description>/
+TOKEN CloseDescription /<\/description>/
+TOKEN OpenUrl        /<url>/
+TOKEN CloseUrl       /<\/url>/
+TOKEN OpenScope      /<scope>/
+TOKEN CloseScope     /<\/scope>/
+
+# Section markers
+TOKEN OpenDeps      /<dependencies>/
+TOKEN CloseDeps     /<\/dependencies>/
+TOKEN OpenDep       /<dependency>/
+TOKEN CloseDep      /<\/dependency>/
+TOKEN OpenProps     /<properties>/
+TOKEN CloseProps    /<\/properties>/
+TOKEN OpenLicenses  /<licenses>/
+TOKEN CloseLicenses /<\/licenses>/
+TOKEN OpenLicense   /<license>/
+TOKEN CloseLicense  /<\/license>/
+
+# Generic elements (fallback)
+TOKEN SelfCloseElem /<[A-Za-z][A-Za-z0-9._-]*[^>]*\/>/
+TOKEN OpenElem      /<[A-Za-z][A-Za-z0-9._-]*[^>]*>/
+TOKEN CloseElem     /<\/[A-Za-z][A-Za-z0-9._-]*>/
+TOKEN Text          /[^<]+/
+
+=== grammar
+PomFile         -> XMLDecl? OpenProject Content* CloseProject
+Content         -> ModelVersionElem / GroupIdElem / ArtifactIdElem / VersionElemTop
+                 / PackagingElem / NameElemTop / DescElem / UrlElemTop
+                 / DepsSection / PropsSection / LicensesSection
+                 / Comment / OtherElem
+
+ModelVersionElem -> ModelVersion
+GroupIdElem     -> OpenGroupId Text CloseGroupId
+ArtifactIdElem  -> OpenArtifactId value:Text CloseArtifactId
+VersionElemTop  -> OpenVersionElem value:Text CloseVersionElem
+PackagingElem   -> OpenPackaging Text ClosePackaging
+NameElemTop     -> OpenName Text CloseName
+DescElem        -> OpenDescription value:Text CloseDescription
+UrlElemTop      -> OpenUrl Text CloseUrl
+
+DepsSection     -> OpenDeps DepContent* CloseDeps
+DepContent      -> Dependency / Comment / Text
+Dependency      -> OpenDep OpenGroupId group:Text CloseGroupId OpenArtifactId artifact:Text CloseArtifactId DepOptional* CloseDep
+DepOptional     -> OpenVersionElem Text CloseVersionElem / OpenScope Text CloseScope / OtherDepField
+OtherDepField   -> OpenElem Text? CloseElem / SelfCloseElem / Text
+
+PropsSection    -> OpenProps PropContent* CloseProps
+PropContent     -> OpenElem Text CloseElem / SelfCloseElem / Text / Comment
+
+LicensesSection -> OpenLicenses LicenseContent* CloseLicenses
+LicenseContent  -> License / Comment / Text
+License         -> OpenLicense LicenseFields CloseLicense
+LicenseFields   -> LicenseField*
+LicenseField    -> OpenName Text CloseName / OpenUrl Text CloseUrl / OpenElem Content* CloseElem / Text
+
+OtherElem       -> OpenElem Content* CloseElem / SelfCloseElem / Text
+
+=== attrs
+on ArtifactIdElem: note fieldKey payload="artifactId"
+on GroupIdElem:    note fieldKey payload="groupId"
+on VersionElemTop: note fieldKey payload="version"
+
+=== semantics
+on ArtifactIdElem {
+  let name = $value
+  edge projectName from $file to name
+}
+on VersionElemTop {
+  let ver = $value
+  edge projectVersion from $file to ver
+}
+on DescElem {
+  let desc = $value
+  edge projectDescription from $file to desc
+}
+on Dependency {
+  let g = $group
+  let a = $artifact
+  let coord = concat(g, ":", a)
+  edge dependsOn from $file to concat("maven:", coord) attrs obj("dep_kind", "runtime")
+}
+
+=== resolver
+relative_prefixes:
+exts: .xml
+indexes:
+bare_prefix: maven:
+module_path_style: colon

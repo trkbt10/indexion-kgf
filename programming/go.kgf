@@ -1,0 +1,220 @@
+kgf 0.6
+language: go
+sources: .go
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Package documentation comment (// Package xxx ...)
+TOKEN PackageDoc /\/\/\s*Package\s+[^\r\n]*/
+
+# Comments - Go uses // comments before declarations as documentation
+TOKEN DocComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# String literals
+TOKEN RawString /`[^`]*`/
+TOKEN String /"(?:[^"\\]|\\.)*"/
+TOKEN Char /'(?:[^'\\]|\\.)*'/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?i?/
+
+# Keywords
+TOKEN KW_package   /package\b/
+TOKEN KW_import    /import\b/
+TOKEN KW_func      /func\b/
+TOKEN KW_type      /type\b/
+TOKEN KW_struct    /struct\b/
+TOKEN KW_interface /interface\b/
+TOKEN KW_var       /var\b/
+TOKEN KW_const     /const\b/
+TOKEN KW_map       /map\b/
+TOKEN KW_chan      /chan\b/
+TOKEN KW_if        /if\b/
+TOKEN KW_else      /else\b/
+TOKEN KW_switch    /switch\b/
+TOKEN KW_case      /case\b/
+TOKEN KW_default   /default\b/
+TOKEN KW_for       /for\b/
+TOKEN KW_range     /range\b/
+TOKEN KW_return    /return\b/
+TOKEN KW_defer     /defer\b/
+TOKEN KW_go        /go\b/
+
+# Built-in types
+TOKEN KeywordType /\b(?:bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any|comparable)\b/
+
+# Identifiers
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN Operator /:=|<-|\.\.\.|\+\+|--|&&|\|\||[+\-*\/%&|^<>=!]=?|<<|>>/
+
+# Punctuation
+TOKEN LBRACE /\{/
+TOKEN RBRACE /\}/
+TOKEN LPAREN /\(/
+TOKEN RPAREN /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI /;/
+TOKEN COMMA /,/
+TOKEN DOT /\./
+TOKEN COLON /:/
+TOKEN STAR /\*/
+
+=== grammar
+# Module with optional leading module doc (// Package xxx ...)
+Module -> ModuleDoc? Item*
+
+# Module-level documentation (// Package xxx followed by more // comments)
+ModuleDoc -> module_doc:PackageDoc ( NL DocComment )*
+
+Item -> NL
+     / DocComment
+     / PackageDoc
+     / PackageDecl
+     / ImportDecl
+     / FuncDecl
+     / TypeDecl
+     / VarDecl
+     / ConstDecl
+     / Other
+
+# Doc comment block (consecutive // comments)
+DocBlock -> DocComment ( NL DocComment )*
+
+# Package declaration
+PackageDecl -> KW_package id:Ident
+
+# Import declaration
+ImportDecl -> KW_import ( ImportSpec / ImportGroup )
+ImportGroup -> LPAREN ( ImportSpec NL? )* RPAREN
+ImportSpec -> alias:Ident? path:String
+
+# Function declaration
+FuncDecl -> doc:DocBlock? NL? KW_func Receiver? id:Ident GenericParams? Signature Body?
+Receiver -> LPAREN Ident? STAR? Ident RPAREN
+
+# Type declaration
+TypeDecl -> doc:DocBlock? NL? KW_type ( TypeSpec / TypeGroup )
+TypeGroup -> LPAREN ( TypeSpec NL? )* RPAREN
+TypeSpec -> id:Ident GenericParams? Type
+StructType -> KW_struct LBRACE StructField* RBRACE
+InterfaceType -> KW_interface LBRACE InterfaceMethod* RBRACE
+StructField -> field_doc:DocBlock? field_id:Ident Type Tag? / NL / DocComment
+InterfaceMethod -> method_doc:DocBlock? method_id:Ident Signature / NL / DocComment
+Tag -> RawString
+
+# Var declaration
+VarDecl -> doc:DocBlock? NL? KW_var ( VarSpec / VarGroup )
+VarGroup -> LPAREN ( VarSpec NL? )* RPAREN
+VarSpec -> id:Ident Type? ( Operator Expr )?
+
+# Const declaration
+ConstDecl -> doc:DocBlock? NL? KW_const ( ConstSpec / ConstGroup )
+ConstGroup -> LPAREN ( ConstSpec NL? )* RPAREN
+ConstSpec -> id:Ident Type? ( Operator Expr )?
+
+# Types and signatures
+Signature -> LPAREN ParamList? RPAREN Result?
+Result -> LPAREN TypeList RPAREN / Type
+ParamList -> Param ( COMMA Param )*
+Param -> Ident? Type
+GenericParams -> LBRACKET TypeParam ( COMMA TypeParam )* RBRACKET
+TypeParam -> Ident Type?
+TypeList -> Type ( COMMA Type )*
+Type -> TypeAtom / STAR Type / LBRACKET RBRACKET Type / KW_map LBRACKET Type RBRACKET Type / KW_chan Type
+TypeAtom -> Ident ( DOT Ident )? GenericArgs? / StructType / InterfaceType / LPAREN Type RPAREN
+GenericArgs -> LBRACKET Type ( COMMA Type )* RBRACKET
+
+# Body (simplified - balance braces)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / Number / String / RawString / Char / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / Operator / STAR
+
+Atom -> ExprAtom / NL / DocComment / BlockComment / KW_package / KW_import / KW_func / KW_type / KW_struct / KW_interface / KW_var / KW_const / KW_map / KW_chan / KW_if / KW_else / KW_switch / KW_case / KW_default / KW_for / KW_range / KW_return / KW_defer / KW_go / KeywordType / SEMI
+
+Other -> Atom
+
+=== attrs
+on ModuleDoc:  module_doc doc=module_doc
+on FuncDecl:   def id kind=Function doc=doc
+on TypeSpec:   def id kind=Type doc=doc
+on VarSpec:    def id kind=Variable doc=doc
+on ConstSpec:  def id kind=Const doc=doc
+on StructField: def field_id kind=Field doc=field_doc
+on InterfaceMethod: def method_id kind=Method doc=method_doc
+on Param:      def id kind=Param
+
+on ImportSpec: import module=path
+
+=== semantics
+# Module-level documentation (// Package xxx ...)
+on ModuleDoc {
+  note module_doc payload obj("doc", $module_doc_text)
+}
+
+# Import dependency
+on ImportSpec {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Function declaration
+on FuncDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Type declaration
+on TypeSpec {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  bind ns "value" name "current_type" to sym_id
+}
+
+# Struct field
+on StructField when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  let sym_id = concat(parent, ".", $field_id)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
+}
+
+# Interface method
+on InterfaceMethod when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  let sym_id = concat(parent, ".", $method_id)
+  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $method_doc)
+}
+
+# Variable declaration
+on VarSpec {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+# Constant declaration
+on ConstSpec {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+}
+
+=== resolver
+relative_prefixes: ./, ../
+module_path_style: slash
+project_config: go.mod
+install_cmd: go get {name}
+build_cmd: go build
+resolve:
+  - manifest: go.mod @ module
+  - ext: .go
+  - fallback: pkg:
+
+=== ignore
+# Go build
+vendor/

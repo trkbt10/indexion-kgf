@@ -1,0 +1,68 @@
+kgf 0.6
+language: universal
+sources: .txt, .text
+
+# Universal spec for mixed-language text (natural text, code snippets, etc.)
+# Combines mikan.js-style Japanese segmentation with common programming constructs
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+
+# Programming constructs
+TOKEN Comment /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/
+TOKEN String /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/
+TOKEN Keyword /(function|const|let|var|if|else|for|while|return|import|export|from|class|def|async|await|try|catch|throw|new|this|self|true|false|null|undefined|None|True|False)\b/
+TOKEN Operator /[+\-*/%=<>!&|^~?:]+|\.{3}/
+TOKEN CodePunct /[;,{}[\]()]/
+
+# Punctuation (Japanese + Western)
+TOKEN Punct /[\.\,。、！\!？\?：；:;]+/
+
+# Brackets (CJK + Western)
+TOKEN BracketOpen /[〈《「『｢（(\[【〔〚〖〘❮❬❪❨(<{❲❰｛❴]/
+TOKEN BracketClose /[〉》」』｣)）\]】〕〗〙〛}>\)❩❫❭❯❱❳❵｝]/
+
+# Japanese particles (joshi)
+TOKEN Joshi /(でなければ|について|かしら|くらい|けれど|なのか|ばかり|ながら|ことよ|こそ|こと|さえ|しか|した|たり|だけ|だに|だの|つつ|ても|てよ|でも|とも|から|など|なり|ので|のに|ほど|まで|もの|やら|より|って|で|と|な|に|ね|の|も|は|ば|へ|や|わ|を|か|が|さ|し|ぞ|て)/
+
+# Units
+TOKEN Unit /(px|em|rem|pt|%|＄|\$|€|￥|円|百|千|万|億|兆|京|％|cm|mm|m|km|kg|g|mg|ml|l|度|秒|分|時間|日|週|月|年)/
+
+# Numbers
+TOKEN Number /0x[0-9a-fA-F]+|0b[01]+|\d+\.?\d*([eE][+-]?\d+)?|[０-９零一二三四五六七八九十百千万億兆]+/
+
+# CJK characters
+TOKEN Kanji /[一-龠々〆ヵヶゝ]+/
+TOKEN Hiragana /[ぁ-んゝ]+/
+TOKEN Katakana /[ァ-ヴー]+/
+
+# Latin identifiers and words
+TOKEN Identifier /[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN FullWidthAlnum /[ａ-ｚＡ-Ｚ０-９]+/
+
+# URLs and domains
+TOKEN Url /https?:\/\/[^\s<>\"']+/
+TOKEN Email /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+
+# Catch-all
+TOKEN Other /[^\s]+/
+
+=== grammar
+Doc -> Item*
+Item -> Comment / String / Keyword / Operator / CodePunct
+      / Punct / BracketOpen / BracketClose
+      / Joshi / Unit / Number
+      / Kanji / Hiragana / Katakana
+      / Identifier / FullWidthAlnum / Url / Email / Other / NL
+
+=== attrs
+
+=== semantics
+
+=== resolver
+relative_prefixes: ./, ../
+exts: .txt, .text
+indexes:
+bare_prefix:
+module_path_style: slash

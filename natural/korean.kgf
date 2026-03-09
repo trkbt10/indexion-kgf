@@ -1,0 +1,70 @@
+kgf 0.6
+language: korean
+sources: .txt, .md, .text
+
+# Korean natural text tokenization (Hangul)
+
+=== lex
+SKIP /[ \t　]+/
+TOKEN NL /\r?\n+/
+
+# Korean punctuation
+TOKEN Punct /[.!?，、；：。！？]+/
+TOKEN Quote /[""''「」『』【】]+/
+
+# Brackets
+TOKEN BracketOpen /[（(\[{<]/
+TOKEN BracketClose /[）)\]}>]/
+
+# Common particles (조사) - attached to nouns
+TOKEN Particle /(은|는|이|가|을|를|의|에|에서|에게|한테|께|로|으로|와|과|하고|이랑|랑|도|만|까지|부터|마다|보다|처럼|같이|대로)/
+
+# Pronouns (대명사)
+TOKEN Pronoun /(나|저|너|당신|그|그녀|우리|저희|너희|그들|이것|저것|그것|여기|저기|거기|어디|누구|무엇|뭐|언제|어떻게|왜)/
+
+# Conjunctions (접속사)
+TOKEN Conjunction /(그리고|그러나|그런데|하지만|그래서|따라서|그러므로|왜냐하면|만약|만일|비록|또는|혹은|및|또한|게다가|더구나|그래도|아니면)/
+
+# Common adverbs (부사)
+TOKEN Adverb /(아주|매우|너무|정말|진짜|참|꽤|조금|약간|많이|더|덜|가장|제일|잘|못|안|못|이미|벌써|아직|곧|바로|먼저|나중|항상|늘|자주|가끔|때때로|결코|전혀|절대|다|모두|함께|같이|서로|혼자)/
+
+# Common verbs/adjectives endings (어미)
+TOKEN Ending /(다|요|니다|습니다|까|나요|세요|ㄹ게요|을게요|겠|었|았|ㄴ|은|ㄹ|을|는|던|ㄴ다|는다|냐|니|나|자|군|구나|네)/
+
+# Numbers
+TOKEN Number /[0-9０-９]+|[일이삼사오육칠팔구십백천만억]+/
+
+# Units
+TOKEN Unit /(개|명|분|번|살|원|년|월|일|시|초|권|장|잔|병|켤레|마리|대|채|그루|자루|벌|미터|킬로|그램)/
+
+# Hangul syllables
+TOKEN Hangul /[\uAC00-\uD7AF]+/
+
+# Hangul Jamo (individual consonants/vowels)
+TOKEN Jamo /[\u1100-\u11FF\u3130-\u318F]+/
+
+# Latin alphanumeric
+TOKEN Alnum /[a-zA-Z0-9]+/
+
+# URLs
+TOKEN Url /https?:\/\/[^\s<>"']+/
+
+# Catch-all
+TOKEN Other /[^\s]+/
+
+=== grammar
+Doc -> Sentence*
+Sentence -> Token* Punct? NL?
+Token -> Particle / Pronoun / Conjunction / Adverb / Ending
+       / Number / Unit / Hangul / Jamo / Alnum / Quote / BracketOpen / BracketClose / Url / Other
+
+=== attrs
+
+=== semantics
+
+=== resolver
+relative_prefixes: ./, ../
+exts: .txt, .md, .text
+indexes:
+bare_prefix:
+module_path_style: slash

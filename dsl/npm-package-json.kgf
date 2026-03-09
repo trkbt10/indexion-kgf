@@ -1,0 +1,148 @@
+
+kgf 0.6
+language: npm-package-json
+sources: package.json
+
+=== lex
+SKIP        /\s+/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COLON         /:/
+TOKEN COMMA         /,/
+# Specific field name tokens (must come before StringLit)
+TOKEN KW_name            /"name"/
+TOKEN KW_version         /"version"/
+TOKEN KW_dependencies    /"dependencies"/
+TOKEN KW_devDependencies /"devDependencies"/
+TOKEN KW_peerDependencies /"peerDependencies"/
+TOKEN KW_workspaces      /"workspaces"/
+TOKEN KW_main            /"main"/
+TOKEN KW_types           /"types"/
+TOKEN KW_typings         /"typings"/
+TOKEN KW_exports         /"exports"/
+# Generic string literal (after keywords)
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/
+TOKEN KW_true       /true/
+TOKEN KW_false      /false/
+TOKEN KW_null       /null/
+
+=== grammar
+PackageJson     -> LBRACE FieldList? RBRACE
+FieldList       -> Field ( COMMA Field )*
+
+# Fields - specific patterns first, generic last
+Field           -> NameField / VersionField / DependenciesField / DevDependenciesField / PeerDependenciesField / WorkspacesField / MainField / TypesField / TypingsField / ExportsField / GenericObjectField / GenericArrayField / GenericStringField / GenericOtherField
+
+# Named fields with specific handling
+NameField            -> KW_name COLON value:StringLit
+VersionField         -> KW_version COLON value:StringLit
+MainField            -> KW_main COLON value:StringLit
+TypesField           -> KW_types COLON value:StringLit
+TypingsField         -> KW_typings COLON value:StringLit
+
+# Dependency fields - each with own entry type for proper semantics
+DependenciesField    -> KW_dependencies COLON LBRACE RuntimeDepList? RBRACE
+DevDependenciesField -> KW_devDependencies COLON LBRACE DevDepList? RBRACE
+PeerDependenciesField-> KW_peerDependencies COLON LBRACE PeerDepList? RBRACE
+
+RuntimeDepList  -> RuntimeDepEntry ( COMMA RuntimeDepEntry )*
+RuntimeDepEntry -> name:StringLit COLON version:StringLit
+
+DevDepList      -> DevDepEntry ( COMMA DevDepEntry )*
+DevDepEntry     -> name:StringLit COLON version:StringLit
+
+PeerDepList     -> PeerDepEntry ( COMMA PeerDepEntry )*
+PeerDepEntry    -> name:StringLit COLON version:StringLit
+
+# Workspace field
+WorkspacesField -> KW_workspaces COLON LBRACKET WorkspaceList? RBRACKET
+WorkspaceList   -> WorkspaceItem ( COMMA WorkspaceItem )*
+WorkspaceItem   -> pattern:StringLit
+
+# Exports field (complex structure)
+ExportsField    -> KW_exports COLON value:Value
+
+# Generic fields for unknown keys
+GenericObjectField  -> key:StringLit COLON LBRACE GenericFieldList? RBRACE
+GenericArrayField   -> key:StringLit COLON LBRACKET ValueList? RBRACKET
+GenericStringField  -> key:StringLit COLON value:StringLit
+GenericOtherField   -> key:StringLit COLON value:OtherValue
+OtherValue          -> NumberLit / KW_true / KW_false / KW_null
+
+# Generic JSON structures for nested content
+GenericFieldList    -> GenericInnerField ( COMMA GenericInnerField )*
+GenericInnerField   -> key:StringLit COLON value:Value
+Value               -> Object / Array / StringLit / NumberLit / KW_true / KW_false / KW_null
+Object              -> LBRACE GenericFieldList? RBRACE
+Array               -> LBRACKET ValueList? RBRACKET
+ValueList           -> Value ( COMMA Value )*
+
+=== attrs
+on NameField:            note fieldKey payload="name"
+on VersionField:         note fieldKey payload="version"
+on DependenciesField:    note fieldKey payload="dependencies"
+on DevDependenciesField: note fieldKey payload="devDependencies"
+on PeerDependenciesField:note fieldKey payload="peerDependencies"
+on WorkspacesField:      note fieldKey payload="workspaces"
+on MainField:            note fieldKey payload="main"
+on TypesField:           note fieldKey payload="types"
+on TypingsField:         note fieldKey payload="typings"
+on ExportsField:         note fieldKey payload="exports"
+on GenericStringField:   note fieldKey payload=key
+on GenericObjectField:   note fieldKey payload=key
+on GenericArrayField:    note fieldKey payload=key
+on GenericOtherField:    note fieldKey payload=key
+
+=== semantics
+on NameField {
+  let name = stripQuotes($value)
+  edge packageName from $file to name attrs obj("raw", $value)
+}
+on VersionField {
+  let version = stripQuotes($value)
+  edge packageVersion from $file to version attrs obj("raw", $value)
+}
+on MainField {
+  let entry = stripQuotes($value)
+  edge mainEntry from $file to entry
+}
+on TypesField {
+  let entry = stripQuotes($value)
+  edge typesEntry from $file to entry
+}
+on TypingsField {
+  let entry = stripQuotes($value)
+  edge typesEntry from $file to entry
+}
+on RuntimeDepEntry {
+  let depName = stripQuotes($name)
+  let depVersion = stripQuotes($version)
+  edge dependsOn from $file to concat("npm:", depName) attrs obj("version", depVersion, "dep_kind", "runtime")
+}
+on DevDepEntry {
+  let depName = stripQuotes($name)
+  let depVersion = stripQuotes($version)
+  edge dependsOn from $file to concat("npm:", depName) attrs obj("version", depVersion, "dep_kind", "dev")
+}
+on PeerDepEntry {
+  let depName = stripQuotes($name)
+  let depVersion = stripQuotes($version)
+  edge dependsOn from $file to concat("npm:", depName) attrs obj("version", depVersion, "dep_kind", "peer")
+}
+on WorkspaceItem {
+  let pat = stripQuotes($pattern)
+  edge workspacePattern from $file to pat
+}
+on ExportsField {
+  edge exportsField from $file to "exports"
+}
+
+=== resolver
+relative_prefixes:
+exts: .json
+indexes:
+bare_prefix: npm:
+module_path_style: slash

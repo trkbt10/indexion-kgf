@@ -1,0 +1,303 @@
+kgf 0.6
+language: dart
+sources: .dart
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments - Dart uses /// for documentation
+TOKEN DocComment /\/\/\/[^\r\n]*/
+TOKEN LineComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# String literals
+TOKEN String /'([^'\\]|\\.)*'|"([^"\\]|\\.)*"|'''[\s\S]*?'''|"""[\s\S]*?"""|r'[^']*'|r"[^"]*"/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+
+# Annotations
+TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Keywords
+TOKEN KW_import   /import\b/
+TOKEN KW_export   /export\b/
+TOKEN KW_library  /library\b/
+TOKEN KW_part     /part\b/
+TOKEN KW_show     /show\b/
+TOKEN KW_hide     /hide\b/
+TOKEN KW_as       /as\b/
+TOKEN KW_deferred /deferred\b/
+TOKEN KW_class    /class\b/
+TOKEN KW_mixin    /mixin\b/
+TOKEN KW_extension /extension\b/
+TOKEN KW_enum     /enum\b/
+TOKEN KW_typedef  /typedef\b/
+TOKEN KW_abstract /abstract\b/
+TOKEN KW_sealed   /sealed\b/
+TOKEN KW_base     /base\b/
+TOKEN KW_interface /interface\b/
+TOKEN KW_final    /final\b/
+TOKEN KW_const    /const\b/
+TOKEN KW_var      /var\b/
+TOKEN KW_late     /late\b/
+TOKEN KW_static   /static\b/
+TOKEN KW_external /external\b/
+TOKEN KW_factory  /factory\b/
+TOKEN KW_extends  /extends\b/
+TOKEN KW_implements /implements\b/
+TOKEN KW_with     /with\b/
+TOKEN KW_get      /get\b/
+TOKEN KW_set      /set\b/
+TOKEN KW_operator /operator\b/
+TOKEN KW_if       /if\b/
+TOKEN KW_else     /else\b/
+TOKEN KW_switch   /switch\b/
+TOKEN KW_case     /case\b/
+TOKEN KW_for      /for\b/
+TOKEN KW_in       /in\b/
+TOKEN KW_while    /while\b/
+TOKEN KW_return   /return\b/
+TOKEN KW_async    /async\b/
+TOKEN KW_await    /await\b/
+
+# Built-in types and values
+TOKEN KeywordType /\b(?:void|dynamic|Function|Never|Object)\b/
+TOKEN BoolLit /\b(?:true|false)\b/
+TOKEN NullLit /\bnull\b/
+TOKEN ThisLit /\bthis\b/
+TOKEN SuperLit /\bsuper\b/
+
+# Identifiers
+TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
+TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN ARROW    /=>/
+TOKEN NULLCOND /\?\./
+TOKEN NULLCOAL /\?\?/
+TOKEN CASCADE  /\.\./
+TOKEN Operator /[+\-*\/%&|^~!<>=?:]+|&&|\|\|/
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+TOKEN AT       /@/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / DocComment
+     / LibraryDecl
+     / ImportDecl
+     / ExportDecl
+     / PartDecl
+     / ClassDecl
+     / MixinDecl
+     / ExtensionDecl
+     / EnumDecl
+     / TypedefDecl
+     / FunctionDecl
+     / VarDecl
+     / Other
+
+# Doc block (consecutive /// comments)
+DocBlock -> DocComment ( NL DocComment )*
+
+# Library declaration
+LibraryDecl -> KW_library QualifiedName SEMI
+QualifiedName -> Ident ( DOT Ident )*
+
+# Import/export declaration
+ImportDecl -> KW_import path:String ( KW_deferred )? ( KW_as Ident )? Combinators? SEMI
+ExportDecl -> KW_export path:String Combinators? SEMI
+Combinators -> ( KW_show / KW_hide ) Ident ( COMMA Ident )*
+PartDecl -> KW_part String SEMI
+
+# Class declaration
+ClassDecl -> doc:DocBlock? NL? Annotation* Modifier* KW_class id:TypeIdent TypeParams? ExtendsClause? ImplementsClause? WithClause? ClassBody
+ExtendsClause -> KW_extends Type
+ImplementsClause -> KW_implements TypeList
+WithClause -> KW_with TypeList
+ClassBody -> LBRACE ClassMember* RBRACE
+ClassMember -> ConstructorDecl / MethodDecl / FieldDecl / GetterDecl / SetterDecl / OperatorDecl / ClassDecl / EnumDecl / NL / LineComment / BlockComment
+
+# Mixin declaration
+MixinDecl -> doc:DocBlock? NL? Annotation* KW_mixin id:TypeIdent TypeParams? ( KW_on TypeList )? ImplementsClause? MixinBody
+MixinBody -> LBRACE MixinMember* RBRACE
+MixinMember -> MethodDecl / FieldDecl / GetterDecl / SetterDecl / NL / LineComment / BlockComment
+
+# Extension declaration
+ExtensionDecl -> doc:DocBlock? NL? Annotation* KW_extension id:TypeIdent? TypeParams? KW_on Type ExtensionBody
+ExtensionBody -> LBRACE ExtensionMember* RBRACE
+ExtensionMember -> MethodDecl / GetterDecl / SetterDecl / OperatorDecl / NL / LineComment / BlockComment
+
+# Enum declaration
+EnumDecl -> doc:DocBlock? NL? Annotation* KW_enum id:TypeIdent ImplementsClause? WithClause? EnumBody
+EnumBody -> LBRACE EnumValue* ( SEMI ClassMember* )? RBRACE
+EnumValue -> value_doc:DocBlock? Annotation* value_id:Ident ( LPAREN ( Expr ( COMMA Expr )* )? RPAREN )? COMMA?
+
+# Typedef declaration
+TypedefDecl -> doc:DocBlock? NL? KW_typedef id:TypeIdent TypeParams? Operator Type SEMI
+
+# Constructor declaration
+ConstructorDecl -> doc:DocBlock? NL? Annotation* Modifier* TypeIdent ( DOT id:Ident )? LPAREN ParamList? RPAREN ( COLON InitializerList )? ( Body / ARROW Expr SEMI / SEMI )
+InitializerList -> Initializer ( COMMA Initializer )*
+Initializer -> ( KW_super / ThisLit ) ( DOT Ident )? LPAREN ( Expr ( COMMA Expr )* )? RPAREN / Ident Operator Expr
+
+# Method declaration
+MethodDecl -> doc:DocBlock? NL? Annotation* Modifier* Type? method_id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_async )? ( Body / ARROW Expr SEMI / SEMI )
+
+# Field declaration
+FieldDecl -> doc:DocBlock? NL? Annotation* Modifier* Type field_id:Ident ( Operator Expr )? SEMI
+
+# Getter/Setter declaration
+GetterDecl -> doc:DocBlock? NL? Annotation* Modifier* Type? KW_get getter_id:Ident ( Body / ARROW Expr SEMI / SEMI )
+SetterDecl -> doc:DocBlock? NL? Annotation* Modifier* KW_set setter_id:Ident LPAREN Param RPAREN ( Body / ARROW Expr SEMI / SEMI )
+
+# Operator declaration
+OperatorDecl -> doc:DocBlock? NL? Annotation* Modifier* Type KW_operator Operator LPAREN ParamList? RPAREN ( Body / ARROW Expr SEMI )
+
+# Top-level function declaration
+FunctionDecl -> doc:DocBlock? NL? Annotation* Type? func_id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_async )? ( Body / ARROW Expr SEMI / SEMI )
+
+# Top-level variable declaration
+VarDecl -> doc:DocBlock? NL? Annotation* Modifier* Type var_id:Ident ( Operator Expr )? SEMI
+
+# Modifiers
+Modifier -> KW_abstract / KW_sealed / KW_base / KW_interface / KW_final / KW_const / KW_var / KW_late / KW_static / KW_external / KW_factory
+
+# Parameters
+ParamList -> Param ( COMMA Param )* / OptionalParams / NamedParams
+Param -> Annotation* ( KW_final / KW_var / KW_const )? Type? param_id:Ident ( Operator Expr )?
+OptionalParams -> LBRACKET Param ( COMMA Param )* RBRACKET
+NamedParams -> LBRACE Param ( COMMA Param )* RBRACE
+
+# Types
+TypeParams -> Operator TypeParam ( COMMA TypeParam )* Operator
+TypeParam -> TypeIdent ( KW_extends Type )?
+TypeList -> Type ( COMMA Type )*
+Type -> TypeAtom ( Operator TypeAtom )* QMARK?
+TypeAtom -> TypeIdent TypeArgs? / KeywordType / LPAREN Type RPAREN / LPAREN TypeList RPAREN ARROW Type
+TypeArgs -> Operator Type ( COMMA Type )* Operator
+QMARK -> /\?/
+
+# Body (simplified - balance braces)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NullLit / ThisLit / SuperLit / KeywordType / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / CASCADE / COMMA / COLON / ARROW / NULLCOND / NULLCOAL / Operator / Annotation
+
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_import / KW_export / KW_library / KW_part / KW_show / KW_hide / KW_as / KW_deferred / KW_class / KW_mixin / KW_extension / KW_enum / KW_typedef / KW_abstract / KW_sealed / KW_base / KW_interface / KW_final / KW_const / KW_var / KW_late / KW_static / KW_external / KW_factory / KW_extends / KW_implements / KW_with / KW_get / KW_set / KW_operator / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_async / KW_await / SEMI / AT
+
+Other -> Atom
+
+=== attrs
+on ClassDecl:     def id kind=Class doc=doc
+on MixinDecl:     def id kind=Mixin doc=doc
+on ExtensionDecl: def id kind=Extension doc=doc
+on EnumDecl:      def id kind=Enum doc=doc
+on TypedefDecl:   def id kind=Typedef doc=doc
+on FunctionDecl:  def func_id kind=Function doc=doc
+on MethodDecl:    def method_id kind=Method doc=doc
+on FieldDecl:     def field_id kind=Field doc=doc
+on GetterDecl:    def getter_id kind=Getter doc=doc
+on SetterDecl:    def setter_id kind=Setter doc=doc
+on VarDecl:       def var_id kind=Variable doc=doc
+on EnumValue:     def value_id kind=EnumValue doc=value_doc
+on Param:         def param_id kind=Param
+
+on ImportDecl:    import module=path
+
+=== semantics
+# Import dependency
+on ImportDecl {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Class declaration
+on ClassDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  bind ns "value" name "current_class" to sym_id
+}
+
+# Mixin declaration
+on MixinDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Mixin", "doc", $doc)
+  bind ns "value" name "current_mixin" to sym_id
+}
+
+# Extension declaration
+on ExtensionDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Extension", "doc", $doc)
+  bind ns "value" name "current_extension" to sym_id
+}
+
+# Enum declaration
+on EnumDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  bind ns "value" name "current_enum" to sym_id
+}
+
+# Typedef declaration
+on TypedefDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+}
+
+# Top-level function
+on FunctionDecl {
+  let sym_id = concat($file, "::", $func_id)
+  edge declares from $file to sym_id attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+}
+
+# Top-level variable
+on VarDecl {
+  let sym_id = concat($file, "::", $var_id)
+  edge declares from $file to sym_id attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+}
+
+# Method in class
+on MethodDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $method_id)
+  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+}
+
+# Field in class
+on FieldDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $field_id)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc)
+}
+
+# Enum value
+on EnumValue when $scope("value", "current_enum") {
+  let parent = $scope("value", "current_enum")
+  let sym_id = concat(parent, ".", $value_id)
+  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: slash
+resolve:
+  - manifest: pubspec.yaml @ dependencies
+  - ext: .dart
+  - fallback: pub:

@@ -1,0 +1,100 @@
+kgf 0.6
+language: vcpkg-json
+sources: vcpkg.json
+
+# KGF spec for C++ vcpkg.json manifest files
+# Extracts project metadata and dependencies
+
+=== lex
+SKIP        /[ \t\r\n]+/
+
+# JSON structure
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COLON         /:/
+TOKEN COMMA         /,/
+
+# Key names
+TOKEN KW_name         /"name"/
+TOKEN KW_version      /"version"/
+TOKEN KW_description  /"description"/
+TOKEN KW_homepage     /"homepage"/
+TOKEN KW_license      /"license"/
+TOKEN KW_dependencies /"dependencies"/
+TOKEN KW_version_gte  /"version>="/
+
+# Values
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+TOKEN KW_true       /true/
+TOKEN KW_false      /false/
+TOKEN KW_null       /null/
+
+=== grammar
+JsonFile        -> Object
+Object          -> LBRACE Members? RBRACE
+Members         -> Member ( COMMA Member )*
+Member          -> NameMember / VersionMember / DescMember / HomepageMember
+                 / LicenseMember / DepsMember / OtherMember
+
+NameMember      -> KW_name COLON value:StringLit
+VersionMember   -> KW_version COLON value:StringLit
+DescMember      -> KW_description COLON value:StringLit
+HomepageMember  -> KW_homepage COLON value:StringLit
+LicenseMember   -> KW_license COLON value:StringLit
+
+DepsMember      -> KW_dependencies COLON LBRACKET DepList? RBRACKET
+DepList         -> DepItem ( COMMA DepItem )*
+DepItem         -> DepString / DepObject
+DepString       -> name:StringLit
+DepObject       -> LBRACE DepObjMembers RBRACE
+DepObjMembers   -> DepObjMember ( COMMA DepObjMember )*
+DepObjMember    -> DepNameMember / DepVersionMember / OtherMember
+DepNameMember   -> KW_name COLON name:StringLit
+DepVersionMember -> KW_version_gte COLON StringLit
+
+OtherMember     -> StringLit COLON Value
+Value           -> StringLit / NumberLit / KW_true / KW_false / KW_null
+                 / Object / Array
+Array           -> LBRACKET ArrayList? RBRACKET
+ArrayList       -> Value ( COMMA Value )*
+
+=== attrs
+on NameMember:    note fieldKey payload="name"
+on VersionMember: note fieldKey payload="version"
+on DescMember:    note fieldKey payload="description"
+
+=== semantics
+on NameMember {
+  let name = stripQuotes($value)
+  edge projectName from $file to name attrs obj("raw", $value)
+}
+on VersionMember {
+  let ver = stripQuotes($value)
+  edge projectVersion from $file to ver attrs obj("raw", $value)
+}
+on DescMember {
+  let desc = stripQuotes($value)
+  edge projectDescription from $file to desc
+}
+on LicenseMember {
+  let lic = stripQuotes($value)
+  edge projectLicense from $file to lic
+}
+on DepString {
+  let dep = stripQuotes($name)
+  edge dependsOn from $file to concat("vcpkg:", dep) attrs obj("dep_kind", "runtime")
+}
+on DepNameMember {
+  let dep = stripQuotes($name)
+  edge dependsOn from $file to concat("vcpkg:", dep) attrs obj("dep_kind", "runtime")
+}
+
+=== resolver
+relative_prefixes:
+exts: .json
+indexes:
+bare_prefix: vcpkg:
+module_path_style: hyphen

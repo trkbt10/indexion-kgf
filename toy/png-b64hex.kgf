@@ -1,0 +1,115 @@
+kgf 0.6
+language: png-b64hex
+sources: .b64, .txt
+
+=== preprocess
+base64ToHex
+
+=== lex
+SKIP /\\s+/
+
+# PNG signature bytes: 89 50 4E 47 0D 0A 1A 0A
+TOKEN PNG_SIG /89504E470D0A1A0A/
+
+# IHDR chunk (length=13 bytes, fixed layout): len + type + data(13) + crc
+TOKEN IHDR_SEG /0000000D49484452[0-9A-Fa-f]{34}/
+
+# Chunk type ASCII bytes (4 bytes, i.e. 8 hex chars)
+TOKEN PLTE /504C5445/
+TOKEN IDAT /49444154/
+TOKEN IEND /49454E44/
+TOKEN tEXt /74455874/
+TOKEN zTXt /7A545874/
+TOKEN iTXt /69545874/
+TOKEN tRNS /74524E53/
+TOKEN gAMA /67414D41/
+TOKEN sRGB /73524742/
+TOKEN pHYs /70485973/
+TOKEN acTL /6163544C/
+TOKEN fcTL /6663544C/
+TOKEN fdAT /66644154/
+
+TOKEN HEXBYTE /[0-9A-Fa-f]{2}/
+
+=== grammar
+Doc -> Item*
+
+Item -> Sig
+     / IHDRSegment
+     / ChunkPLTE
+     / ChunkIDAT
+     / ChunkIEND
+     / ChunktEXt
+     / ChunkzTXt
+     / ChunkiTXt
+     / ChunktRNS
+     / ChunkgAMA
+     / ChunksRGB
+     / ChunkpHYs
+     / ChunkacTL
+     / ChunkfcTL
+     / ChunkfdAT
+     / Other
+
+Sig -> sig:PNG_SIG
+IHDRSegment -> seg:IHDR_SEG
+ChunkPLTE -> plte:PLTE
+ChunkIDAT -> idat:IDAT
+ChunkIEND -> iend:IEND
+ChunktEXt -> text:tEXt
+ChunkzTXt -> ztxt:zTXt
+ChunkiTXt -> itxt:iTXt
+ChunktRNS -> trns:tRNS
+ChunkgAMA -> gama:gAMA
+ChunksRGB -> srgb:sRGB
+ChunkpHYs -> phys:pHYs
+ChunkacTL -> actl:acTL
+ChunkfcTL -> fctl:fcTL
+ChunkfdAT -> fdat:fdAT
+
+Other -> HEXBYTE
+
+=== attrs
+# none
+
+=== semantics
+on Sig {
+  module $file file $file
+}
+
+on Sig {
+  module concat($file, "::png:sig@", $sig_pos) file null
+  edge maybeType from concat($file, "::png:sig@", $sig_pos) to "png" attrs obj("hexPos", $sig_pos, "hexLen", $sig_len, "bytePos", floor(div($sig_pos, 2)), "confidence", 0.95)
+  edge contains from $file to concat($file, "::png:sig@", $sig_pos) attrs obj("confidence", 0.7)
+  bind ns "value" name "__png_prev" to concat($file, "::png:sig@", $sig_pos)
+  bind ns "value" name "__png_container" to concat($file, "::png:sig@", $sig_pos)
+}
+
+on IHDRSegment {
+  let ihdrNode = concat($file, "::png:IHDR@", $seg_pos)
+  let widthHex = slice($seg, 16, 8)
+  let heightHex = slice($seg, 24, 8)
+  let bitDepthHex = slice($seg, 32, 2)
+  let colorTypeHex = slice($seg, 34, 2)
+  let compressionHex = slice($seg, 36, 2)
+  let filterHex = slice($seg, 38, 2)
+  let interlaceHex = slice($seg, 40, 2)
+  module $ihdrNode file null
+  edge maybeType from $ihdrNode to "png:chunk:IHDR" attrs obj("hexPos", $seg_pos, "hexLen", $seg_len, "bytePos", floor(div($seg_pos, 2)), "confidence", 0.98)
+  edge imageInfo from $file to $ihdrNode attrs obj("width", hexToInt($widthHex), "height", hexToInt($heightHex), "bitDepth", hexToInt($bitDepthHex), "colorType", hexToInt($colorTypeHex), "compression", hexToInt($compressionHex), "filter", hexToInt($filterHex), "interlaceMethod", hexToInt($interlaceHex), "interlaced", eq($interlaceHex, "01"), "confidence", 0.85)
+}
+on IHDRSegment when $scope("value", "__png_prev") {
+  edge next from $scope("value", "__png_prev") to concat($file, "::png:IHDR@", $seg_pos) attrs obj("hexPos", $seg_pos, "hexLen", $seg_len, "bytePos", floor(div($seg_pos, 2)), "confidence", 0.95)
+}
+on IHDRSegment when $scope("value", "__png_container") {
+  edge contains from $scope("value", "__png_container") to concat($file, "::png:IHDR@", $seg_pos) attrs obj("confidence", 0.9)
+  bind ns "value" name "__png_prev" to concat($file, "::png:IHDR@", $seg_pos)
+}
+
+=== resolver
+relative_prefixes:
+exts: .b64, .txt
+indexes:
+bare_prefix:
+module_path_style: slash
+

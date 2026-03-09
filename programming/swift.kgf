@@ -1,0 +1,288 @@
+kgf 0.6
+language: swift
+sources: .swift
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments - Swift uses /// for documentation
+TOKEN DocComment /\/\/\/[^\r\n]*/
+TOKEN DocBlockComment /\/\*\*[\s\S]*?\*\//
+TOKEN LineComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# String literals
+TOKEN String /"([^"\\]|\\.)*"|#"[^"]*"#|"""[\s\S]*?"""/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
+
+# Attributes
+TOKEN Attribute /@[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Keywords
+TOKEN KW_import     /import\b/
+TOKEN KW_let        /let\b/
+TOKEN KW_var        /var\b/
+TOKEN KW_func       /func\b/
+TOKEN KW_class      /class\b/
+TOKEN KW_struct     /struct\b/
+TOKEN KW_enum       /enum\b/
+TOKEN KW_protocol   /protocol\b/
+TOKEN KW_extension  /extension\b/
+TOKEN KW_typealias  /typealias\b/
+TOKEN KW_actor      /actor\b/
+TOKEN KW_init       /init\b/
+TOKEN KW_deinit     /deinit\b/
+TOKEN KW_subscript  /subscript\b/
+TOKEN KW_public     /public\b/
+TOKEN KW_private    /private\b/
+TOKEN KW_internal   /internal\b/
+TOKEN KW_fileprivate /fileprivate\b/
+TOKEN KW_open       /open\b/
+TOKEN KW_final      /final\b/
+TOKEN KW_static     /static\b/
+TOKEN KW_override   /override\b/
+TOKEN KW_mutating   /mutating\b/
+TOKEN KW_async      /async\b/
+TOKEN KW_await      /await\b/
+TOKEN KW_throws     /throws\b/
+TOKEN KW_if         /if\b/
+TOKEN KW_else       /else\b/
+TOKEN KW_guard      /guard\b/
+TOKEN KW_switch     /switch\b/
+TOKEN KW_case       /case\b/
+TOKEN KW_for        /for\b/
+TOKEN KW_in         /in\b/
+TOKEN KW_while      /while\b/
+TOKEN KW_return     /return\b/
+TOKEN KW_where      /where\b/
+TOKEN KW_self       /self\b/
+TOKEN KW_Self       /Self\b/
+
+# Built-in values
+TOKEN BoolLit /\b(?:true|false)\b/
+TOKEN NilLit /\bnil\b/
+
+# Identifiers
+TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
+TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN ARROW   /->/
+TOKEN Operator /[+\-*\/%&|^~!<>=?]+|&&|\|\||\.\.\.|\.\.</
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+TOKEN AT       /@/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / DocComment
+     / DocBlockComment
+     / ImportDecl
+     / ClassDecl
+     / StructDecl
+     / EnumDecl
+     / ProtocolDecl
+     / ExtensionDecl
+     / ActorDecl
+     / FuncDecl
+     / VarDecl
+     / TypeAliasDecl
+     / Other
+
+# Doc block (consecutive /// comments)
+DocBlock -> DocComment ( NL DocComment )* / DocBlockComment
+
+# Import declaration
+ImportDecl -> KW_import path:QualifiedName
+QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
+
+# Class declaration
+ClassDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_class id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
+InheritanceClause -> COLON TypeList
+ClassBody -> LBRACE ClassMember* RBRACE
+ClassMember -> FuncDecl / VarDecl / InitDecl / DeinitDecl / SubscriptDecl / ClassDecl / StructDecl / EnumDecl / TypeAliasDecl / NL / LineComment / BlockComment
+
+# Struct declaration
+StructDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_struct id:TypeIdent TypeParams? InheritanceClause? WhereClause? StructBody
+StructBody -> LBRACE StructMember* RBRACE
+StructMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
+
+# Enum declaration
+EnumDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? EnumBody
+EnumBody -> LBRACE EnumMember* RBRACE
+EnumMember -> EnumCase / FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
+EnumCase -> case_doc:DocBlock? Attribute* KW_case case_id:Ident AssociatedValues? RawValue? ( COMMA case_id:Ident AssociatedValues? RawValue? )*
+AssociatedValues -> LPAREN ParamList? RPAREN
+RawValue -> Operator Expr
+
+# Protocol declaration
+ProtocolDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_protocol id:TypeIdent InheritanceClause? WhereClause? ProtocolBody
+ProtocolBody -> LBRACE ProtocolMember* RBRACE
+ProtocolMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / AssociatedType / NL / LineComment / BlockComment
+AssociatedType -> assoc_doc:DocBlock? Attribute* KW_typealias assoc_id:TypeIdent ( COLON Type )? WhereClause?
+
+# Extension declaration
+ExtensionDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_extension Type InheritanceClause? WhereClause? ExtensionBody
+ExtensionBody -> LBRACE ExtensionMember* RBRACE
+ExtensionMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / ClassDecl / StructDecl / EnumDecl / NL / LineComment / BlockComment
+
+# Actor declaration
+ActorDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_actor id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
+
+# Function declaration
+FuncDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_func id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_throws / KW_async KW_throws? )? ( ARROW Type )? WhereClause? Body?
+
+# Variable declaration
+VarDecl -> doc:DocBlock? NL? Attribute* Modifier* ( KW_let / KW_var ) id:Ident ( COLON Type )? ( Operator Expr )? Accessors?
+Accessors -> LBRACE Accessor+ RBRACE
+Accessor -> Attribute* Modifier* ( Ident / KW_get / KW_set ) Body?
+
+# Init declaration
+InitDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_init ( Operator / LPAREN ParamList? RPAREN ) ( KW_throws )? Body?
+
+# Deinit declaration
+DeinitDecl -> doc:DocBlock? NL? KW_deinit Body
+
+# Subscript declaration
+SubscriptDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_subscript TypeParams? LPAREN ParamList? RPAREN ARROW Type WhereClause? Accessors
+
+# Type alias
+TypeAliasDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
+
+# Modifiers
+Modifier -> KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async
+
+# Parameters
+ParamList -> Param ( COMMA Param )*
+Param -> Attribute* ( Ident / Operator )? param_id:Ident COLON Ident? Type ( Operator Expr )?
+WhereClause -> KW_where WhereConstraint ( COMMA WhereConstraint )*
+WhereConstraint -> Type ( COLON / Operator ) Type
+
+# Types
+TypeParams -> Operator TypeParam ( COMMA TypeParam )* Operator
+TypeParam -> TypeIdent ( COLON Type )?
+TypeList -> Type ( COMMA Type )*
+Type -> TypeAtom ( Operator TypeAtom )* QMARK?
+TypeAtom -> TypeIdent TypeArgs? / LBRACKET Type ( COLON Type )? RBRACKET / LPAREN TypeList? RPAREN ( ARROW Type )?
+TypeArgs -> Operator Type ( COMMA Type )* Operator
+QMARK -> /\?/
+
+# Body (simplified - balance braces)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / ARROW / Operator / Attribute
+
+Atom -> ExprAtom / NL / DocComment / DocBlockComment / LineComment / BlockComment / KW_import / KW_let / KW_var / KW_func / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_actor / KW_init / KW_deinit / KW_subscript / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async / KW_await / KW_throws / KW_if / KW_else / KW_guard / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_where / KW_self / KW_Self / SEMI / AT
+
+Other -> Atom
+
+KW_get -> /\bget\b/
+KW_set -> /\bset\b/
+
+=== attrs
+on ClassDecl:     def id kind=Class doc=doc
+on StructDecl:    def id kind=Struct doc=doc
+on EnumDecl:      def id kind=Enum doc=doc
+on ProtocolDecl:  def id kind=Protocol doc=doc
+on ActorDecl:     def id kind=Actor doc=doc
+on FuncDecl:      def id kind=Function doc=doc
+on VarDecl:       def id kind=Variable doc=doc
+on TypeAliasDecl: def id kind=TypeAlias doc=doc
+on EnumCase:      def case_id kind=EnumCase doc=case_doc
+on AssociatedType: def assoc_id kind=AssociatedType doc=assoc_doc
+on Param:         def param_id kind=Param
+
+on ImportDecl:    import module=path
+
+=== semantics
+# Import dependency
+on ImportDecl {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Class declaration
+on ClassDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  bind ns "value" name "current_type" to sym_id
+}
+
+# Struct declaration
+on StructDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  bind ns "value" name "current_type" to sym_id
+}
+
+# Enum declaration
+on EnumDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  bind ns "value" name "current_enum" to sym_id
+}
+
+# Protocol declaration
+on ProtocolDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+  bind ns "value" name "current_protocol" to sym_id
+}
+
+# Actor declaration
+on ActorDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Actor", "doc", $doc)
+  bind ns "value" name "current_type" to sym_id
+}
+
+# Function declaration
+on FuncDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Variable declaration
+on VarDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+# Type alias
+on TypeAliasDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc)
+}
+
+# Enum case
+on EnumCase when $scope("value", "current_enum") {
+  let parent = $scope("value", "current_enum")
+  let sym_id = concat(parent, ".", $case_id)
+  edge declares from parent to sym_id attrs obj("name", $case_id, "kind", "EnumCase", "doc", $case_doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: dot
+resolve:
+  - manifest: Package.swift @ dependencies
+  - marker: Package.swift
+  - ext: .swift
+  - fallback: spm:

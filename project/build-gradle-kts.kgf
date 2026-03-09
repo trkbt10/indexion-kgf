@@ -1,0 +1,109 @@
+kgf 0.6
+language: build-gradle-kts
+sources: build.gradle.kts
+
+# KGF spec for Kotlin Gradle build.gradle.kts files
+# Extracts project dependencies
+
+=== lex
+SKIP        /[ \t]+/
+TOKEN NL            /\r?\n/
+TOKEN Comment       /\/\/[^\r\n]*/
+TOKEN BlockComment  /\/\*[\s\S]*?\*\//
+
+# Keywords
+TOKEN KW_plugins    /plugins\b/
+TOKEN KW_group      /group\b/
+TOKEN KW_version    /version\b/
+TOKEN KW_repositories /repositories\b/
+TOKEN KW_dependencies /dependencies\b/
+TOKEN KW_implementation /implementation\b/
+TOKEN KW_testImplementation /testImplementation\b/
+TOKEN KW_api        /api\b/
+TOKEN KW_compileOnly /compileOnly\b/
+TOKEN KW_runtimeOnly /runtimeOnly\b/
+TOKEN KW_kotlin     /kotlin\b/
+TOKEN KW_tasks      /tasks\b/
+TOKEN KW_id         /id\b/
+
+# Literals
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /[0-9]+(\.[0-9]+)*/
+
+# Punctuation
+TOKEN LPAREN        /\(/
+TOKEN RPAREN        /\)/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COMMA         /,/
+TOKEN DOT           /\./
+TOKEN EQUALS        /=/
+
+# Identifiers
+TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_]*/
+
+=== grammar
+GradleFile      -> Statement*
+Statement       -> PluginsBlock / GroupStmt / VersionStmt / ReposBlock
+                 / DepsBlock / KotlinBlock / TasksBlock
+                 / OtherBlock / OtherStmt / NL / Comment / BlockComment
+
+PluginsBlock    -> KW_plugins LBRACE NL? PluginStmt* RBRACE
+PluginStmt      -> PluginDecl NL / NL / Comment
+PluginDecl      -> KW_kotlin LPAREN StringLit RPAREN VersionSpec?
+                 / KW_id LPAREN StringLit RPAREN VersionSpec?
+                 / Ident LPAREN StringLit RPAREN VersionSpec?
+VersionSpec     -> KW_version StringLit
+
+GroupStmt       -> KW_group EQUALS value:StringLit NL
+VersionStmt     -> KW_version EQUALS value:StringLit NL
+
+ReposBlock      -> KW_repositories LBRACE BlockContent* RBRACE
+
+DepsBlock       -> KW_dependencies LBRACE NL? DepStmt* RBRACE
+DepStmt         -> DepDecl NL / NL / Comment / BlockComment
+DepDecl         -> KW_implementation LPAREN dep:StringLit RPAREN
+                 / KW_testImplementation LPAREN dep:StringLit RPAREN
+                 / KW_api LPAREN dep:StringLit RPAREN
+                 / KW_compileOnly LPAREN dep:StringLit RPAREN
+                 / KW_runtimeOnly LPAREN dep:StringLit RPAREN
+                 / Ident LPAREN StringLit RPAREN
+
+KotlinBlock     -> KW_kotlin LBRACE BlockContent* RBRACE
+TasksBlock      -> KW_tasks DOT Ident GenericBlock
+OtherBlock      -> Ident LBRACE BlockContent* RBRACE
+OtherStmt       -> Ident OtherExpr* NL
+
+BlockContent    -> NL / Comment / BlockComment / NestedBlock / OtherContent
+NestedBlock     -> Ident LBRACE BlockContent* RBRACE
+OtherContent    -> Ident / StringLit / NumberLit / LPAREN / RPAREN / DOT / EQUALS / COMMA
+GenericBlock    -> LBRACE BlockContent* RBRACE / LPAREN Expr* RPAREN
+OtherExpr       -> DOT Ident / LPAREN Expr* RPAREN / LBRACE BlockContent* RBRACE / EQUALS Expr
+Expr            -> StringLit / NumberLit / Ident / LPAREN Expr* RPAREN
+
+=== attrs
+on GroupStmt:   note fieldKey payload="group"
+on VersionStmt: note fieldKey payload="version"
+
+=== semantics
+on GroupStmt {
+  let g = stripQuotes($value)
+  edge projectGroup from $file to g attrs obj("raw", $value)
+}
+on VersionStmt {
+  let ver = stripQuotes($value)
+  edge projectVersion from $file to ver attrs obj("raw", $value)
+}
+on DepDecl {
+  let d = stripQuotes($dep)
+  edge dependsOn from $file to concat("maven:", d) attrs obj("dep_kind", "runtime")
+}
+
+=== resolver
+relative_prefixes:
+exts: .gradle.kts
+indexes:
+bare_prefix: maven:
+module_path_style: colon

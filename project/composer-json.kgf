@@ -1,0 +1,107 @@
+kgf 0.6
+language: composer-json
+sources: composer.json
+
+# KGF spec for PHP composer.json manifest files
+# Extracts project metadata and dependencies
+
+=== lex
+SKIP        /[ \t\r\n]+/
+
+# JSON structure
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COLON         /:/
+TOKEN COMMA         /,/
+
+# Key names
+TOKEN KW_name         /"name"/
+TOKEN KW_version      /"version"/
+TOKEN KW_description  /"description"/
+TOKEN KW_license      /"license"/
+TOKEN KW_type         /"type"/
+TOKEN KW_require      /"require"/
+TOKEN KW_require_dev  /"require-dev"/
+TOKEN KW_authors      /"authors"/
+TOKEN KW_autoload     /"autoload"/
+
+# Values
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+TOKEN KW_true       /true/
+TOKEN KW_false      /false/
+TOKEN KW_null       /null/
+
+=== grammar
+JsonFile        -> LBRACE Members? RBRACE
+Members         -> Member ( COMMA Member )*
+Member          -> NameMember / VersionMember / DescMember / LicenseMember
+                 / TypeMember / RequireMember / RequireDevMember
+                 / OtherMember
+
+NameMember      -> KW_name COLON value:StringLit
+VersionMember   -> KW_version COLON value:StringLit
+DescMember      -> KW_description COLON value:StringLit
+LicenseMember   -> KW_license COLON value:StringLit
+TypeMember      -> KW_type COLON value:StringLit
+
+RequireMember   -> KW_require COLON LBRACE DepList? RBRACE
+RequireDevMember -> KW_require_dev COLON LBRACE DevDepList? RBRACE
+DepList         -> DepEntry ( COMMA DepEntry )*
+DevDepList      -> DevDepEntry ( COMMA DevDepEntry )*
+DepEntry        -> name:StringLit COLON version:StringLit
+DevDepEntry     -> name:StringLit COLON version:StringLit
+
+OtherMember     -> OtherKey COLON Value
+OtherKey        -> StringLit / KW_authors / KW_autoload
+Value           -> StringLit / NumberLit / KW_true / KW_false / KW_null
+                 / NestedObject / Array
+NestedObject    -> LBRACE NestedMembers? RBRACE
+NestedMembers   -> NestedMember ( COMMA NestedMember )*
+NestedMember    -> NestedKey COLON Value
+NestedKey       -> StringLit / KW_name / KW_version / KW_description / KW_license
+                 / KW_type / KW_require / KW_require_dev / KW_authors / KW_autoload
+Array           -> LBRACKET ArrayList? RBRACKET
+ArrayList       -> Value ( COMMA Value )*
+
+=== attrs
+on NameMember:    note fieldKey payload="name"
+on VersionMember: note fieldKey payload="version"
+on DescMember:    note fieldKey payload="description"
+
+=== semantics
+on NameMember {
+  let name = stripQuotes($value)
+  edge projectName from $file to name attrs obj("raw", $value)
+}
+on VersionMember {
+  let ver = stripQuotes($value)
+  edge projectVersion from $file to ver attrs obj("raw", $value)
+}
+on DescMember {
+  let desc = stripQuotes($value)
+  edge projectDescription from $file to desc
+}
+on LicenseMember {
+  let lic = stripQuotes($value)
+  edge projectLicense from $file to lic
+}
+on DepEntry {
+  let dep = stripQuotes($name)
+  let ver = stripQuotes($version)
+  edge dependsOn from $file to concat("packagist:", dep) attrs obj("version", ver, "dep_kind", "runtime")
+}
+on DevDepEntry {
+  let dep = stripQuotes($name)
+  let ver = stripQuotes($version)
+  edge dependsOn from $file to concat("packagist:", dep) attrs obj("version", ver, "dep_kind", "dev")
+}
+
+=== resolver
+relative_prefixes:
+exts: .json
+indexes:
+bare_prefix: packagist:
+module_path_style: slash

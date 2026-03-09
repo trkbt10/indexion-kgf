@@ -1,0 +1,208 @@
+kgf 0.6
+language: zig
+sources: .zig
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments - Zig uses /// for documentation
+TOKEN DocComment /\/\/\/[^\r\n]*/
+TOKEN LineComment /\/\/[^\r\n]*/
+
+# String/char literals
+TOKEN String /"([^"\\]|\\.)*"|\\\\[^\r\n]*/
+TOKEN Char /'([^'\\]|\\.)*'/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
+
+# Builtins
+TOKEN Builtin /@[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Keywords
+TOKEN KW_const    /const\b/
+TOKEN KW_var      /var\b/
+TOKEN KW_fn       /fn\b/
+TOKEN KW_pub      /pub\b/
+TOKEN KW_extern   /extern\b/
+TOKEN KW_export   /export\b/
+TOKEN KW_inline   /inline\b/
+TOKEN KW_comptime /comptime\b/
+TOKEN KW_test     /test\b/
+TOKEN KW_struct   /struct\b/
+TOKEN KW_enum     /enum\b/
+TOKEN KW_union    /union\b/
+TOKEN KW_error    /error\b/
+TOKEN KW_if       /if\b/
+TOKEN KW_else     /else\b/
+TOKEN KW_switch   /switch\b/
+TOKEN KW_while    /while\b/
+TOKEN KW_for      /for\b/
+TOKEN KW_return   /return\b/
+TOKEN KW_defer    /defer\b/
+TOKEN KW_try      /try\b/
+TOKEN KW_catch    /catch\b/
+TOKEN KW_orelse   /orelse\b/
+
+# Built-in types
+TOKEN KeywordType /\b(?:void|bool|noreturn|type|anyerror|anytype|anyframe|anyopaque|null|undefined|true|false)\b/
+TOKEN PrimitiveType /\b(?:i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f16|f32|f64|f80|f128|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong|c_longdouble|comptime_int|comptime_float)\b/
+
+# Identifiers
+TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
+TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN ARROW   /=>/
+TOKEN Operator /[+\-*\/%&|^~!<>=]+|\+\+|--|\.\.\.|\.\.|\.?\*|\+%|-%-|-%|\*%|<<%|>>%/
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+TOKEN EQ       /=/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / DocComment
+     / ConstDecl
+     / VarDecl
+     / FnDecl
+     / StructDecl
+     / EnumDecl
+     / UnionDecl
+     / TestDecl
+     / Other
+
+# Doc block
+DocBlock -> DocComment ( NL DocComment )*
+
+# Const declaration
+ConstDecl -> doc:DocBlock? NL? KW_pub? KW_comptime? KW_const id:Ident ( COLON Type )? EQ Expr SEMI
+
+# Var declaration
+VarDecl -> doc:DocBlock? NL? KW_pub? KW_var id:Ident ( COLON Type )? EQ Expr SEMI
+
+# Function declaration
+FnDecl -> doc:DocBlock? NL? KW_pub? KW_export? KW_extern? KW_inline? KW_fn id:Ident LPAREN ParamList? RPAREN ( Type )? Body?
+ParamList -> Param ( COMMA Param )*
+Param -> KW_comptime? param_id:Ident COLON ( KW_anytype / Type )
+
+# Struct declaration
+StructDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_extern? KW_packed? KW_struct StructBody
+StructBody -> LBRACE StructMember* RBRACE
+StructMember -> FieldDecl / FnDecl / NL / LineComment
+FieldDecl -> field_doc:DocBlock? field_id:Ident COLON Type ( EQ Expr )? COMMA?
+KW_packed -> /packed\b/
+
+# Enum declaration
+EnumDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_enum EnumBody
+EnumBody -> LBRACE EnumMember* RBRACE
+EnumMember -> value_doc:DocBlock? value_id:Ident ( EQ Expr )? COMMA? / NL / LineComment
+
+# Union declaration
+UnionDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_extern? KW_union UnionBody
+UnionBody -> LBRACE UnionMember* RBRACE
+UnionMember -> field_doc:DocBlock? field_id:Ident COLON Type COMMA? / NL / LineComment
+
+# Test declaration
+TestDecl -> KW_test String Body
+
+# Types
+Type -> TypeAtom ( Operator TypeAtom )*
+TypeAtom -> PrimitiveType / KeywordType / TypeIdent / Ident / LBRACKET Expr? RBRACKET Type / Operator Type
+
+# Body (simplified - balance braces)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / TypeIdent / Number / String / Char / PrimitiveType / KeywordType / Builtin / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / EQ / ARROW / Operator
+
+Atom -> ExprAtom / NL / DocComment / LineComment / KW_const / KW_var / KW_fn / KW_pub / KW_extern / KW_export / KW_inline / KW_comptime / KW_test / KW_struct / KW_enum / KW_union / KW_error / KW_if / KW_else / KW_switch / KW_while / KW_for / KW_return / KW_defer / KW_try / KW_catch / KW_orelse / SEMI
+
+Other -> Atom
+
+=== attrs
+on FnDecl:      def id kind=Function doc=doc
+on ConstDecl:   def id kind=Const doc=doc
+on VarDecl:     def id kind=Variable doc=doc
+on StructDecl:  def id kind=Struct doc=doc
+on EnumDecl:    def id kind=Enum doc=doc
+on UnionDecl:   def id kind=Union doc=doc
+on FieldDecl:   def field_id kind=Field doc=field_doc
+on EnumMember:  def value_id kind=EnumValue doc=value_doc
+on Param:       def param_id kind=Param
+
+=== semantics
+# Function declaration
+on FnDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Const declaration
+on ConstDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+}
+
+# Var declaration
+on VarDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+# Struct declaration
+on StructDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  bind ns "value" name "current_struct" to sym_id
+}
+
+# Enum declaration
+on EnumDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  bind ns "value" name "current_enum" to sym_id
+}
+
+# Union declaration
+on UnionDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Union", "doc", $doc)
+}
+
+# Struct field
+on FieldDecl when $scope("value", "current_struct") {
+  let parent = $scope("value", "current_struct")
+  let sym_id = concat(parent, ".", $field_id)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
+}
+
+# Enum value
+on EnumMember when $scope("value", "current_enum") {
+  let parent = $scope("value", "current_enum")
+  let sym_id = concat(parent, ".", $value_id)
+  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: slash
+resolve:
+  - manifest: build.zig.zon @ dependencies
+  - marker: build.zig.zon, build.zig
+  - ext: .zig
+  - fallback: zig:

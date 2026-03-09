@@ -1,0 +1,278 @@
+kgf 0.6
+language: moonbit
+sources: .mbt
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Doc section markers (must come before DocLine)
+# Recognizes: Module:, Overview:, Example:, Description:, Parameters:, Returns:, Throws:
+TOKEN DocSection /\/\/\/\s*(Module|Overview|Example|Description|Parameters|Returns|Throws|Deprecated|See|Since):/ strip=4
+
+# MoonBit doc comments: ///| marks start of doc block (legacy format)
+# skip_value: this is just a marker, content comes from subsequent DocLine tokens
+TOKEN DocComment /\/\/\/\|[^\r\n]*/ skip_value
+
+# Doc content lines: /// followed by content (must come before LineComment)
+# strip=3: remove "///" prefix, leaving just the content
+TOKEN DocLine /\/\/\/[^\r\n]*/ strip=3
+
+# Regular comments (// but not ///)
+TOKEN LineComment /\/\/[^\r\n]*/
+
+# Block comment
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# Strings
+TOKEN String /"([^"\\]|\\.)*"/
+TOKEN MultiString /#\|[\s\S]*?\|#/
+TOKEN Char /'([^'\\]|\\.)'/
+
+# Keywords (ordered before identifiers to match first)
+TOKEN KW_fn       /fn\b/
+TOKEN KW_pub      /pub\b/
+TOKEN KW_priv     /priv\b/
+TOKEN KW_struct   /struct\b/
+TOKEN KW_enum     /enum\b/
+TOKEN KW_type     /type\b/
+TOKEN KW_trait    /trait\b/
+TOKEN KW_impl     /impl\b/
+TOKEN KW_let      /let\b/
+TOKEN KW_mut      /mut\b/
+TOKEN KW_const    /const\b/
+TOKEN KW_test     /test\b/
+TOKEN KW_derive   /derive\b/
+TOKEN KW_for      /for\b/
+TOKEN KW_with     /with\b/
+
+# Identifiers
+TOKEN TypeIdent /[A-Z][A-Za-z0-9_]*/
+TOKEN PackageRef /@[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Ident /[a-z_][A-Za-z0-9_]*/
+TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
+
+# Operators and punctuation (longer tokens first)
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN DCOLON   /::/
+TOKEN COLON    /:/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN FATARROW /=>/
+TOKEN ARROW    /->/
+TOKEN EQ       /=/
+TOKEN TILDE    /~/
+TOKEN BANG     /!/
+TOKEN QMARK    /\?/
+TOKEN PIPE     /\|/
+TOKEN AMP      /&/
+TOKEN AT       /@/
+
+=== grammar
+# Module with optional leading module doc
+Module -> ModuleDoc? Item*
+
+# Module-level documentation (first doc block at file level)
+# Supports both new format (/// Module:) and legacy format (///|)
+ModuleDoc -> module_doc:DocBlockWithSections / module_doc:DocBlock
+
+# Visibility modifier: pub, pub(all), pub(readonly), priv
+Visibility -> KW_pub LPAREN Ident RPAREN / KW_pub / KW_priv
+
+# Try declarations FIRST (they consume DocBlock as optional prefix)
+# StandaloneDoc matches DocBlock not followed by a declaration
+Item -> FnDecl
+     / StructDecl
+     / EnumDecl
+     / TypeDecl
+     / TraitDecl
+     / ImplDecl
+     / LetDecl
+     / TestDecl
+     / NL
+     / LineComment
+     / StandaloneDoc
+     / Other
+
+# Standalone documentation block (not attached to a declaration)
+StandaloneDoc -> doc:DocBlockWithSections
+
+# Doc block with section markers (new format)
+# Supports: /// Module: ..., /// Overview: ..., etc.
+DocBlockWithSections -> DocSection ( NL DocLine )* ( NL DocSection ( NL DocLine )* )*
+                      / DocBlock
+
+# Doc comment block: ///| marker followed by /// content lines (legacy format)
+# NL consumed separately so _last captures the last DocLine content
+DocBlock -> DocComment ( NL DocLine )*
+
+# Function declaration (DocBlock optional, NL consumed separately)
+FnDecl -> fn_doc:DocBlock? NL? Visibility? KW_fn TypeIdent? DCOLON? fn_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? Body?
+
+# Struct declaration
+StructDecl -> struct_doc:DocBlock? NL? Visibility? KW_struct struct_id:TypeIdent GenericParams? StructBody? DeriveClause?
+
+# Enum declaration
+EnumDecl -> enum_doc:DocBlock? NL? Visibility? KW_enum enum_id:TypeIdent GenericParams? EnumBody? DeriveClause?
+
+# Type alias
+TypeDecl -> type_doc:DocBlock? NL? Visibility? KW_type type_id:TypeIdent GenericParams? EQ Type
+
+# Trait declaration
+TraitDecl -> trait_doc:DocBlock? NL? Visibility? KW_trait trait_id:TypeIdent GenericParams? TraitBody?
+
+# Impl block
+ImplDecl -> impl_doc:DocBlock? NL? Visibility? KW_impl TypeIdent? KW_for? TypeIdent? GenericParams? ImplBody?
+
+# Let binding (visibility required to avoid matching local let bindings)
+LetDecl -> let_doc:DocBlock? NL? Visibility KW_let let_id:Ident TypeAnnotation? EQ Expr
+
+# Test declaration
+TestDecl -> KW_test String? Body?
+
+# Bodies
+StructBody -> LBRACE StructField* RBRACE
+StructField -> field_doc:DocBlock? Visibility? KW_mut? field_id:Ident COLON Type COMMA? / NL / LineComment
+
+EnumBody -> LBRACE EnumVariant* RBRACE DeriveClause?
+EnumVariant -> variant_doc:DocBlock? variant_id:TypeIdent VariantPayload? COMMA? / NL / LineComment
+VariantPayload -> LPAREN TypeList RPAREN / LBRACE StructField* RBRACE
+
+TraitBody -> LBRACE TraitMember* RBRACE
+TraitMember -> method_doc:DocBlock? method_id:Ident LPAREN ParamList? RPAREN ReturnType? / NL / LineComment
+
+ImplBody -> LBRACE ImplMember* RBRACE
+ImplMember -> FnDecl / NL / LineComment
+
+DeriveClause -> KW_derive LPAREN TypeList RPAREN
+
+# Parameters and types (NL allowed around params, QMARK for labeled params, default values, trailing comma)
+ParamList -> NL? Param ( COMMA NL? Param )* COMMA? NL?
+# Param: labeled param (name~ : Type) or regular param (name : Type) or just name~
+Param -> param_id:Ident TILDE TypeAnnotation? DefaultValue? / KW_mut? param_id:Ident QMARK? TypeAnnotation? DefaultValue?
+DefaultValue -> EQ Expr
+TypeAnnotation -> COLON Type
+ReturnType -> ARROW Type BANG?
+
+Type -> TypeAtom ( PIPE TypeAtom )*
+TypeAtom -> TypeIdent GenericArgs? QMARK? / Ident QMARK? / LPAREN TypeList? RPAREN QMARK? / LBRACKET Type RBRACKET QMARK?
+GenericParams -> LBRACKET TypeParam ( COMMA TypeParam )* RBRACKET
+GenericArgs -> LBRACKET Type ( COMMA Type )* RBRACKET
+TypeParam -> TypeIdent ( COLON TypeIdent )?
+TypeList -> Type ( COMMA Type )*
+
+# Body and expressions (simplified)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
+Expr -> ExprAtom+
+# ExprAtom includes keywords for use in expressions and function bodies
+ExprAtom -> Ident / TypeIdent / Number / String / MultiString / Char / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / EQ / ARROW / FATARROW / TILDE / BANG / QMARK / PIPE / AMP / AT / PackageRef / KW_fn / KW_pub / KW_priv / KW_struct / KW_enum / KW_type / KW_trait / KW_impl / KW_let / KW_mut / KW_const / KW_test / KW_derive / KW_for / KW_with
+
+Atom -> ExprAtom / NL / LineComment / DocComment
+
+Other -> Atom
+
+=== attrs
+on ModuleDoc:   module_doc doc=module_doc
+on FnDecl:      def fn_id kind=Function doc=fn_doc
+on StructDecl:  def struct_id kind=Struct doc=struct_doc
+on EnumDecl:    def enum_id kind=Enum doc=enum_doc
+on TypeDecl:    def type_id kind=Type doc=type_doc
+on TraitDecl:   def trait_id kind=Trait doc=trait_doc
+on ImplDecl:    def impl_id kind=Impl doc=impl_doc
+on LetDecl:     def let_id kind=Variable doc=let_doc
+on StructField: def field_id kind=Field doc=field_doc
+on EnumVariant: def variant_id kind=Variant doc=variant_doc
+on TraitMember: def method_id kind=Method doc=method_doc
+on Param:       def param_id kind=Param
+
+=== semantics
+# Module-level documentation
+# Note: doc values are already cleaned by lexer strip/skip_value
+on ModuleDoc {
+  note module_doc payload obj("doc", $module_doc_text)
+}
+
+on FnDecl {
+  let sym_id = concat($file, "::", $fn_id)
+  edge declares from $file to sym_id attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text)
+}
+
+on StructDecl {
+  let sym_id = concat($file, "::", $struct_id)
+  edge declares from $file to sym_id attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text)
+  bind ns "value" name "current_struct" to sym_id
+}
+
+on EnumDecl {
+  let sym_id = concat($file, "::", $enum_id)
+  edge declares from $file to sym_id attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text)
+  bind ns "value" name "current_enum" to sym_id
+}
+
+on TypeDecl {
+  let sym_id = concat($file, "::", $type_id)
+  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text)
+}
+
+on TraitDecl {
+  let sym_id = concat($file, "::", $trait_id)
+  edge declares from $file to sym_id attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text)
+  bind ns "value" name "current_trait" to sym_id
+}
+
+on LetDecl {
+  let sym_id = concat($file, "::", $let_id)
+  edge declares from $file to sym_id attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text)
+}
+
+on StructField when $scope("value", "current_struct") {
+  let parent = $scope("value", "current_struct")
+  let sym_id = concat(parent, ".", $field_id)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc_text)
+}
+
+on EnumVariant when $scope("value", "current_enum") {
+  let parent = $scope("value", "current_enum")
+  let sym_id = concat(parent, ".", $variant_id)
+  edge declares from parent to sym_id attrs obj("name", $variant_id, "kind", "Variant", "doc", $variant_doc_text)
+}
+
+on TraitMember when $scope("value", "current_trait") {
+  let parent = $scope("value", "current_trait")
+  let sym_id = concat(parent, ".", $method_id)
+  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $method_doc_text)
+}
+
+on StandaloneDoc {
+  let doc_id = concat($file, "::doc::", $doc_text)
+  edge declares from $file to doc_id attrs obj("kind", "Documentation", "doc", $doc_text)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: slash
+project_config: moon.mod.json
+install_cmd: moon add {name}
+build_cmd: moon build
+resolve:
+  - manifest: moon.pkg.json @ import
+  - marker: moon.pkg.json
+  - ext: .mbt
+  - fallback: moon:
+
+=== ignore
+# MoonBit build output
+_build/
+target/
+# Package manager
+.mooncakes/
+# Test and benchmark files (exclude from documentation)
+*_test.mbt
+*_wbtest.mbt
+*_mbench.mbt

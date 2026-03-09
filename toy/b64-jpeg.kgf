@@ -1,0 +1,108 @@
+kgf 0.6
+language: b64-jpeg
+sources: .b64, .txt
+
+=== lex
+SKIP /[^A-Za-z0-9+\/=]+/
+
+# Common base64 markers for JPEG streams and metadata signatures.
+TOKEN JPEG_SOI /\/9j\//
+TOKEN JPEG_EOI /\/9k=/
+# Prefer 4-char base64 quads to avoid misaligning subsequent matching.
+TOKEN JFIF_B64 /SkZJ/
+TOKEN EXIF_B64 /RXhp/
+TOKEN ICC_PROFILE_B64 /SUND/
+
+TOKEN B64_QUAD /[A-Za-z0-9+\/]{4}|[A-Za-z0-9+\/]{3}=|[A-Za-z0-9+\/]{2}==/
+
+=== grammar
+Doc -> Item*
+
+Item -> JpegSOI
+     / JpegEOI
+     / MetaJFIF
+     / MetaExif
+     / MetaICC
+     / Other
+
+JpegSOI -> soi:JPEG_SOI
+JpegEOI -> eoi:JPEG_EOI
+MetaJFIF -> jfif:JFIF_B64
+MetaExif -> exif:EXIF_B64
+MetaICC -> icc:ICC_PROFILE_B64
+
+Other -> B64_QUAD
+
+=== attrs
+# none
+
+=== semantics
+on JpegSOI {
+  module $file file $file
+}
+
+on JpegSOI when $scope("value", "__b64jpeg_prev") {
+  edge next from $scope("value", "__b64jpeg_prev") to concat($file, "::b64jpeg:soi@", $soi_pos) attrs obj("pos", $soi_pos, "len", $soi_len, "confidence", 0.6)
+}
+on JpegSOI {
+  module concat($file, "::b64jpeg:soi@", $soi_pos) file null
+  edge maybeType from concat($file, "::b64jpeg:soi@", $soi_pos) to "jpeg" attrs obj("pos", $soi_pos, "len", $soi_len, "confidence", 0.9)
+  edge contains from $file to concat($file, "::b64jpeg:soi@", $soi_pos) attrs obj("confidence", 0.7)
+  bind ns "value" name "__b64jpeg_prev" to concat($file, "::b64jpeg:soi@", $soi_pos)
+  bind ns "value" name "__b64jpeg_container" to concat($file, "::b64jpeg:soi@", $soi_pos)
+}
+
+on MetaJFIF when $scope("value", "__b64jpeg_prev") {
+  edge next from $scope("value", "__b64jpeg_prev") to concat($file, "::b64jpeg:JFIF@", $jfif_pos) attrs obj("pos", $jfif_pos, "len", $jfif_len, "confidence", 0.4)
+}
+on MetaJFIF when $scope("value", "__b64jpeg_container") {
+  edge contains from $scope("value", "__b64jpeg_container") to concat($file, "::b64jpeg:JFIF@", $jfif_pos) attrs obj("confidence", 0.5)
+}
+on MetaJFIF {
+  module concat($file, "::b64jpeg:JFIF@", $jfif_pos) file null
+  edge maybeType from concat($file, "::b64jpeg:JFIF@", $jfif_pos) to "jpeg:meta:JFIF" attrs obj("pos", $jfif_pos, "len", $jfif_len, "confidence", 0.7)
+  bind ns "value" name "__b64jpeg_prev" to concat($file, "::b64jpeg:JFIF@", $jfif_pos)
+}
+
+on MetaExif when $scope("value", "__b64jpeg_prev") {
+  edge next from $scope("value", "__b64jpeg_prev") to concat($file, "::b64jpeg:Exif@", $exif_pos) attrs obj("pos", $exif_pos, "len", $exif_len, "confidence", 0.4)
+}
+on MetaExif when $scope("value", "__b64jpeg_container") {
+  edge contains from $scope("value", "__b64jpeg_container") to concat($file, "::b64jpeg:Exif@", $exif_pos) attrs obj("confidence", 0.5)
+}
+on MetaExif {
+  module concat($file, "::b64jpeg:Exif@", $exif_pos) file null
+  edge maybeType from concat($file, "::b64jpeg:Exif@", $exif_pos) to "jpeg:meta:Exif" attrs obj("pos", $exif_pos, "len", $exif_len, "confidence", 0.6)
+  bind ns "value" name "__b64jpeg_prev" to concat($file, "::b64jpeg:Exif@", $exif_pos)
+}
+
+on MetaICC when $scope("value", "__b64jpeg_prev") {
+  edge next from $scope("value", "__b64jpeg_prev") to concat($file, "::b64jpeg:ICC_PROFILE@", $icc_pos) attrs obj("pos", $icc_pos, "len", $icc_len, "confidence", 0.4)
+}
+on MetaICC when $scope("value", "__b64jpeg_container") {
+  edge contains from $scope("value", "__b64jpeg_container") to concat($file, "::b64jpeg:ICC_PROFILE@", $icc_pos) attrs obj("confidence", 0.5)
+}
+on MetaICC {
+  module concat($file, "::b64jpeg:ICC_PROFILE@", $icc_pos) file null
+  edge maybeType from concat($file, "::b64jpeg:ICC_PROFILE@", $icc_pos) to "jpeg:meta:ICC_PROFILE" attrs obj("pos", $icc_pos, "len", $icc_len, "confidence", 0.5)
+  bind ns "value" name "__b64jpeg_prev" to concat($file, "::b64jpeg:ICC_PROFILE@", $icc_pos)
+}
+
+on JpegEOI when $scope("value", "__b64jpeg_prev") {
+  edge next from $scope("value", "__b64jpeg_prev") to concat($file, "::b64jpeg:eoi@", $eoi_pos) attrs obj("pos", $eoi_pos, "len", $eoi_len, "confidence", 0.4)
+}
+on JpegEOI when $scope("value", "__b64jpeg_container") {
+  edge contains from $scope("value", "__b64jpeg_container") to concat($file, "::b64jpeg:eoi@", $eoi_pos) attrs obj("confidence", 0.5)
+}
+on JpegEOI {
+  module concat($file, "::b64jpeg:eoi@", $eoi_pos) file null
+  edge maybeType from concat($file, "::b64jpeg:eoi@", $eoi_pos) to "jpeg:eoi" attrs obj("pos", $eoi_pos, "len", $eoi_len, "confidence", 0.7)
+  bind ns "value" name "__b64jpeg_prev" to concat($file, "::b64jpeg:eoi@", $eoi_pos)
+}
+
+=== resolver
+relative_prefixes:
+exts: .b64, .txt
+indexes:
+bare_prefix:
+module_path_style: slash

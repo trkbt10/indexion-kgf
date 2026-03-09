@@ -1,0 +1,102 @@
+kgf 0.6
+language: csproj
+sources: .csproj
+
+# KGF spec for C# .csproj files (MSBuild XML format)
+# Extracts project metadata and NuGet package references
+
+=== lex
+SKIP        /[ \t\r\n]+/
+
+# XML structure
+TOKEN XMLDecl       /<\?xml[^?]*\?>/
+TOKEN Comment       /<!--[\s\S]*?-->/
+
+# Item elements (must come before OpenProject due to prefix match)
+TOKEN PackageRef         /<PackageReference\s+Include="([^"]+)"\s+Version="([^"]+)"\s*\/>/
+TOKEN ProjectRef         /<ProjectReference\s+Include="([^"]+)"\s*\/>/
+
+# Property elements
+TOKEN OpenPropertyGroup  /<PropertyGroup[^>]*>/
+TOKEN ClosePropertyGroup /<\/PropertyGroup>/
+TOKEN OpenVersion        /<Version>/
+TOKEN CloseVersion       /<\/Version>/
+TOKEN OpenAssemblyName   /<AssemblyName>/
+TOKEN CloseAssemblyName  /<\/AssemblyName>/
+TOKEN OpenDescription    /<Description>/
+TOKEN CloseDescription   /<\/Description>/
+TOKEN OpenAuthors        /<Authors>/
+TOKEN CloseAuthors       /<\/Authors>/
+TOKEN OpenPackageLicense /<PackageLicenseExpression>/
+TOKEN ClosePackageLicense /<\/PackageLicenseExpression>/
+TOKEN TargetFramework    /<TargetFramework>([^<]+)<\/TargetFramework>/
+
+# Item group
+TOKEN OpenItemGroup      /<ItemGroup[^>]*>/
+TOKEN CloseItemGroup     /<\/ItemGroup>/
+
+# Project
+TOKEN OpenProject   /<Project[^>]*>/
+TOKEN CloseProject  /<\/Project>/
+
+# Generic elements (fallback)
+TOKEN SelfCloseElem      /<[A-Za-z][A-Za-z0-9_]*[^>]*\/>/
+TOKEN OpenElem           /<[A-Za-z][A-Za-z0-9_]*[^>]*>/
+TOKEN CloseElem          /<\/[A-Za-z][A-Za-z0-9_]*>/
+TOKEN Text               /[^<]+/
+
+=== grammar
+CsprojFile      -> XMLDecl? OpenProject Content* CloseProject
+Content         -> PropertyGroup / ItemGroup / Comment / OtherElem
+
+PropertyGroup   -> OpenPropertyGroup PropContent* ClosePropertyGroup
+PropContent     -> TargetFrameworkProp / VersionProp / AssemblyProp
+                 / DescProp / AuthorsProp / LicenseProp / OtherProp
+TargetFrameworkProp -> TargetFramework
+VersionProp     -> OpenVersion value:Text CloseVersion
+AssemblyProp    -> OpenAssemblyName value:Text CloseAssemblyName
+DescProp        -> OpenDescription value:Text CloseDescription
+AuthorsProp     -> OpenAuthors Text CloseAuthors
+LicenseProp     -> OpenPackageLicense value:Text ClosePackageLicense
+OtherProp       -> OpenElem Text CloseElem / SelfCloseElem / Text
+
+ItemGroup       -> OpenItemGroup ItemContent* CloseItemGroup
+ItemContent     -> PackageRefItem / ProjectRefItem / OtherItem
+PackageRefItem  -> ref:PackageRef
+ProjectRefItem  -> ref:ProjectRef
+OtherItem       -> SelfCloseElem / Text
+
+OtherElem       -> OpenElem Text? CloseElem / SelfCloseElem / Text
+
+=== attrs
+on VersionProp:  note fieldKey payload="version"
+on AssemblyProp: note fieldKey payload="name"
+
+=== semantics
+on AssemblyProp {
+  let name = $value
+  edge projectName from $file to name
+}
+on VersionProp {
+  let ver = $value
+  edge projectVersion from $file to ver
+}
+on DescProp {
+  let desc = $value
+  edge projectDescription from $file to desc
+}
+on LicenseProp {
+  let lic = $value
+  edge projectLicense from $file to lic
+}
+on PackageRefItem {
+  let raw = $ref
+  edge dependsOn from $file to concat("nuget:", raw) attrs obj("dep_kind", "runtime")
+}
+
+=== resolver
+relative_prefixes: ../
+exts: .csproj
+indexes:
+bare_prefix: nuget:
+module_path_style: dot

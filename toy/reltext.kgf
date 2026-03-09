@@ -1,0 +1,30 @@
+
+kgf 0.6
+language: reltext
+
+=== lex
+SKIP        /(\s+)+/
+TOKEN ARROW     /->/
+TOKEN COLON     /:/
+TOKEN Ident     /[^\s:]+/
+
+=== grammar
+Doc        -> ( Line )*
+Line       -> from:Ident ARROW to:Ident (COLON kind:Ident)?
+
+=== attrs
+on Line:    import module=to ; import module=from
+
+=== semantics
+on Line {
+  edge moduleDependsOn from $file to $resolve($to) attrs obj("via", $to, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+
+=== resolver
+sources:
+relative_prefixes: ./, ../, /, http://, https://, url:, npm:, pip:
+exts:
+indexes:
+bare_prefix:
+module_path_style: slash

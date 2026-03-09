@@ -1,0 +1,146 @@
+kgf 0.6
+language: lua
+sources: .lua
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments - LDoc uses ---
+TOKEN DocComment /---[^\r\n]*/
+TOKEN LineComment /--[^\r\n]*/
+TOKEN BlockComment /--\[\[[\s\S]*?\]\]/
+
+# String literals
+TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|\[\[[\s\S]*?\]\]|\[=\[[\s\S]*?\]=\]/
+
+# Numeric literals
+TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+
+# Keywords
+TOKEN KW_function /function\b/
+TOKEN KW_local    /local\b/
+TOKEN KW_end      /end\b/
+TOKEN KW_return   /return\b/
+TOKEN KW_if       /if\b/
+TOKEN KW_then     /then\b/
+TOKEN KW_elseif   /elseif\b/
+TOKEN KW_else     /else\b/
+TOKEN KW_for      /for\b/
+TOKEN KW_in       /in\b/
+TOKEN KW_while    /while\b/
+TOKEN KW_do       /do\b/
+TOKEN KW_repeat   /repeat\b/
+TOKEN KW_until    /until\b/
+TOKEN KW_break    /break\b/
+
+# Built-in values
+TOKEN BoolLit /\b(?:true|false)\b/
+TOKEN NilLit /\bnil\b/
+
+# Identifiers
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN Operator /[+\-*\/%^#<>=~]+|\.\.\.?|==|~=|<=|>=|<<|>>|\/\/|&|\||~/
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+TOKEN EQ       /=/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / DocComment
+     / FunctionDecl
+     / LocalFunctionDecl
+     / LocalVarDecl
+     / AssignmentDecl
+     / Other
+
+# Doc block
+DocBlock -> DocComment ( NL DocComment )*
+
+# Function declaration (global)
+FunctionDecl -> doc:DocBlock? NL? KW_function id:FunctionName LPAREN ParamList? RPAREN FunctionBody KW_end
+FunctionName -> Ident ( DOT Ident )* ( COLON Ident )?
+
+# Local function declaration
+LocalFunctionDecl -> doc:DocBlock? NL? KW_local KW_function id:Ident LPAREN ParamList? RPAREN FunctionBody KW_end
+
+# Local variable declaration
+LocalVarDecl -> doc:DocBlock? NL? KW_local id:Ident ( COMMA Ident )* ( EQ ExprList )?
+
+# Global assignment (can define functions too)
+AssignmentDecl -> doc:DocBlock? NL? id:Ident ( DOT Ident )* EQ Expr
+
+# Function body
+FunctionBody -> ( Statement )*
+Statement -> NL / LineComment / BlockComment / KW_if / KW_then / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_do / KW_repeat / KW_until / KW_break / KW_return / Expr
+
+# Parameters
+ParamList -> Param ( COMMA Param )*
+Param -> param_id:Ident / Operator
+
+# Expression list
+ExprList -> Expr ( COMMA Expr )*
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Ident / Number / String / BoolLit / NilLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / EQ / Operator
+
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_function / KW_local / KW_end / KW_return / KW_if / KW_then / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_do / KW_repeat / KW_until / KW_break / SEMI
+
+Other -> Atom
+
+=== attrs
+on FunctionDecl:      def id kind=Function doc=doc
+on LocalFunctionDecl: def id kind=Function doc=doc
+on LocalVarDecl:      def id kind=Variable doc=doc
+on AssignmentDecl:    def id kind=Variable doc=doc
+on Param:             def param_id kind=Param
+
+=== semantics
+# Function declaration
+on FunctionDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Local function declaration
+on LocalFunctionDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# Local variable declaration
+on LocalVarDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+# Global assignment
+on AssignmentDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: dot
+resolve:
+  - manifest: *.rockspec @ dependencies
+  - marker: *.rockspec, .luacheckrc
+  - ext: .lua
+  - index: /init.lua
+  - fallback: luarocks:

@@ -1,0 +1,183 @@
+kgf 0.6
+language: jpeg-hex
+sources: .hex
+
+=== lex
+SKIP /\\s+/
+
+# JPEG markers and common embedded ASCII identifiers.
+TOKEN SOI /FFD8/
+TOKEN EOI /FFD9/
+
+# Start Of Frame (baseline / progressive)
+TOKEN SOF0_HDR /FFC0[0-9A-Fa-f]{16}/
+TOKEN SOF2_HDR /FFC2[0-9A-Fa-f]{16}/
+
+# Define quantization table / huffman table / start of scan
+TOKEN DQT /FFDB/
+TOKEN DHT /FFC4/
+TOKEN SOS /FFDA/
+
+# APP0/APP1 payload identifiers (ASCII)
+TOKEN JFIF /4A464946/
+TOKEN Exif /45786966/
+
+# Fallback to consume progress
+TOKEN HEXBYTE /[0-9A-Fa-f]{2}/
+
+=== grammar
+Doc -> Item*
+
+Item -> Start
+     / End
+     / SofBaseline
+     / SofProgressive
+     / MarkerDqt
+     / MarkerDht
+     / MarkerSos
+     / MetaJFIF
+     / MetaExif
+     / Other
+
+Start -> soi:SOI
+End -> eoi:EOI
+SofBaseline -> hdr:SOF0_HDR
+SofProgressive -> hdr:SOF2_HDR
+MarkerDqt -> dqt:DQT
+MarkerDht -> dht:DHT
+MarkerSos -> sos:SOS
+MetaJFIF -> jfif:JFIF
+MetaExif -> exif:Exif
+
+Other -> HEXBYTE
+
+=== attrs
+# none
+
+=== semantics
+on Start {
+  module $file file $file
+}
+
+on Start {
+  module concat($file, "::jpeg:soi@", $soi_pos) file null
+  edge maybeType from concat($file, "::jpeg:soi@", $soi_pos) to "jpeg" attrs obj("hexPos", $soi_pos, "hexLen", $soi_len, "bytePos", floor(div($soi_pos, 2)), "confidence", 0.9)
+  edge contains from $file to concat($file, "::jpeg:soi@", $soi_pos) attrs obj("confidence", 0.7)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:soi@", $soi_pos)
+  bind ns "value" name "__jpeg_container" to concat($file, "::jpeg:soi@", $soi_pos)
+}
+
+on SofBaseline {
+  let node = concat($file, "::jpeg:SOF0@", $hdr_pos)
+  let precisionHex = slice($hdr, 8, 2)
+  let heightHex = slice($hdr, 10, 4)
+  let widthHex = slice($hdr, 14, 4)
+  let compsHex = slice($hdr, 18, 2)
+  module $node file null
+  edge maybeType from $node to "jpeg:sof:baseline" attrs obj("hexPos", $hdr_pos, "bytePos", floor(div($hdr_pos, 2)), "confidence", 0.85)
+  edge imageInfo from $file to $node attrs obj("width", hexToInt($widthHex), "height", hexToInt($heightHex), "precision", hexToInt($precisionHex), "components", hexToInt($compsHex), "progressive", false, "confidence", 0.75)
+}
+on SofBaseline when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:SOF0@", $hdr_pos) attrs obj("hexPos", $hdr_pos, "bytePos", floor(div($hdr_pos, 2)), "confidence", 0.6)
+}
+on SofBaseline when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:SOF0@", $hdr_pos) attrs obj("confidence", 0.4)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:SOF0@", $hdr_pos)
+}
+
+on SofProgressive {
+  let node = concat($file, "::jpeg:SOF2@", $hdr_pos)
+  let precisionHex = slice($hdr, 8, 2)
+  let heightHex = slice($hdr, 10, 4)
+  let widthHex = slice($hdr, 14, 4)
+  let compsHex = slice($hdr, 18, 2)
+  module $node file null
+  edge maybeType from $node to "jpeg:sof:progressive" attrs obj("hexPos", $hdr_pos, "bytePos", floor(div($hdr_pos, 2)), "confidence", 0.9)
+  edge imageInfo from $file to $node attrs obj("width", hexToInt($widthHex), "height", hexToInt($heightHex), "precision", hexToInt($precisionHex), "components", hexToInt($compsHex), "progressive", true, "confidence", 0.8)
+}
+on SofProgressive when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:SOF2@", $hdr_pos) attrs obj("hexPos", $hdr_pos, "bytePos", floor(div($hdr_pos, 2)), "confidence", 0.6)
+}
+on SofProgressive when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:SOF2@", $hdr_pos) attrs obj("confidence", 0.4)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:SOF2@", $hdr_pos)
+}
+
+on MarkerDqt when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:DQT@", $dqt_pos) attrs obj("hexPos", $dqt_pos, "bytePos", floor(div($dqt_pos, 2)), "confidence", 0.3)
+}
+on MarkerDqt when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:DQT@", $dqt_pos) attrs obj("confidence", 0.2)
+}
+on MarkerDqt {
+  module concat($file, "::jpeg:DQT@", $dqt_pos) file null
+  edge maybeType from concat($file, "::jpeg:DQT@", $dqt_pos) to "jpeg:marker:DQT" attrs obj("hexPos", $dqt_pos, "bytePos", floor(div($dqt_pos, 2)), "confidence", 0.4)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:DQT@", $dqt_pos)
+}
+
+on MarkerDht when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:DHT@", $dht_pos) attrs obj("hexPos", $dht_pos, "bytePos", floor(div($dht_pos, 2)), "confidence", 0.3)
+}
+on MarkerDht when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:DHT@", $dht_pos) attrs obj("confidence", 0.2)
+}
+on MarkerDht {
+  module concat($file, "::jpeg:DHT@", $dht_pos) file null
+  edge maybeType from concat($file, "::jpeg:DHT@", $dht_pos) to "jpeg:marker:DHT" attrs obj("hexPos", $dht_pos, "bytePos", floor(div($dht_pos, 2)), "confidence", 0.4)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:DHT@", $dht_pos)
+}
+
+on MarkerSos when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:SOS@", $sos_pos) attrs obj("hexPos", $sos_pos, "bytePos", floor(div($sos_pos, 2)), "confidence", 0.3)
+}
+on MarkerSos when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:SOS@", $sos_pos) attrs obj("confidence", 0.2)
+}
+on MarkerSos {
+  module concat($file, "::jpeg:SOS@", $sos_pos) file null
+  edge maybeType from concat($file, "::jpeg:SOS@", $sos_pos) to "jpeg:marker:SOS" attrs obj("hexPos", $sos_pos, "bytePos", floor(div($sos_pos, 2)), "confidence", 0.3)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:SOS@", $sos_pos)
+}
+
+on MetaJFIF when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:JFIF@", $jfif_pos) attrs obj("hexPos", $jfif_pos, "hexLen", $jfif_len, "bytePos", floor(div($jfif_pos, 2)), "confidence", 0.5)
+}
+on MetaJFIF when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:JFIF@", $jfif_pos) attrs obj("confidence", 0.5)
+}
+on MetaJFIF {
+  module concat($file, "::jpeg:JFIF@", $jfif_pos) file null
+  edge maybeType from concat($file, "::jpeg:JFIF@", $jfif_pos) to "jpeg:meta:JFIF" attrs obj("hexPos", $jfif_pos, "hexLen", $jfif_len, "bytePos", floor(div($jfif_pos, 2)), "confidence", 0.7)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:JFIF@", $jfif_pos)
+}
+
+on MetaExif when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:Exif@", $exif_pos) attrs obj("hexPos", $exif_pos, "hexLen", $exif_len, "bytePos", floor(div($exif_pos, 2)), "confidence", 0.5)
+}
+on MetaExif when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:Exif@", $exif_pos) attrs obj("confidence", 0.5)
+}
+on MetaExif {
+  module concat($file, "::jpeg:Exif@", $exif_pos) file null
+  edge maybeType from concat($file, "::jpeg:Exif@", $exif_pos) to "jpeg:meta:Exif" attrs obj("hexPos", $exif_pos, "hexLen", $exif_len, "bytePos", floor(div($exif_pos, 2)), "confidence", 0.6)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:Exif@", $exif_pos)
+}
+
+on End when $scope("value", "__jpeg_prev") {
+  edge next from $scope("value", "__jpeg_prev") to concat($file, "::jpeg:eoi@", $eoi_pos) attrs obj("hexPos", $eoi_pos, "hexLen", $eoi_len, "bytePos", floor(div($eoi_pos, 2)), "confidence", 0.7)
+}
+on End when $scope("value", "__jpeg_container") {
+  edge contains from $scope("value", "__jpeg_container") to concat($file, "::jpeg:eoi@", $eoi_pos) attrs obj("confidence", 0.5)
+}
+on End {
+  module concat($file, "::jpeg:eoi@", $eoi_pos) file null
+  edge maybeType from concat($file, "::jpeg:eoi@", $eoi_pos) to "jpeg:eoi" attrs obj("hexPos", $eoi_pos, "hexLen", $eoi_len, "bytePos", floor(div($eoi_pos, 2)), "confidence", 0.8)
+  bind ns "value" name "__jpeg_prev" to concat($file, "::jpeg:eoi@", $eoi_pos)
+}
+
+=== resolver
+relative_prefixes:
+exts: .hex
+indexes:
+bare_prefix:
+module_path_style: slash

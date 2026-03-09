@@ -1,0 +1,222 @@
+kgf 0.6
+language: clojure
+sources: .clj, .cljs, .cljc, .edn
+
+=== lex
+SKIP /[ \t,]+/
+TOKEN NL /\r?\n/
+
+# Comments
+TOKEN Comment /;[^\r\n]*/
+
+# Docstrings (captured as strings in defn forms)
+TOKEN DocString /"([^"\\]|\\.)*"/
+
+# String literals
+TOKEN String /"([^"\\]|\\.)*"/
+
+# Regex literals
+TOKEN Regex /#"([^"\\]|\\.)*"/
+
+# Numeric literals
+TOKEN Number /[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?[MN]?|[+-]?0x[0-9a-fA-F]+|[+-]?0[0-7]+|[+-]?[0-9]+r[0-9a-zA-Z]+|[0-9]+\/[0-9]+/
+
+# Keywords
+TOKEN Keyword /:[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-.:]*/
+
+# Special forms
+TOKEN KW_def       /def\b/
+TOKEN KW_defn      /defn\b/
+TOKEN KW_defn_     /defn-\b/
+TOKEN KW_defmacro  /defmacro\b/
+TOKEN KW_defmethod /defmethod\b/
+TOKEN KW_defmulti  /defmulti\b/
+TOKEN KW_defprotocol /defprotocol\b/
+TOKEN KW_defrecord /defrecord\b/
+TOKEN KW_deftype   /deftype\b/
+TOKEN KW_fn        /fn\b/
+TOKEN KW_let       /let\b/
+TOKEN KW_if        /if\b/
+TOKEN KW_do        /do\b/
+TOKEN KW_ns        /ns\b/
+TOKEN KW_require   /require\b/
+TOKEN KW_use       /use\b/
+TOKEN KW_import    /import\b/
+
+# Symbols
+TOKEN NamespacedSymbol /[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*\/[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*/
+TOKEN Symbol /[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*/
+
+# Punctuation
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN HASH     /#/
+TOKEN QUOTE    /'/
+TOKEN BACKTICK /`/
+TOKEN TILDE    /~/
+TOKEN CARET    /\^/
+TOKEN AT       /@/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / Comment
+     / NsDecl
+     / DefDecl
+     / DefnDecl
+     / DefMacroDecl
+     / DefProtocolDecl
+     / DefRecordDecl
+     / DefTypeDecl
+     / DefMultiDecl
+     / DefMethodDecl
+     / Other
+
+# Namespace declaration
+NsDecl -> LPAREN KW_ns id:Symbol NsBody RPAREN
+NsBody -> ( NsDirective )*
+NsDirective -> LPAREN ( KW_require / KW_use / KW_import ) RequireSpec* RPAREN / Keyword / Symbol / String / LBRACKET / RBRACKET
+RequireSpec -> LBRACKET path:Symbol Keyword* Symbol* RBRACKET / Symbol
+
+# Def declaration (simple value)
+DefDecl -> doc:String? NL? LPAREN KW_def CARET? Metadata? id:Symbol doc:String? Expr? RPAREN
+Metadata -> LBRACE ( Keyword Expr )* RBRACE
+
+# Defn declaration (function)
+DefnDecl -> doc:String? NL? LPAREN ( KW_defn / KW_defn_ ) CARET? Metadata? id:Symbol doc:String? FnBody RPAREN
+FnBody -> LBRACKET ParamList? RBRACKET Expr* / LPAREN LBRACKET ParamList? RBRACKET Expr* RPAREN+
+
+# DefMacro declaration
+DefMacroDecl -> doc:String? NL? LPAREN KW_defmacro CARET? Metadata? id:Symbol doc:String? FnBody RPAREN
+
+# DefProtocol declaration
+DefProtocolDecl -> doc:String? NL? LPAREN KW_defprotocol id:Symbol doc:String? ProtocolMethod* RPAREN
+ProtocolMethod -> LPAREN method_id:Symbol LBRACKET ParamList RBRACKET doc:String? RPAREN
+
+# DefRecord declaration
+DefRecordDecl -> doc:String? NL? LPAREN KW_defrecord id:Symbol LBRACKET FieldList? RBRACKET RecordBody RPAREN
+FieldList -> Symbol+
+RecordBody -> ( ProtocolImpl )*
+ProtocolImpl -> Symbol LPAREN Symbol LBRACKET ParamList RBRACKET Expr* RPAREN*
+
+# DefType declaration
+DefTypeDecl -> doc:String? NL? LPAREN KW_deftype id:Symbol LBRACKET FieldList? RBRACKET TypeBody RPAREN
+TypeBody -> ( ProtocolImpl )*
+
+# DefMulti declaration
+DefMultiDecl -> doc:String? NL? LPAREN KW_defmulti id:Symbol doc:String? Expr RPAREN
+
+# DefMethod declaration
+DefMethodDecl -> doc:String? NL? LPAREN KW_defmethod id:Symbol Expr FnBody RPAREN
+
+# Parameters
+ParamList -> Param*
+Param -> param_id:Symbol / AT Symbol / AMP Symbol
+
+AMP -> /&/
+
+# Expressions
+Expr -> ExprAtom+
+ExprAtom -> Symbol / NamespacedSymbol / Keyword / Number / String / Regex / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE / HASH / QUOTE / BACKTICK / TILDE / CARET / AT
+
+Atom -> ExprAtom / NL / Comment / KW_def / KW_defn / KW_defn_ / KW_defmacro / KW_defmethod / KW_defmulti / KW_defprotocol / KW_defrecord / KW_deftype / KW_fn / KW_let / KW_if / KW_do / KW_ns / KW_require / KW_use / KW_import
+
+Other -> Atom
+
+=== attrs
+on NsDecl:          def id kind=Namespace doc=doc
+on DefDecl:         def id kind=Var doc=doc
+on DefnDecl:        def id kind=Function doc=doc
+on DefMacroDecl:    def id kind=Macro doc=doc
+on DefProtocolDecl: def id kind=Protocol doc=doc
+on DefRecordDecl:   def id kind=Record doc=doc
+on DefTypeDecl:     def id kind=Type doc=doc
+on DefMultiDecl:    def id kind=Multimethod doc=doc
+on DefMethodDecl:   def id kind=Method doc=doc
+on ProtocolMethod:  def method_id kind=ProtocolMethod doc=doc
+on Param:           def param_id kind=Param
+
+on RequireSpec:     import module=path
+
+=== semantics
+# Import dependency
+on RequireSpec {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Namespace declaration
+on NsDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Namespace", "doc", $doc)
+  bind ns "value" name "current_ns" to sym_id
+}
+
+# Def declaration
+on DefDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Var", "doc", $doc)
+}
+
+# Defn declaration
+on DefnDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+
+# DefMacro declaration
+on DefMacroDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Macro", "doc", $doc)
+}
+
+# DefProtocol declaration
+on DefProtocolDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+  bind ns "value" name "current_protocol" to sym_id
+}
+
+# DefRecord declaration
+on DefRecordDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc)
+}
+
+# DefType declaration
+on DefTypeDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+}
+
+# DefMulti declaration
+on DefMultiDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Multimethod", "doc", $doc)
+}
+
+# DefMethod declaration
+on DefMethodDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc)
+}
+
+# Protocol method
+on ProtocolMethod when $scope("value", "current_protocol") {
+  let parent = $scope("value", "current_protocol")
+  let sym_id = concat(parent, "/", $method_id)
+  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "ProtocolMethod", "doc", $doc)
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: dot
+resolve:
+  - manifest: deps.edn @ deps
+  - marker: deps.edn, project.clj
+  - ext: .clj, .cljs, .cljc
+  - fallback: clojars:

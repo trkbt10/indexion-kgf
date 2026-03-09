@@ -1,0 +1,75 @@
+kgf 0.6
+language: gemfile
+sources: Gemfile
+
+# KGF spec for Ruby Gemfile
+# Extracts gem dependencies
+
+=== lex
+SKIP        /[ \t]+/
+TOKEN NL            /\r?\n/
+TOKEN Comment       /#[^\r\n]*/
+
+# Keywords
+TOKEN KW_source     /source\b/
+TOKEN KW_ruby       /ruby\b/
+TOKEN KW_gem        /gem\b/
+TOKEN KW_group      /group\b/
+TOKEN KW_do         /do\b/
+TOKEN KW_end        /end\b/
+TOKEN KW_require    /require\b/
+
+# Literals
+TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+TOKEN VersionSpec   /[~><=]+\s*[0-9]+(\.[0-9]+)*/
+TOKEN Symbol        /:[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Punctuation
+TOKEN LPAREN        /\(/
+TOKEN RPAREN        /\)/
+TOKEN COMMA         /,/
+TOKEN COLON         /:/
+TOKEN ARROW         /=>/
+
+# Identifiers
+TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_]*/
+
+=== grammar
+GemfileContent  -> Statement*
+Statement       -> SourceStmt / RubyStmt / GemStmt / GroupBlock
+                 / NL / Comment
+
+SourceStmt      -> KW_source url:StringLit NL
+RubyStmt        -> KW_ruby version:StringLit NL
+
+GemStmt         -> KW_gem name:StringLit GemOptions? NL
+GemOptions      -> COMMA GemOption ( COMMA GemOption )*
+GemOption       -> VersionOption / KeyValueOption
+VersionOption   -> version:StringLit
+KeyValueOption  -> Symbol ARROW Value / Ident COLON Value
+Value           -> StringLit / Symbol / KW_true / KW_false / Ident
+
+GroupBlock      -> KW_group GroupNames KW_do NL GroupContent* KW_end NL?
+GroupNames      -> Symbol ( COMMA Symbol )*
+GroupContent    -> GemStmt / NL / Comment
+
+=== attrs
+on SourceStmt: note fieldKey payload="source"
+on RubyStmt:   note fieldKey payload="ruby"
+
+=== semantics
+on RubyStmt {
+  let ver = stripQuotes($version)
+  edge rubyVersion from $file to ver attrs obj("raw", $version)
+}
+on GemStmt {
+  let name = stripQuotes($name)
+  edge dependsOn from $file to concat("rubygems:", name) attrs obj("dep_kind", "runtime")
+}
+
+=== resolver
+relative_prefixes:
+exts: Gemfile
+indexes:
+bare_prefix: rubygems:
+module_path_style: hyphen

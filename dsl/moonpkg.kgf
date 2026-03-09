@@ -1,0 +1,59 @@
+kgf 0.6
+language: moonpkg
+sources: moon.pkg
+
+# KGF spec for MoonBit package manifest files (moon.pkg)
+# These files define package dependencies in MoonBit projects.
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+TOKEN LineComment /\/\/[^\r\n]*/
+
+# Keywords
+TOKEN KW_import /import\b/
+
+# Strings (package paths)
+TOKEN String /"([^"\\]|\\.)*"/
+
+# Identifiers (aliases)
+TOKEN Alias /@[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Punctuation
+TOKEN LBRACE /\{/
+TOKEN RBRACE /\}/
+TOKEN COMMA /,/
+TOKEN COLON /:/
+
+=== grammar
+Module -> Item*
+
+Item -> ImportBlock
+     / NL
+     / LineComment
+     / Other
+
+# import { "path" @alias, ... }
+ImportBlock -> KW_import LBRACE NL? ImportList? RBRACE
+
+ImportList -> ImportItem ( COMMA NL? ImportItem )* COMMA? NL?
+
+ImportItem -> module:String Alias? NL?
+           / NL
+
+Other -> String / Ident / Alias / LBRACE / RBRACE / COMMA / COLON
+
+=== semantics
+on ImportItem {
+  let mod_path = $module
+  let resolved = $resolve(mod_path)
+  edge moduleDependsOn from $file to resolved attrs obj("via", mod_path, "dep_kind", "value")
+}
+
+=== resolver
+relative_prefixes: ./
+module_path_style: slash
+bare_prefix: pkg:
+resolve:
+  - fallback: pkg:
