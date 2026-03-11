@@ -82,6 +82,10 @@ on ImportNamed:        import module=from
 on ImportDefault:      import module=from
 on ExportFrom:         reexport module=from
 
+=== features
+document_symbol_kinds: Function
+coverage_token_kinds: Ident
+
 === semantics
 on SideEffect {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")

@@ -96,6 +96,18 @@ Defines semantic attributes for tokens:
 
 Attributes: `keyword`, `operator`, `literal`, `comment`, `string`, `type`, `identifier`
 
+#### `=== features` - Consumer Metadata
+
+Defines optional metadata that downstream tools can consume without hardcoding format-specific behavior:
+
+```
+reference_token_kinds: INLINE_CODE, Key
+document_symbol_kinds: Function, Class, Type
+coverage_token_kinds: Ident, TEXT, Key
+```
+
+Values are comma-separated. For example, `indexion plan reconcile` uses `reference_token_kinds` to decide which token kinds represent explicit symbol references in a document spec, `document_symbol_kinds` to decide which code symbol kinds are documentation targets for a programming spec, and `coverage_token_kinds` to build module-coverage term indexes without command-local text splitting rules.
+
 #### `=== semantics` - Semantic Actions
 
 Defines actions to build semantic graphs:
@@ -156,6 +168,10 @@ Body -> Stmt*
 Stmt -> Ident / Number / String
 
 === attrs
+
+=== features
+reference_token_kinds: Ident
+
 KW_def: keyword
 KW_end: keyword
 Ident: identifier

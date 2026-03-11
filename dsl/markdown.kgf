@@ -46,6 +46,10 @@ on InlineImage: import module=path
 on AngleLink:   import module=path
 on WikiLink:    import module=wpath
 
+=== features
+reference_token_kinds: INLINE_CODE
+coverage_token_kinds: INLINE_CODE, TEXT
+
 === semantics
 on InlineLink {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")

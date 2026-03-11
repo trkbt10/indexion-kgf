@@ -154,6 +154,10 @@ on Param:      def id kind=Param
 
 on ImportSpec: import module=path
 
+=== features
+document_symbol_kinds: Function, Type
+coverage_token_kinds: Ident
+
 === semantics
 # Module-level documentation (// Package xxx ...)
 on ModuleDoc {

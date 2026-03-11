@@ -193,6 +193,10 @@ on ImportNamedDefault: import module=from
 on ImportNamed:        import module=from
 on ImportDefault:      import module=from
 
+=== features
+document_symbol_kinds: Function, Class, Interface, Type, Enum
+coverage_token_kinds: Ident
+
 === semantics
 # Module-level documentation (JSDoc with @module or @packageDocumentation)
 on ModuleDoc {

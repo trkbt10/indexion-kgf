@@ -1,0 +1,42 @@
+kgf 0.6
+language: toml
+sources: .toml
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+TOKEN Comment /#[^\r\n]*/
+TOKEN Section /\[[A-Za-z0-9._-]+\]/
+TOKEN Key /[A-Za-z0-9._-]+/
+TOKEN Equals /=/
+TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+TOKEN Number /-?[0-9]+(\.[0-9]+)?/
+TOKEN Bool /true|false/
+TOKEN LBracket /\[/
+TOKEN RBracket /\]/
+TOKEN LBrace /\{/
+TOKEN RBrace /\}/
+TOKEN Comma /,/
+TOKEN Value /[^#\r\n]+/
+
+=== grammar
+Doc -> Item*
+Item -> SectionLine / EntryLine / NL / Comment
+SectionLine -> section:Section NL?
+EntryLine -> key:Key Equals value:Value NL?
+
+=== attrs
+on EntryLine: note fieldKey payload=key
+
+=== features
+reference_token_kinds: Key
+coverage_token_kinds: Section, Key
+
+=== semantics
+
+=== resolver
+relative_prefixes:
+exts: .toml
+indexes:
+bare_prefix:
+module_path_style: slash

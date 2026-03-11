@@ -142,6 +142,10 @@ on UnionMember:  def field_id kind=Field doc=field_doc
 on EnumValue:    def value_id kind=EnumValue doc=value_doc
 on Param:        def param_id kind=Param
 
+=== features
+document_symbol_kinds: Function, Struct, Union, Enum, Typedef
+coverage_token_kinds: Ident, TypeIdent
+
 === semantics
 # Struct declaration
 on StructDecl {

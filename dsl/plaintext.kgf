@@ -1,0 +1,26 @@
+kgf 0.6
+language: plaintext
+sources: .txt, .text, .rst, .adoc
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+TOKEN Text /[^\r\n]+/
+
+=== grammar
+Doc -> Block*
+Block -> Text NL?
+
+=== attrs
+
+=== features
+coverage_token_kinds: Text
+
+=== semantics
+
+=== resolver
+relative_prefixes:
+exts: .txt, .text, .rst, .adoc
+indexes:
+bare_prefix:
+module_path_style: slash

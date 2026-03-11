@@ -227,6 +227,10 @@ on Param:         def param_id kind=Param
 
 on UsingDecl:     import module=path
 
+=== features
+document_symbol_kinds: Class, Struct, Interface, Enum, Record, Delegate
+coverage_token_kinds: Ident, TypeIdent
+
 === semantics
 # Import dependency
 on UsingDecl {

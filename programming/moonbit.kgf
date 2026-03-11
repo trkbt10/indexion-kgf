@@ -191,6 +191,10 @@ on EnumVariant: def variant_id kind=Variant doc=variant_doc
 on TraitMember: def method_id kind=Method doc=method_doc
 on Param:       def param_id kind=Param
 
+=== features
+document_symbol_kinds: Function, Struct, Enum, Type, Trait
+coverage_token_kinds: Ident, TypeIdent, PackageRef
+
 === semantics
 # Module-level documentation
 # Note: doc values are already cleaned by lexer strip/skip_value
