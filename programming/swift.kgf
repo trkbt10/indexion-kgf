@@ -71,7 +71,9 @@ TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 
 # Operators
 TOKEN ARROW   /->/
-TOKEN Operator /[+\-*\/%&|^~!<>=?]+|&&|\|\||\.\.\.|\.\.</
+TOKEN LT       /</
+TOKEN GT       />/
+TOKEN Operator /[+\-*%&|^~!=]+|&&|\|\||\.\.\.|\.\.</
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -84,14 +86,17 @@ TOKEN SEMI     /;/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
 TOKEN COLON    /:/
+TOKEN QMARK    /\?/
 TOKEN AT       /@/
+
+# Property accessors (referenced in grammar)
+TOKEN KW_get    /get\b/
+TOKEN KW_set    /set\b/
 
 === grammar
 Module -> Item*
 
 Item -> NL
-     / DocComment
-     / DocBlockComment
      / ImportDecl
      / ClassDecl
      / StructDecl
@@ -102,6 +107,8 @@ Item -> NL
      / FuncDecl
      / VarDecl
      / TypeAliasDecl
+     / DocComment
+     / DocBlockComment
      / Other
 
 # Doc block (consecutive /// comments)
@@ -112,14 +119,14 @@ ImportDecl -> KW_import path:QualifiedName
 QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
 
 # Class declaration
-ClassDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_class id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
+ClassDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_class id:TypeIdent SimpleInheritance? LBRACE ClassMember* RBRACE
 InheritanceClause -> COLON TypeList
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> FuncDecl / VarDecl / InitDecl / DeinitDecl / SubscriptDecl / ClassDecl / StructDecl / EnumDecl / TypeAliasDecl / NL / LineComment / BlockComment
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_struct id:TypeIdent TypeParams? InheritanceClause? WhereClause? StructBody
-StructBody -> LBRACE StructMember* RBRACE
+StructDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_struct id:TypeIdent TypeParams? SimpleInheritance? LBRACE StructMember* RBRACE
+SimpleInheritance -> COLON TypeIdent COMMA TypeIdent COMMA TypeIdent / COLON TypeIdent COMMA TypeIdent / COLON TypeIdent
 StructMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
 
 # Enum declaration
@@ -165,37 +172,32 @@ SubscriptDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_subscript TypeParams?
 TypeAliasDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
 
 # Modifiers
-Modifier -> KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async
+Modifier -> KW_public LPAREN KW_set RPAREN / KW_private LPAREN KW_set RPAREN / KW_internal LPAREN KW_set RPAREN / KW_fileprivate LPAREN KW_set RPAREN / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
-Param -> Attribute* ( Ident / Operator )? param_id:Ident COLON Ident? Type ( Operator Expr )?
+Param -> Attribute* ( Ident param_id:Ident / param_id:Ident ) COLON Type ( Operator Expr )?
 WhereClause -> KW_where WhereConstraint ( COMMA WhereConstraint )*
 WhereConstraint -> Type ( COLON / Operator ) Type
 
 # Types
-TypeParams -> Operator TypeParam ( COMMA TypeParam )* Operator
+TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
 TypeParam -> TypeIdent ( COLON Type )?
 TypeList -> Type ( COMMA Type )*
 Type -> TypeAtom ( Operator TypeAtom )* QMARK?
-TypeAtom -> TypeIdent TypeArgs? / LBRACKET Type ( COLON Type )? RBRACKET / LPAREN TypeList? RPAREN ( ARROW Type )?
-TypeArgs -> Operator Type ( COMMA Type )* Operator
-QMARK -> /\?/
-
+TypeAtom -> TypeIdent TypeArgs? / Ident / LBRACKET Type ( COLON Type )? RBRACKET / LPAREN TypeList? RPAREN ( ARROW Type )?
+TypeArgs -> LT Type ( COMMA Type )* GT
 # Body (simplified - balance braces)
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
 # Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / ARROW / Operator / Attribute
+Expr -> ( ExprAtom / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / KW_self / KW_Self / LPAREN / RPAREN / DOT / COMMA / COLON / ARROW / LT / GT / Operator / Attribute
 
-Atom -> ExprAtom / NL / DocComment / DocBlockComment / LineComment / BlockComment / KW_import / KW_let / KW_var / KW_func / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_actor / KW_init / KW_deinit / KW_subscript / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async / KW_await / KW_throws / KW_if / KW_else / KW_guard / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_where / KW_self / KW_Self / SEMI / AT
+Atom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / NL / DocComment / DocBlockComment / LineComment / BlockComment / KW_import / KW_let / KW_var / KW_func / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_actor / KW_init / KW_deinit / KW_subscript / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async / KW_await / KW_throws / KW_if / KW_else / KW_guard / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_where / KW_self / KW_Self / KW_get / KW_set / SEMI / COMMA / COLON / DOT / ARROW / QMARK / LT / GT / Operator / Attribute / AT
 
 Other -> Atom
-
-KW_get -> /\bget\b/
-KW_set -> /\bset\b/
 
 === attrs
 on ClassDecl:     def id kind=Class doc=doc

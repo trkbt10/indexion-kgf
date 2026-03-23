@@ -72,12 +72,11 @@ TOKEN ThisLit /\bthis\b/
 TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
 TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 
-# Operators
+# Multi-char operators (before single-char to avoid splitting)
 TOKEN ARROW   /->/
 TOKEN SCOPE   /::/
-TOKEN Operator /[+\-*\/%&|^~!<>=?:]+|&&|\|\||<<|>>|\.\.\.|<=>|\*\*|##/
 
-# Punctuation
+# Punctuation (before Operator to avoid : being consumed by Operator)
 TOKEN LBRACE   /\{/
 TOKEN RBRACE   /\}/
 TOKEN LPAREN   /\(/
@@ -93,11 +92,13 @@ TOKEN COLON    /:/
 TOKEN STAR     /\*/
 TOKEN AMP      /&/
 
+# Operators (after punctuation)
+TOKEN Operator /[+\-*\/%&|^~!<>=?]+|&&|\|\||<<|>>|\.\.\.|<=>|\*\*|##/
+
 === grammar
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / Include
      / Preprocessor
      / NamespaceDecl
@@ -110,18 +111,22 @@ Item -> NL
      / UsingDecl
      / TypedefDecl
      / VarDecl
+     / DocComment
      / Other
+
+# Name — matches both lowercase and uppercase identifiers
+Name -> Ident / TypeIdent
 
 # Doc block
 DocBlock -> DocComment ( NL DocComment )*
 
 # Namespace declaration
-NamespaceDecl -> KW_namespace id:Ident? NamespaceBody
+NamespaceDecl -> KW_namespace id:Name? NamespaceBody
 NamespaceBody -> LBRACE NamespaceMember* RBRACE
 NamespaceMember -> ClassDecl / StructDecl / EnumDecl / FunctionDecl / TemplateDecl / UsingDecl / TypedefDecl / VarDecl / NamespaceDecl / NL / LineComment / BlockComment
 
 # Class declaration
-ClassDecl -> doc:DocBlock? NL? KW_class id:Ident ( KW_final )? InheritanceClause? ClassBody SEMI
+ClassDecl -> doc:DocBlock? NL? KW_class id:Name ( KW_final )? InheritanceClause? ClassBody SEMI
 InheritanceClause -> COLON AccessSpec? QualifiedName ( COMMA AccessSpec? QualifiedName )*
 AccessSpec -> KW_public / KW_private / KW_protected
 ClassBody -> LBRACE ClassMember* RBRACE
@@ -129,31 +134,31 @@ ClassMember -> AccessLabel / ConstructorDecl / DestructorDecl / MethodDecl / Fie
 AccessLabel -> AccessSpec COLON
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? KW_struct id:Ident ( KW_final )? InheritanceClause? StructBody SEMI
+StructDecl -> doc:DocBlock? NL? KW_struct id:Name ( KW_final )? InheritanceClause? StructBody SEMI
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> AccessLabel / ConstructorDecl / MethodDecl / FieldDecl / NL / LineComment / BlockComment
 
 # Union declaration
-UnionDecl -> doc:DocBlock? NL? KW_union id:Ident UnionBody SEMI
+UnionDecl -> doc:DocBlock? NL? KW_union id:Name UnionBody SEMI
 UnionBody -> LBRACE UnionMember* RBRACE
-UnionMember -> field_doc:DocBlock? Type field_id:Ident SEMI / NL / LineComment / BlockComment
+UnionMember -> field_doc:DocBlock? Type field_id:Name SEMI / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Ident ( COLON Type )? EnumBody SEMI
+EnumDecl -> doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Name ( COLON Type )? EnumBody SEMI
 EnumBody -> LBRACE EnumValue* RBRACE
-EnumValue -> value_doc:DocBlock? value_id:Ident ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
+EnumValue -> value_doc:DocBlock? value_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
 # Constructor/Destructor
-ConstructorDecl -> doc:DocBlock? NL? Modifier* id:Ident LPAREN ParamList? RPAREN Initializers? ( Body / SEMI )
-DestructorDecl -> doc:DocBlock? NL? Modifier* SCOPE? Operator id:Ident LPAREN RPAREN Modifier* ( Body / SEMI )
+ConstructorDecl -> doc:DocBlock? NL? Modifier* id:Name LPAREN ParamList? RPAREN Initializers? ( Body / SEMI )
+DestructorDecl -> doc:DocBlock? NL? Modifier* SCOPE? Operator id:Name LPAREN RPAREN Modifier* ( Body / SEMI )
 Initializers -> COLON Initializer ( COMMA Initializer )*
 Initializer -> Ident LPAREN ( Expr ( COMMA Expr )* )? RPAREN / Ident LBRACE ( Expr ( COMMA Expr )* )? RBRACE
 
 # Method declaration
-MethodDecl -> doc:DocBlock? NL? Modifier* Type AMP? method_id:Ident LPAREN ParamList? RPAREN Modifier* ( Body / SEMI / Operator Expr SEMI )
+MethodDecl -> doc:DocBlock? NL? Modifier* Type AMP? method_id:Name LPAREN ParamList? RPAREN Modifier* ( Body / SEMI / Operator Expr SEMI )
 
 # Function declaration
-FunctionDecl -> doc:DocBlock? NL? Modifier* Type AMP? func_id:Ident LPAREN ParamList? RPAREN Modifier* ( Body / SEMI )
+FunctionDecl -> doc:DocBlock? NL? Modifier* Type AMP? func_id:Name LPAREN ParamList? RPAREN Modifier* ( Body / SEMI )
 
 # Template declaration
 TemplateDecl -> doc:DocBlock? NL? KW_template LT TemplateParams GT ( ClassDecl / StructDecl / FunctionDecl )
@@ -161,16 +166,16 @@ TemplateParams -> TemplateParam ( COMMA TemplateParam )*
 TemplateParam -> ( KW_typename / KW_class ) Ident? / Type Ident?
 
 # Field declaration
-FieldDecl -> doc:DocBlock? NL? Modifier* Type AMP? field_id:Ident ArrayDims? ( Operator Expr )? SEMI
+FieldDecl -> doc:DocBlock? NL? Modifier* Type AMP? field_id:Name ArrayDims? ( Operator Expr )? SEMI
 
 # Variable declaration
-VarDecl -> doc:DocBlock? NL? Modifier* Type AMP? var_id:Ident ArrayDims? ( Operator Expr )? SEMI
+VarDecl -> doc:DocBlock? NL? Modifier* Type AMP? var_id:Name ArrayDims? ( Operator Expr )? SEMI
 
 # Using declaration
-UsingDecl -> KW_using ( KW_namespace QualifiedName / id:Ident Operator Type / QualifiedName ) SEMI
+UsingDecl -> KW_using ( KW_namespace QualifiedName / id:Name Operator Type / QualifiedName ) SEMI
 
 # Typedef declaration
-TypedefDecl -> doc:DocBlock? NL? KW_typedef Type id:Ident SEMI
+TypedefDecl -> doc:DocBlock? NL? KW_typedef Type id:Name SEMI
 
 # Friend declaration
 FriendDecl -> KW_friend ( KW_class Ident / Type Ident LPAREN ParamList? RPAREN ) SEMI
@@ -180,8 +185,9 @@ Modifier -> KW_const / KW_constexpr / KW_static / KW_extern / KW_inline / KW_vir
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
-Param -> Type AMP? STAR* param_id:Ident? ArrayDims? ( Operator Expr )?
-ArrayDims -> ( LBRACKET Expr? RBRACKET )+
+Param -> Type AMP? STAR* param_id:Name? ArrayDims? ( Operator Expr )?
+ArrayDims -> ( LBRACKET ArraySize? RBRACKET )+
+ArraySize -> ( Ident / TypeIdent / Number / Operator / STAR )+
 
 # Types
 Type -> TypeQual* TypeAtom STAR* AMP*
@@ -195,8 +201,8 @@ Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
 # Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / ThisLit / KeywordType / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / SCOPE / ARROW / LT / GT / STAR / AMP / Operator
+Expr -> ( ExprAtom / LPAREN Expr? RPAREN / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / ThisLit / KeywordType / DOT / COMMA / COLON / SCOPE / ARROW / LT / GT / STAR / AMP / Operator
 
 Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / Include / Preprocessor / KW_class / KW_struct / KW_union / KW_enum / KW_namespace / KW_template / KW_typename / KW_public / KW_private / KW_protected / KW_virtual / KW_override / KW_final / KW_const / KW_constexpr / KW_static / KW_extern / KW_inline / KW_using / KW_typedef / KW_friend / KW_explicit / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_return / KW_new / KW_delete / KW_try / KW_catch / KW_throw / KW_noexcept / KW_operator / SEMI
 

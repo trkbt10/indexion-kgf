@@ -50,6 +50,7 @@ TOKEN KW_for     /for\b/
 TOKEN KW_while   /while\b/
 TOKEN KW_do      /do\b/
 TOKEN KW_done    /done\b/
+TOKEN KW_of      /of\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/

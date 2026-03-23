@@ -12,7 +12,7 @@ TOKEN DocComment /\/\*\*[\s\S]*?\*\//
 
 # Regular comments (skip for doc purposes)
 TOKEN LineComment /\/\/[^\r\n]*/
-TOKEN BlockComment /\/\*(?!\*)[\s\S]*?\*\//
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
 
 # String literals
 TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`/

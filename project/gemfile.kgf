@@ -18,6 +18,8 @@ TOKEN KW_group      /group\b/
 TOKEN KW_do         /do\b/
 TOKEN KW_end        /end\b/
 TOKEN KW_require    /require\b/
+TOKEN KW_true       /true\b/
+TOKEN KW_false      /false\b/
 
 # Literals
 TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/

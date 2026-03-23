@@ -6,10 +6,10 @@ sources: .lua
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
-# Comments - LDoc uses ---
+# Comments - block must precede line to avoid --[[ matching --
 TOKEN DocComment /---[^\r\n]*/
-TOKEN LineComment /--[^\r\n]*/
 TOKEN BlockComment /--\[\[[\s\S]*?\]\]/
+TOKEN LineComment /--[^\r\n]*/
 
 # String literals
 TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|\[\[[\s\S]*?\]\]|\[=\[[\s\S]*?\]=\]/

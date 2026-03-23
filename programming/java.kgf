@@ -73,7 +73,9 @@ TOKEN Ident /[a-zA-Z_$][a-zA-Z0-9_$]*/
 # Operators
 TOKEN ARROW   /->/
 TOKEN DCOLON  /::/
-TOKEN Operator /[+\-*\/%&|^~!<>=?:]+|&&|\|\||<<|>>|>>>/
+TOKEN LT      /</
+TOKEN GT      />/
+TOKEN Operator /[+\-*\/%&|^~!=?:]+|&&|\|\||<<|>>|>>>/
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -85,19 +87,20 @@ TOKEN RBRACKET /\]/
 TOKEN SEMI     /;/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
+TOKEN COLON    /:/
 TOKEN AT       /@/
 
 === grammar
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / PackageDecl
      / ImportDecl
      / ClassDecl
      / InterfaceDecl
      / EnumDecl
      / RecordDecl
+     / DocComment
      / Other
 
 # Package declaration
@@ -153,13 +156,13 @@ ThrowsClause -> KW_throws TypeList
 Arguments -> LPAREN ( Expr ( COMMA Expr )* )? RPAREN
 
 # Types
-TypeParams -> Operator TypeParam ( COMMA TypeParam )* Operator
+TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
 TypeParam -> Annotation* Ident ( KW_extends TypeBound )?
 TypeBound -> Type ( Operator Type )*
 TypeList -> Type ( COMMA Type )*
 Type -> TypeAtom ArrayDims?
-TypeAtom -> QualifiedName TypeArgs? / KeywordType
-TypeArgs -> Operator TypeArg ( COMMA TypeArg )* Operator
+TypeAtom -> QualifiedName TypeArgs? / KeywordType / KW_void
+TypeArgs -> LT TypeArg ( COMMA TypeArg )* GT
 TypeArg -> Type / Operator ( KW_extends / KW_super ) Type / Operator
 ArrayDims -> ( LBRACKET RBRACKET )+
 
@@ -169,7 +172,7 @@ BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKE
 
 # Expressions
 Expr -> ExprAtom+
-ExprAtom -> Ident / Number / String / TextBlock / Char / BoolLit / NullLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / ARROW / Operator / Annotation
+ExprAtom -> Ident / Number / String / TextBlock / Char / BoolLit / NullLit / KeywordType / KW_new / KW_this / KW_super / KW_void / KW_class / LPAREN / RPAREN / DOT / COMMA / COLON / DCOLON / ARROW / LT / GT / Operator / Annotation
 
 Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_class / KW_interface / KW_enum / KW_record / KW_extends / KW_implements / KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_sealed / KW_permits / KW_default / KW_void / KW_new / KW_this / KW_super / KW_return / KW_throws / KW_throw / KW_try / KW_catch / KW_finally / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_do / KW_break / KW_continue / KeywordType / SEMI / AT
 

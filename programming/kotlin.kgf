@@ -58,6 +58,10 @@ TOKEN KW_by        /by\b/
 TOKEN KW_where     /where\b/
 TOKEN KW_constructor /constructor\b/
 TOKEN KW_init      /init\b/
+TOKEN KW_get       /get\b/
+TOKEN KW_set       /set\b/
+TOKEN KW_this      /this\b/
+TOKEN KW_out       /out\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -70,7 +74,9 @@ TOKEN Ident /[a-z_][a-zA-Z0-9_]*|`[^`]+`/
 # Operators
 TOKEN ARROW   /->/
 TOKEN DCOLON  /::/
-TOKEN Operator /[+\-*\/%&|^~!<>=?:]+|&&|\|\||\.\.|\?:|\?\./
+TOKEN LT      /</
+TOKEN GT      />/
+TOKEN Operator /[+\-*\/%&|^~!=?]+|&&|\|\||\.\.|\?:|\?\./
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -83,13 +89,13 @@ TOKEN SEMI     /;/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
 TOKEN COLON    /:/
+TOKEN QMARK    /\?/
 TOKEN AT       /@/
 
 === grammar
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / PackageDecl
      / ImportDecl
      / ClassDecl
@@ -98,6 +104,7 @@ Item -> NL
      / FunDecl
      / PropertyDecl
      / TypeAliasDecl
+     / DocComment
      / Other
 
 # Package declaration
@@ -109,7 +116,7 @@ QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
 
 # Class declaration
 ClassDecl -> doc:DocComment? NL? Annotation* Modifier* ( KW_data / KW_sealed / KW_enum )? KW_class id:TypeIdent TypeParams? PrimaryConstructor? ( COLON SuperTypes )? WhereClause? ClassBody?
-PrimaryConstructor -> Modifier* KW_constructor? LPAREN ParamList? RPAREN
+PrimaryConstructor -> ( Modifier* KW_constructor )? LPAREN ParamList? NL* RPAREN
 SuperTypes -> Type ( COMMA Type )*
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> FunDecl / PropertyDecl / InitBlock / SecondaryConstructor / ClassDecl / InterfaceDecl / ObjectDecl / EnumEntry / NL / LineComment / BlockComment
@@ -123,7 +130,7 @@ InterfaceMember -> FunDecl / PropertyDecl / ClassDecl / InterfaceDecl / NL / Lin
 ObjectDecl -> doc:DocComment? NL? Annotation* Modifier* KW_companion? KW_object id:TypeIdent? ( COLON SuperTypes )? ClassBody?
 
 # Function declaration
-FunDecl -> doc:DocComment? NL? Annotation* Modifier* KW_fun TypeParams? ( ReceiverType DOT )? id:Ident LPAREN ParamList? RPAREN ( COLON Type )? WhereClause? ( Body / SEMI )?
+FunDecl -> doc:DocComment? NL? Annotation* Modifier* KW_fun TypeParams? ( ReceiverType DOT )? id:Ident LPAREN ParamList? RPAREN ( COLON Type )? WhereClause? ( Body / Operator Expr / SEMI )?
 ReceiverType -> Type
 
 # Property declaration
@@ -146,29 +153,27 @@ EnumEntry -> entry_doc:DocComment? Annotation* entry_id:TypeIdent ( LPAREN ( Exp
 Modifier -> KW_public / KW_private / KW_internal / KW_protected / KW_open / KW_final / KW_abstract / KW_override / KW_suspend / KW_inline
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
-Param -> Annotation* ( KW_val / KW_var )? param_id:Ident COLON Type ( Operator Expr )?
+ParamList -> Param ( COMMA NL* Param )* COMMA?
+Param -> NL* Annotation* ( KW_val / KW_var )? param_id:Ident COLON Type ( Operator Expr )?
 WhereClause -> KW_where WhereConstraint ( COMMA WhereConstraint )*
 WhereConstraint -> TypeIdent COLON Type
 
 # Types
-TypeParams -> Operator TypeParam ( COMMA TypeParam )* Operator
+TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
 TypeParam -> Annotation* ( KW_in / KW_out )? TypeIdent ( COLON Type )?
 Type -> TypeAtom QMARK?
 TypeAtom -> TypeIdent TypeArgs? / LPAREN Type ( COMMA Type )* RPAREN ARROW Type / LPAREN TypeList? RPAREN
-TypeArgs -> Operator Type ( COMMA Type )* Operator
+TypeArgs -> LT Type ( COMMA Type )* GT
 TypeList -> Type ( COMMA Type )*
-QMARK -> /\?/
-
 # Body (simplified - balance braces)
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
 # Expressions
 Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / ARROW / Operator / Annotation
+ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / KW_is / KW_as / KW_in / KW_this / LPAREN / RPAREN / DOT / DCOLON / ARROW / LT / GT / Operator / Annotation
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_fun / KW_val / KW_var / KW_class / KW_interface / KW_object / KW_enum / KW_sealed / KW_data / KW_typealias / KW_companion / KW_public / KW_private / KW_internal / KW_protected / KW_open / KW_final / KW_abstract / KW_override / KW_suspend / KW_inline / KW_if / KW_else / KW_when / KW_for / KW_while / KW_return / KW_is / KW_as / KW_in / KW_by / KW_where / KW_constructor / KW_init / SEMI / AT
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_fun / KW_val / KW_var / KW_class / KW_interface / KW_object / KW_enum / KW_sealed / KW_data / KW_typealias / KW_companion / KW_public / KW_private / KW_internal / KW_protected / KW_open / KW_final / KW_abstract / KW_override / KW_suspend / KW_inline / KW_if / KW_else / KW_when / KW_for / KW_while / KW_return / KW_is / KW_as / KW_in / KW_by / KW_where / KW_constructor / KW_init / KW_get / KW_set / KW_out / SEMI / COMMA / COLON / QMARK / AT
 
 Other -> Atom
 
