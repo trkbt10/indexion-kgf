@@ -26,6 +26,7 @@ TOKEN KW_var      /var\b/
 TOKEN KW_fn       /fn\b/
 TOKEN KW_pub      /pub\b/
 TOKEN KW_extern   /extern\b/
+TOKEN KW_packed   /packed\b/
 TOKEN KW_export   /export\b/
 TOKEN KW_inline   /inline\b/
 TOKEN KW_comptime /comptime\b/
@@ -103,7 +104,7 @@ StructDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_extern? KW_packe
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> FieldDecl / FnDecl / NL / LineComment
 FieldDecl -> field_doc:DocBlock? field_id:Ident COLON Type ( EQ Expr )? COMMA?
-KW_packed -> /packed\b/
+# KW_packed is defined in lex section
 
 # Enum declaration
 EnumDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_enum EnumBody
@@ -127,8 +128,8 @@ Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
 # Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / Char / PrimitiveType / KeywordType / Builtin / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / EQ / ARROW / Operator
+Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / TypeIdent / Number / String / Char / PrimitiveType / KeywordType / Builtin / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / ARROW / Operator
 
 Atom -> ExprAtom / NL / DocComment / LineComment / KW_const / KW_var / KW_fn / KW_pub / KW_extern / KW_export / KW_inline / KW_comptime / KW_test / KW_struct / KW_enum / KW_union / KW_error / KW_if / KW_else / KW_switch / KW_while / KW_for / KW_return / KW_defer / KW_try / KW_catch / KW_orelse / SEMI
 

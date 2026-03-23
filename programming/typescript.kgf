@@ -141,8 +141,8 @@ TypeList -> Type ( COMMA Type )*
 # Bodies and expressions (simplified - just balance braces)
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
-Expr -> ExprAtom+
-ExprAtom -> Ident / Number / StringLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP
+Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / Number / StringLit / LPAREN / RPAREN / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP
 Atom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / NL / LineComment / BlockComment / DocComment
 
 # Fallback

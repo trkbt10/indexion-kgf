@@ -127,7 +127,7 @@ GenericParams -> LBRACKET TypeParam ( COMMA TypeParam )* RBRACKET
 TypeParam -> Ident Type?
 TypeList -> Type ( COMMA Type )*
 Type -> TypeAtom / STAR Type / LBRACKET RBRACKET Type / KW_map LBRACKET Type RBRACKET Type / KW_chan Type
-TypeAtom -> Ident ( DOT Ident )? GenericArgs? / StructType / InterfaceType / LPAREN Type RPAREN
+TypeAtom -> Ident ( DOT Ident )? GenericArgs? / KeywordType / StructType / InterfaceType / LPAREN Type RPAREN
 GenericArgs -> LBRACKET Type ( COMMA Type )* RBRACKET
 
 # Body (simplified - balance braces)
@@ -135,8 +135,8 @@ Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
 # Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / Number / String / RawString / Char / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / Operator / STAR
+Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / Number / String / RawString / Char / LPAREN / RPAREN / DOT / COMMA / COLON / Operator / STAR
 
 Atom -> ExprAtom / NL / DocComment / BlockComment / KW_package / KW_import / KW_func / KW_type / KW_struct / KW_interface / KW_var / KW_const / KW_map / KW_chan / KW_if / KW_else / KW_switch / KW_case / KW_default / KW_for / KW_range / KW_return / KW_defer / KW_go / KeywordType / SEMI
 

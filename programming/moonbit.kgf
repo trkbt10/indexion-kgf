@@ -169,9 +169,9 @@ TypeList -> Type ( COMMA Type )*
 # Body and expressions (simplified)
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
-Expr -> ExprAtom+
+Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
 # ExprAtom includes keywords for use in expressions and function bodies
-ExprAtom -> Ident / TypeIdent / Number / String / MultiString / Char / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / EQ / ARROW / FATARROW / TILDE / BANG / QMARK / PIPE / AMP / AT / PackageRef / KW_fn / KW_pub / KW_priv / KW_struct / KW_enum / KW_type / KW_trait / KW_impl / KW_let / KW_mut / KW_const / KW_test / KW_derive / KW_for / KW_with
+ExprAtom -> Ident / TypeIdent / Number / String / MultiString / Char / LPAREN / RPAREN / DOT / COMMA / COLON / DCOLON / EQ / ARROW / FATARROW / TILDE / BANG / QMARK / PIPE / AMP / AT / PackageRef / KW_fn / KW_pub / KW_priv / KW_struct / KW_enum / KW_type / KW_trait / KW_impl / KW_let / KW_mut / KW_const / KW_test / KW_derive / KW_for / KW_with
 
 Atom -> ExprAtom / NL / LineComment / DocComment
 

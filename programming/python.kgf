@@ -103,8 +103,8 @@ Statement -> Assignment / Expr
 Assignment -> id:Ident TypeHint? EQ Expr
 
 # Expressions (simplified)
-Expr -> ExprAtom+
-ExprAtom -> Ident / Number / String / Docstring / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE / DOT / COMMA / COLON / EQ / STAR / STARSTAR / ARROW
+Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
+ExprAtom -> Ident / Number / String / Docstring / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / STAR / STARSTAR / ARROW
 
 Other -> ExprAtom / INDENT
 
