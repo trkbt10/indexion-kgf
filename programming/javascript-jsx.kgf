@@ -191,6 +191,7 @@ project_config: package.json
 install_cmd: npm install {name}
 build_cmd: npm run build
 resolve:
+  - exact:
   - manifest: package.json @ main | module
   - index: /index.js, /index.jsx, /index.mjs
   - ext: .js, .jsx, .mjs, .cjs

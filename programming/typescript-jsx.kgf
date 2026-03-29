@@ -282,6 +282,7 @@ aliases:
     pattern: ^@/(.*)$
     replace: src/\1
 resolve:
+  - exact:
   - manifest: package.json @ exports["."].types | exports["."].import | main | module ? type
   - index: /index.ts, /index.tsx, /index.d.ts, /index.js
   - ext: .ts, .tsx, .d.ts, .js

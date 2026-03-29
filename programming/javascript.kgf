@@ -107,6 +107,7 @@ on ImportDefault {
 relative_prefixes: ./, ../, /
 module_path_style: slash
 resolve:
+  - exact:
   - manifest: package.json @ main | module
   - index: /index.js, /index.mjs
   - ext: .js, .mjs, .cjs
