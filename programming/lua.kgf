@@ -7,7 +7,7 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - block must precede line to avoid --[[ matching --
-TOKEN DocComment /---[^\r\n]*/
+TOKEN DocComment /---(.*)/
 TOKEN BlockComment /--\[\[[\s\S]*?\]\]/
 TOKEN LineComment /--[^\r\n]*/
 

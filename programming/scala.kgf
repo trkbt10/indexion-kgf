@@ -7,7 +7,7 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - Scala uses /** */ for Scaladoc
-TOKEN DocComment /\/\*\*[\s\S]*?\*\//
+TOKEN DocComment /\/\*\*([\s\S]*?)\*\//
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 

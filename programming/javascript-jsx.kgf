@@ -8,7 +8,7 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # JSDoc comment block /** ... */
-TOKEN DocComment /\/\*\*[\s\S]*?\*\//
+TOKEN DocComment /\/\*\*([\s\S]*?)\*\//
 
 # Regular comments
 TOKEN LineComment /\/\/[^\r\n]*/

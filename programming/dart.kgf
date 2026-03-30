@@ -7,7 +7,7 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - Dart uses /// for documentation
-TOKEN DocComment /\/\/\/[^\r\n]*/
+TOKEN DocComment /\/\/\/(.*)/
 TOKEN LineComment /\/\/[^\r\n]*/
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 

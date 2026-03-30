@@ -159,6 +159,7 @@ on PropertyDef when $scope("value", "current_class") {
 relative_prefixes: ./, ../, /
 module_path_style: dot
 project_config: pyproject.toml
+package_markers: __init__.py
 install_cmd: pip install {name}
 build_cmd: pip install -e .
 resolve:

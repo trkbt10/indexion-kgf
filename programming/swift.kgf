@@ -7,8 +7,8 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - Swift uses /// for documentation
-TOKEN DocComment /\/\/\/[^\r\n]*/
-TOKEN DocBlockComment /\/\*\*[\s\S]*?\*\//
+TOKEN DocComment /\/\/\/(.*)/
+TOKEN DocBlockComment /\/\*\*([\s\S]*?)\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 

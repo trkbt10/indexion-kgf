@@ -7,7 +7,8 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - Doxygen uses /** */ and ///
-TOKEN DocComment /\/\*\*[\s\S]*?\*\/|\/\/\/[^\r\n]*/
+TOKEN DocComment /\/\/\/(.*)/
+TOKEN DocBlockComment /\/\*\*([\s\S]*?)\*\//
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 
@@ -112,6 +113,7 @@ Item -> NL
      / TypedefDecl
      / VarDecl
      / DocComment
+     / DocBlockComment
      / Other
 
 # Name — matches both lowercase and uppercase identifiers
@@ -119,6 +121,7 @@ Name -> Ident / TypeIdent
 
 # Doc block
 DocBlock -> DocComment ( NL DocComment )*
+          / DocBlockComment
 
 # Namespace declaration
 NamespaceDecl -> KW_namespace id:Name? NamespaceBody
@@ -204,7 +207,7 @@ BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKE
 Expr -> ( ExprAtom / LPAREN Expr? RPAREN / LBRACKET Expr? RBRACKET )+
 ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / ThisLit / KeywordType / DOT / COMMA / COLON / SCOPE / ARROW / LT / GT / STAR / AMP / Operator
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / Include / Preprocessor / KW_class / KW_struct / KW_union / KW_enum / KW_namespace / KW_template / KW_typename / KW_public / KW_private / KW_protected / KW_virtual / KW_override / KW_final / KW_const / KW_constexpr / KW_static / KW_extern / KW_inline / KW_using / KW_typedef / KW_friend / KW_explicit / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_return / KW_new / KW_delete / KW_try / KW_catch / KW_throw / KW_noexcept / KW_operator / SEMI
+Atom -> ExprAtom / NL / DocComment / DocBlockComment / LineComment / BlockComment / Include / Preprocessor / KW_class / KW_struct / KW_union / KW_enum / KW_namespace / KW_template / KW_typename / KW_public / KW_private / KW_protected / KW_virtual / KW_override / KW_final / KW_const / KW_constexpr / KW_static / KW_extern / KW_inline / KW_using / KW_typedef / KW_friend / KW_explicit / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_return / KW_new / KW_delete / KW_try / KW_catch / KW_throw / KW_noexcept / KW_operator / SEMI
 
 Other -> Atom
 

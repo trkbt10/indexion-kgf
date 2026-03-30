@@ -10,7 +10,7 @@ TOKEN NL /\r?\n/
 TOKEN PackageDoc /\/\/\s*Package\s+[^\r\n]*/
 
 # Comments - Go uses // comments before declarations as documentation
-TOKEN DocComment /\/\/[^\r\n]*/
+TOKEN DocComment /\/\/(.*)/
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 
 # String literals

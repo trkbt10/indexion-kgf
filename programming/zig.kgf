@@ -7,7 +7,7 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Comments - Zig uses /// for documentation
-TOKEN DocComment /\/\/\/[^\r\n]*/
+TOKEN DocComment /\/\/\/(.*)/
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # String/char literals

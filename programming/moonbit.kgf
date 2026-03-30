@@ -8,15 +8,14 @@ TOKEN NL /\r?\n/
 
 # Doc section markers (must come before DocLine)
 # Recognizes: Module:, Overview:, Example:, Description:, Parameters:, Returns:, Throws:
-TOKEN DocSection /\/\/\/\s*(Module|Overview|Example|Description|Parameters|Returns|Throws|Deprecated|See|Since):/ strip=4
+TOKEN DocSection /\/\/\/\s*((Module|Overview|Example|Description|Parameters|Returns|Throws|Deprecated|See|Since):.*)/
 
-# MoonBit doc comments: ///| marks start of doc block (legacy format)
+# MoonBit doc comments: ///| marks start of doc block
 # skip_value: this is just a marker, content comes from subsequent DocLine tokens
 TOKEN DocComment /\/\/\/\|[^\r\n]*/ skip_value
 
 # Doc content lines: /// followed by content (must come before LineComment)
-# strip=3: remove "///" prefix, leaving just the content
-TOKEN DocLine /\/\/\/[^\r\n]*/ strip=3
+TOKEN DocLine /\/\/\/(.*)/
 
 # Regular comments (// but not ///)
 TOKEN LineComment /\/\/[^\r\n]*/
@@ -262,6 +261,7 @@ on StandaloneDoc {
 relative_prefixes: ./
 module_path_style: slash
 project_config: moon.mod.json
+package_markers: moon.pkg, moon.pkg.json
 install_cmd: moon add {name}
 build_cmd: moon build
 resolve:

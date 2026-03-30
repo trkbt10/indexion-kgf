@@ -7,8 +7,8 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 
 # Doc comments (/// and //!)
-TOKEN DocComment /\/\/\/[^\r\n]*/
-TOKEN InnerDocComment /\/\/![^\r\n]*/
+TOKEN DocComment /\/\/\/(.*)/
+TOKEN DocInnerComment /\/\/!(.*)/
 
 # Regular comments
 TOKEN LineComment /\/\/[^\r\n]*/
@@ -100,11 +100,11 @@ TOKEN STAR     /\*/
 Module -> ModuleDoc? Item*
 
 # Module-level documentation (inner doc comments //!)
-ModuleDoc -> module_doc:InnerDocComment ( NL InnerDocComment )*
+ModuleDoc -> module_doc:DocInnerComment ( NL DocInnerComment )*
 
 Item -> NL
      / DocComment
-     / InnerDocComment
+     / DocInnerComment
      / UseDecl
      / ModDecl
      / FnDecl
@@ -190,7 +190,7 @@ BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKE
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
 ExprAtom -> Ident / Number / String / RawString / Char / Lifetime / LPAREN / RPAREN / DOT / DOTDOT / COMMA / COLON / DCOLON / ARROW / FATARROW / Operator / STAR / AMP / QMARK / Macro / Attribute
 
-Atom -> ExprAtom / NL / DocComment / InnerDocComment / LineComment / BlockComment / KW_fn / KW_pub / KW_struct / KW_enum / KW_trait / KW_impl / KW_type / KW_mod / KW_use / KW_let / KW_mut / KW_const / KW_static / KW_crate / KW_self / KW_super / KW_extern / KW_async / KW_await / KW_dyn / KW_where / KW_if / KW_else / KW_match / KW_loop / KW_while / KW_for / KW_in / KW_return / KW_unsafe / KW_as / KW_ref / KW_move / KeywordType / SEMI / POUND
+Atom -> ExprAtom / NL / DocComment / DocInnerComment / LineComment / BlockComment / KW_fn / KW_pub / KW_struct / KW_enum / KW_trait / KW_impl / KW_type / KW_mod / KW_use / KW_let / KW_mut / KW_const / KW_static / KW_crate / KW_self / KW_super / KW_extern / KW_async / KW_await / KW_dyn / KW_where / KW_if / KW_else / KW_match / KW_loop / KW_while / KW_for / KW_in / KW_return / KW_unsafe / KW_as / KW_ref / KW_move / KeywordType / SEMI / POUND
 
 Other -> Atom
 
