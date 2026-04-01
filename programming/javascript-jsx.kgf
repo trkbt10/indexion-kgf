@@ -192,9 +192,10 @@ install_cmd: npm install {name}
 build_cmd: npm run build
 resolve:
   - exact:
-  - manifest: package.json @ main | module
+  - manifest: package.json @ exports["."] | main | module
   - index: /index.js, /index.jsx, /index.mjs
   - ext: .js, .jsx, .mjs, .cjs
+  - ancestors: node_modules/
   - fallback: npm:
 
 === ignore

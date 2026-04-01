@@ -85,21 +85,22 @@ Item -> NL
      / Other
 
 # Import declarations
-ImportDecl -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
+# `import type` (TS 3.8+) is treated the same as `import` for dependency analysis
+ImportDecl -> KW_import KW_type? ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
 SideEffect -> path:StringLit
 ImportNS -> STAR KW_as ns:Ident KW_from from:StringLit
 ImportNamedDefault -> defId:Ident COMMA LBRACE ImportSpecList RBRACE KW_from from:StringLit
 ImportNamed -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
 ImportDefault -> defId:Ident KW_from from:StringLit
 ImportSpecList -> ImportSpec ( COMMA ImportSpec )*
-ImportSpec -> origin:Ident ( KW_as local:Ident )?
+ImportSpec -> KW_type? origin:Ident ( KW_as local:Ident )?
 
 # Documented declarations (doc comment preceding)
 ExportDecl -> doc:DocComment? KW_export KW_default? ( FunctionDecl / ClassDecl / InterfaceDecl / TypeDecl / VarDecl / EnumDecl )
            / KW_export STAR KW_from from:StringLit SEMI?
-           / KW_export LBRACE ExportList RBRACE KW_from from:StringLit SEMI?
-           / KW_export LBRACE ExportList RBRACE SEMI?
-ExportList -> Ident ( COMMA Ident )*
+           / KW_export KW_type? LBRACE ExportList RBRACE KW_from from:StringLit SEMI?
+           / KW_export KW_type? LBRACE ExportList RBRACE SEMI?
+ExportList -> KW_type? Ident ( KW_as Ident )? ( COMMA KW_type? Ident ( KW_as Ident )? )*
 
 FunctionDecl -> doc:DocComment? KW_async? KW_function id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? Body?
 ClassDecl -> doc:DocComment? KW_abstract? KW_class id:Ident GenericParams? ExtendsClause? ImplementsClause? ClassBody
@@ -259,9 +260,10 @@ aliases:
     replace: src/\1
 resolve:
   - exact:
-  - manifest: package.json @ exports["."].types | exports["."].import | main | module ? type
+  - manifest: package.json @ exports["."].types | exports["."].import | exports["."] | main | module ? type
   - index: /index.ts, /index.tsx, /index.d.ts, /index.js
   - ext: .ts, .tsx, .d.ts, .js
+  - ancestors: node_modules/
   - fallback: npm:
 
 === ignore

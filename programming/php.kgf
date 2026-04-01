@@ -245,4 +245,5 @@ resolve:
   - manifest: composer.json @ require
   - marker: composer.json, composer.lock
   - ext: .php
+  - ancestors: vendor/
   - fallback: composer:

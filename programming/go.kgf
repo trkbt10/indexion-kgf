@@ -217,6 +217,7 @@ build_cmd: go build
 resolve:
   - manifest: go.mod @ module
   - ext: .go
+  - ancestors: vendor/
   - fallback: pkg:
 
 === ignore
