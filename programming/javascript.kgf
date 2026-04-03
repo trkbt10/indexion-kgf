@@ -89,6 +89,7 @@ on ExportFrom:         reexport module=from
 
 === features
 document_symbol_kinds: Function
+function_kinds: Function
 coverage_token_kinds: Ident
 
 === semantics

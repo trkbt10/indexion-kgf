@@ -120,6 +120,9 @@ on ModuleDoc:   module_doc doc=doc
 on ImportStmt:  import module=QN
 on FromImport:  import module=module
 
+=== features
+function_kinds: Function
+
 === semantics
 # Import dependency edge
 on FromImport {

@@ -192,6 +192,7 @@ on Param:       def param_id kind=Param
 
 === features
 document_symbol_kinds: Function, Struct, Enum, Type, Trait
+function_kinds: Function
 coverage_token_kinds: Ident, TypeIdent, PackageRef
 
 === semantics

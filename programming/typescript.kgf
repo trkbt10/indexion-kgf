@@ -176,6 +176,7 @@ on ImportDefault:      import module=from
 
 === features
 document_symbol_kinds: Function, Class, Interface, Type, Enum
+function_kinds: Function
 coverage_token_kinds: Ident
 
 === semantics

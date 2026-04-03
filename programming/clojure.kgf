@@ -143,6 +143,9 @@ on Param:           def param_id kind=Param
 
 on RequireSpec:     import module=path
 
+=== features
+function_kinds: Function, Macro, Method, Multimethod
+
 === semantics
 # Import dependency
 on RequireSpec {

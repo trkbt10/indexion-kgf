@@ -148,6 +148,9 @@ on MethodSig:    def method_id kind=Method doc=method_doc
 
 on ImportDecl:   import module=path
 
+=== features
+function_kinds: Function
+
 === semantics
 # Import dependency
 on ImportDecl {

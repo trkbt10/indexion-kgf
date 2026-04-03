@@ -163,6 +163,9 @@ on Param:        def param_id kind=Param
 
 on ImportDecl:   import module=path
 
+=== features
+function_kinds: Function, Macro
+
 === semantics
 # Import dependency
 on ImportDecl {

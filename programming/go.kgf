@@ -156,6 +156,7 @@ on ImportSpec: import module=path
 
 === features
 document_symbol_kinds: Function, Type
+function_kinds: Function
 coverage_token_kinds: Ident
 
 === semantics

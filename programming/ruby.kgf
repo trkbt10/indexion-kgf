@@ -152,6 +152,9 @@ on Param:       def param_id kind=Param
 
 on RequireDecl: import module=path
 
+=== features
+function_kinds: Method
+
 === semantics
 # Import dependency
 on RequireDecl {

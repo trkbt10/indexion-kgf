@@ -182,6 +182,9 @@ on EnumMember:    def case_id kind=EnumCase doc=case_doc
 
 on UseDecl:       import module=path
 
+=== features
+function_kinds: Function
+
 === semantics
 # Import dependency
 on UseDecl {

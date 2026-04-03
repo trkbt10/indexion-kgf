@@ -110,6 +110,9 @@ on LocalVarDecl:      def id kind=Variable doc=doc
 on AssignmentDecl:    def id kind=Variable doc=doc
 on Param:             def param_id kind=Param
 
+=== features
+function_kinds: Function
+
 === semantics
 # Function declaration
 on FunctionDecl {

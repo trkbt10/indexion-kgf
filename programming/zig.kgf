@@ -146,6 +146,9 @@ on FieldDecl:   def field_id kind=Field doc=field_doc
 on EnumMember:  def value_id kind=EnumValue doc=value_doc
 on Param:       def param_id kind=Param
 
+=== features
+function_kinds: Function
+
 === semantics
 # Function declaration
 on FnDecl {

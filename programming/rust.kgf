@@ -209,6 +209,9 @@ on EnumVariant: def variant_id kind=Variant doc=variant_doc
 on TraitItem:   def method_id kind=Method doc=method_doc
 on Param:       def param_id kind=Param
 
+=== features
+function_kinds: Function
+
 === semantics
 # Module-level documentation (//! inner doc comments)
 on ModuleDoc {

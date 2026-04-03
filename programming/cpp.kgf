@@ -226,6 +226,9 @@ on TypedefDecl:     def id kind=Typedef doc=doc
 on EnumValue:       def value_id kind=EnumValue doc=value_doc
 on Param:           def param_id kind=Param
 
+=== features
+function_kinds: Function
+
 === semantics
 # Namespace declaration
 on NamespaceDecl {

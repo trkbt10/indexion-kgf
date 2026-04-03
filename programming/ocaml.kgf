@@ -164,6 +164,9 @@ on MethodDecl:    def method_id kind=Method doc=method_doc
 
 on OpenDecl:      import module=path
 
+=== features
+function_kinds: Function, External, Val
+
 === semantics
 # Import dependency
 on OpenDecl {

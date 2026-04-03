@@ -229,6 +229,7 @@ on UsingDecl:     import module=path
 
 === features
 document_symbol_kinds: Class, Struct, Interface, Enum, Record, Delegate
+function_kinds:
 coverage_token_kinds: Ident, TypeIdent
 
 === semantics
