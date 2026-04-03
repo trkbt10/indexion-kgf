@@ -111,25 +111,25 @@ DocBlockWithSections -> DocSection ( NL DocLine )* ( NL DocSection ( NL DocLine 
 DocBlock -> DocComment ( NL DocLine )*
 
 # Function declaration (DocBlock optional, NL consumed separately)
-FnDecl -> fn_doc:DocBlock? NL? Visibility? KW_fn TypeIdent? DCOLON? fn_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? Body?
+FnDecl -> fn_doc:DocBlock? NL? vis:Visibility? KW_fn TypeIdent? DCOLON? fn_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? Body?
 
 # Struct declaration
-StructDecl -> struct_doc:DocBlock? NL? Visibility? KW_struct struct_id:TypeIdent GenericParams? StructBody? DeriveClause?
+StructDecl -> struct_doc:DocBlock? NL? vis:Visibility? KW_struct struct_id:TypeIdent GenericParams? StructBody? DeriveClause?
 
 # Enum declaration
-EnumDecl -> enum_doc:DocBlock? NL? Visibility? KW_enum enum_id:TypeIdent GenericParams? EnumBody? DeriveClause?
+EnumDecl -> enum_doc:DocBlock? NL? vis:Visibility? KW_enum enum_id:TypeIdent GenericParams? EnumBody? DeriveClause?
 
 # Type alias
-TypeDecl -> type_doc:DocBlock? NL? Visibility? KW_type type_id:TypeIdent GenericParams? EQ Type
+TypeDecl -> type_doc:DocBlock? NL? vis:Visibility? KW_type type_id:TypeIdent GenericParams? EQ Type
 
 # Trait declaration
-TraitDecl -> trait_doc:DocBlock? NL? Visibility? KW_trait trait_id:TypeIdent GenericParams? TraitBody?
+TraitDecl -> trait_doc:DocBlock? NL? vis:Visibility? KW_trait trait_id:TypeIdent GenericParams? TraitBody?
 
 # Impl block
-ImplDecl -> impl_doc:DocBlock? NL? Visibility? KW_impl TypeIdent? KW_for? TypeIdent? GenericParams? ImplBody?
+ImplDecl -> impl_doc:DocBlock? NL? vis:Visibility? KW_impl TypeIdent? KW_for? TypeIdent? GenericParams? ImplBody?
 
 # Let binding (visibility required to avoid matching local let bindings)
-LetDecl -> let_doc:DocBlock? NL? Visibility KW_let let_id:Ident TypeAnnotation? EQ Expr
+LetDecl -> let_doc:DocBlock? NL? vis:Visibility KW_let let_id:Ident TypeAnnotation? EQ Expr
 
 # Test declaration
 TestDecl -> KW_test String? Body?
@@ -203,35 +203,35 @@ on ModuleDoc {
 
 on FnDecl {
   let sym_id = concat($file, "::", $fn_id)
-  edge declares from $file to sym_id attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text, "visibility", cond($vis, "public"))
 }
 
 on StructDecl {
   let sym_id = concat($file, "::", $struct_id)
-  edge declares from $file to sym_id attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text, "visibility", cond($vis, "public"))
   bind ns "value" name "current_struct" to sym_id
 }
 
 on EnumDecl {
   let sym_id = concat($file, "::", $enum_id)
-  edge declares from $file to sym_id attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text, "visibility", cond($vis, "public"))
   bind ns "value" name "current_enum" to sym_id
 }
 
 on TypeDecl {
   let sym_id = concat($file, "::", $type_id)
-  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text, "visibility", cond($vis, "public"))
 }
 
 on TraitDecl {
   let sym_id = concat($file, "::", $trait_id)
-  edge declares from $file to sym_id attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text, "visibility", cond($vis, "public"))
   bind ns "value" name "current_trait" to sym_id
 }
 
 on LetDecl {
   let sym_id = concat($file, "::", $let_id)
-  edge declares from $file to sym_id attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text)
+  edge declares from $file to sym_id attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text, "visibility", cond($vis, "public"))
 }
 
 on StructField when $scope("value", "current_struct") {
@@ -261,7 +261,6 @@ on StandaloneDoc {
 relative_prefixes: ./
 module_path_style: slash
 project_config: moon.mod.json
-package_markers: moon.pkg, moon.pkg.json
 install_cmd: moon add {name}
 build_cmd: moon build
 resolve:

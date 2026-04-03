@@ -175,21 +175,21 @@ on ImportDecl {
 # Module declaration
 on ModuleDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_module" to sym_id
 }
 
 # Protocol declaration
 on ProtocolDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_protocol" to sym_id
 }
 
 # Def declaration (top-level)
 on DefDecl {
   let sym_id = concat($file, "::", $def_id)
-  edge declares from $file to sym_id attrs obj("name", $def_id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $def_id, "kind", "Function", "doc", $doc, "visibility", "public")
 }
 
 # Def in module
@@ -202,13 +202,13 @@ on DefDecl when $scope("value", "current_module") {
 # Macro declaration
 on DefMacroDecl {
   let sym_id = concat($file, "::", $macro_id)
-  edge declares from $file to sym_id attrs obj("name", $macro_id, "kind", "Macro", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $macro_id, "kind", "Macro", "doc", $doc, "visibility", "public")
 }
 
 # Guard declaration
 on DefGuardDecl {
   let sym_id = concat($file, "::", $guard_id)
-  edge declares from $file to sym_id attrs obj("name", $guard_id, "kind", "Guard", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $guard_id, "kind", "Guard", "doc", $doc, "visibility", "public")
 }
 
 === resolver

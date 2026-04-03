@@ -31,7 +31,12 @@ TOKEN DOT           /\./
 TOKEN EQ            /=/
 
 === grammar
-Module          -> ( ImportDecl / ExportFrom / FnDecl / VarDecl / ExprStmt )*
+Module          -> ( ImportDecl / ExportFrom / ExportDecl / FnDecl / VarDecl / ExprStmt )*
+
+ExportDecl      -> KW_export KW_default? ( FnDecl / VarDecl / ClassDecl )
+ClassDecl       -> KW_class id:Ident ClassBody
+ClassBody       -> LBRACE ClassBodyItem* RBRACE
+ClassBodyItem   -> FnDecl / ExprStmt
 
 ImportDecl      -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
 SideEffect      -> path:StringLit
@@ -101,6 +106,16 @@ on ImportNamed {
 }
 on ImportDefault {
   edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
+}
+
+on FnDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "visibility", "public")
+}
+
+on ClassDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "visibility", "public")
 }
 
 === resolver

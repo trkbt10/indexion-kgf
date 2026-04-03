@@ -203,47 +203,47 @@ on ImportDecl {
 # Class declaration
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_class" to sym_id
 }
 
 # Trait declaration
 on TraitDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_trait" to sym_id
 }
 
 # Object declaration
 on ObjectDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Object", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Object", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_object" to sym_id
 }
 
 # Enum declaration
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_enum" to sym_id
 }
 
 # Def declaration
 on DefDecl {
   let sym_id = concat($file, "::", $def_id)
-  edge declares from $file to sym_id attrs obj("name", $def_id, "kind", "Def", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $def_id, "kind", "Def", "doc", $doc, "visibility", "public")
 }
 
 # Val declaration
 on ValDecl {
   let sym_id = concat($file, "::", $val_id)
-  edge declares from $file to sym_id attrs obj("name", $val_id, "kind", "Val", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $val_id, "kind", "Val", "doc", $doc, "visibility", "public")
 }
 
 # Type declaration
 on TypeDecl {
   let sym_id = concat($file, "::", $type_id)
-  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $doc, "visibility", "public")
 }
 
 # Enum case

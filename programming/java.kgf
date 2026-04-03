@@ -111,7 +111,7 @@ ImportDecl -> KW_import KW_static? path:QualifiedName ( DOT Operator )? SEMI
 QualifiedName -> Ident ( DOT Ident )*
 
 # Class declaration
-ClassDecl -> doc:DocComment? NL? Annotation* Modifier* KW_class id:Ident TypeParams? ExtendsClause? ImplementsClause? PermitsClause? ClassBody
+ClassDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_class id:Ident TypeParams? ExtendsClause? ImplementsClause? PermitsClause? ClassBody
 ExtendsClause -> KW_extends Type
 ImplementsClause -> KW_implements TypeList
 PermitsClause -> KW_permits TypeList
@@ -119,17 +119,17 @@ ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> ConstructorDecl / MethodDecl / FieldDecl / ClassDecl / InterfaceDecl / EnumDecl / StaticBlock / NL / LineComment / BlockComment
 
 # Interface declaration
-InterfaceDecl -> doc:DocComment? NL? Annotation* Modifier* KW_interface id:Ident TypeParams? ExtendsClause? PermitsClause? InterfaceBody
+InterfaceDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_interface id:Ident TypeParams? ExtendsClause? PermitsClause? InterfaceBody
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
 InterfaceMember -> MethodDecl / FieldDecl / ClassDecl / InterfaceDecl / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocComment? NL? Annotation* Modifier* KW_enum id:Ident ImplementsClause? EnumBody
+EnumDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_enum id:Ident ImplementsClause? EnumBody
 EnumBody -> LBRACE EnumConstant* ( SEMI ClassMember* )? RBRACE
 EnumConstant -> const_doc:DocComment? Annotation* const_id:Ident Arguments? ClassBody? COMMA? / NL / LineComment
 
 # Record declaration
-RecordDecl -> doc:DocComment? NL? Annotation* Modifier* KW_record id:Ident TypeParams? LPAREN RecordComponents? RPAREN ImplementsClause? RecordBody
+RecordDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_record id:Ident TypeParams? LPAREN RecordComponents? RPAREN ImplementsClause? RecordBody
 RecordComponents -> RecordComponent ( COMMA RecordComponent )*
 RecordComponent -> Annotation* Type comp_id:Ident
 RecordBody -> LBRACE ClassMember* RBRACE
@@ -201,28 +201,28 @@ on ImportDecl {
 # Class declaration
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_class" to sym_id
 }
 
 # Interface declaration
 on InterfaceDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_interface" to sym_id
 }
 
 # Enum declaration
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_enum" to sym_id
 }
 
 # Record declaration
 on RecordDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_record" to sym_id
 }
 

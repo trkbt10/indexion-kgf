@@ -5,7 +5,6 @@ sources: .py, .pyi
 === lex
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
-TOKEN INDENT /^[ \t]+/
 
 # Docstrings (triple-quoted strings at statement position)
 TOKEN Docstring /"""[\s\S]*?"""|'''[\s\S]*?'''/
@@ -13,8 +12,8 @@ TOKEN Docstring /"""[\s\S]*?"""|'''[\s\S]*?'''/
 # Comments
 TOKEN Comment /#[^\r\n]*/
 
-# Strings
-TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+# Strings (with optional f/r/b/u prefix)
+TOKEN String /[fFrRbBuU]?"([^"\\]|\\.)*"|[fFrRbBuU]?'([^'\\]|\\.)*'/
 
 # Keywords
 TOKEN KW_def      /def\b/
@@ -66,7 +65,8 @@ Item -> NL
 
 # Import statements
 ImportStmt -> KW_import ModList
-FromImport -> KW_from module:QN KW_import Names
+FromImport -> KW_from module:RelativeQN KW_import Names
+RelativeQN -> DOT* QN / DOT+
 ModList -> QN ( COMMA QN )*
 Names -> Ident ( KW_as Ident )? ( COMMA Ident ( KW_as Ident )? )*
 QN -> Ident ( DOT Ident )*
@@ -75,12 +75,12 @@ QN -> Ident ( DOT Ident )*
 FunctionDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
 ClassDef -> decorators:Decorator* KW_class id:Ident Bases? COLON ClassSuite
 
-# Suite with optional docstring
-Suite -> NL INDENT doc:Docstring? SuiteContent* / SimpleStmt
-ClassSuite -> NL INDENT doc:Docstring? ClassMember*
+# Suite (body) — without INDENT tokens, consume content until next top-level construct
+Suite -> NL doc:Docstring? SuiteContent* / SimpleStmt
+ClassSuite -> NL doc:Docstring? ClassMember*
 
-SuiteContent -> NL / Comment / Statement / INDENT
-ClassMember -> NL / Comment / MethodDef / PropertyDef / Assignment / INDENT
+SuiteContent -> NL / Comment / Statement
+ClassMember -> NL / Comment / MethodDef / PropertyDef / Assignment
 
 MethodDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
 PropertyDef -> Decorator KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
@@ -106,7 +106,7 @@ Assignment -> id:Ident TypeHint? EQ Expr
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
 ExprAtom -> Ident / Number / String / Docstring / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / STAR / STARSTAR / ARROW
 
-Other -> ExprAtom / INDENT
+Other -> ExprAtom
 
 === attrs
 on FunctionDef: def id kind=Function doc=doc decorators=decorators
@@ -134,12 +134,12 @@ on ModuleDoc {
 # Declaration edges with documentation
 on FunctionDef {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "decorators", $decorators)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "decorators", $decorators, "visibility", "public")
 }
 
 on ClassDef {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "decorators", $decorators)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "decorators", $decorators, "visibility", "public")
   bind ns "value" name "current_class" to sym_id
 }
 
@@ -159,7 +159,6 @@ on PropertyDef when $scope("value", "current_class") {
 relative_prefixes: ./, ../, /
 module_path_style: dot
 project_config: pyproject.toml
-package_markers: __init__.py
 install_cmd: pip install {name}
 build_cmd: pip install -e .
 resolve:

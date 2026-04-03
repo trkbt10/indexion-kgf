@@ -122,37 +122,37 @@ UsingDecl -> KW_using KW_static? ( Ident Operator )? path:QualifiedName SEMI
 QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
 
 # Namespace declaration
-NamespaceDecl -> KW_namespace QualifiedName ( NamespaceBody / SEMI )
+NamespaceDecl -> KW_namespace QualifiedName NL? ( NamespaceBody / SEMI )
 NamespaceBody -> LBRACE NamespaceMember* RBRACE
 NamespaceMember -> UsingDecl / NamespaceDecl / ClassDecl / StructDecl / InterfaceDecl / EnumDecl / RecordDecl / DelegateDecl / NL / LineComment / BlockComment
 
 # Class declaration
-ClassDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_partial? KW_class id:TypeIdent TypeParams? BaseList? WhereClause? NL? LBRACE ClassMember* RBRACE
+ClassDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_class id:TypeIdent TypeParams? BaseList? WhereClause? NL? LBRACE ClassMember* RBRACE
 BaseList -> COLON TypeList
 ClassMember -> ConstructorDecl / MethodDecl / PropertyDecl / FieldDecl / EventDecl / IndexerDecl / ClassDecl / StructDecl / InterfaceDecl / EnumDecl / DelegateDecl / NL / LineComment / BlockComment
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_partial? KW_readonly? KW_struct id:TypeIdent TypeParams? BaseList? WhereClause? StructBody
+StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_readonly? KW_struct id:TypeIdent TypeParams? BaseList? WhereClause? StructBody
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> ConstructorDecl / MethodDecl / PropertyDecl / FieldDecl / EventDecl / IndexerDecl / ClassDecl / StructDecl / InterfaceDecl / EnumDecl / DelegateDecl / NL / LineComment / BlockComment
 
 # Interface declaration
-InterfaceDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_partial? KW_interface id:TypeIdent TypeParams? BaseList? WhereClause? InterfaceBody
+InterfaceDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_interface id:TypeIdent TypeParams? BaseList? WhereClause? InterfaceBody
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
 InterfaceMember -> MethodDecl / PropertyDecl / EventDecl / IndexerDecl / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_enum id:TypeIdent ( COLON Type )? EnumBody
+EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_enum id:TypeIdent ( COLON Type )? EnumBody
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> member_doc:DocBlock? Attribute* member_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
 # Record declaration
-RecordDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_partial? KW_record KW_struct? KW_class? id:TypeIdent TypeParams? RecordParams? BaseList? WhereClause? ( RecordBody / SEMI )
+RecordDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_record KW_struct? KW_class? id:TypeIdent TypeParams? RecordParams? BaseList? WhereClause? ( RecordBody / SEMI )
 RecordParams -> LPAREN ParamList? RPAREN
 RecordBody -> LBRACE ClassMember* RBRACE
 
 # Delegate declaration
-DelegateDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_delegate Type id:TypeIdent TypeParams? LPAREN ParamList? RPAREN WhereClause? SEMI
+DelegateDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_delegate Type id:TypeIdent TypeParams? LPAREN ParamList? RPAREN WhereClause? SEMI
 
 # Constructor declaration
 ConstructorDecl -> doc:DocBlock? NL? Attribute* Modifier* id:TypeIdent LPAREN ParamList? RPAREN ( COLON ( KW_this / KW_base ) LPAREN ( Expr ( COMMA Expr )* )? RPAREN )? NL? Body
@@ -185,7 +185,7 @@ Modifier -> KW_public / KW_private / KW_protected / KW_internal / KW_static / KW
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
-Param -> Attribute* ( KW_this / KW_ref / KW_out / KW_in / Ident )? Type param_id:Ident ( Operator Expr )?
+Param -> Attribute* ( KW_this / KW_ref / KW_out / KW_in )? Type param_id:Ident ( Operator Expr )?
 WhereClause -> KW_where TypeIdent COLON TypeConstraint ( COMMA TypeConstraint )*
 TypeConstraint -> Type / KW_class / KW_struct / KW_new LPAREN RPAREN
 
@@ -240,42 +240,42 @@ on UsingDecl {
 # Class declaration
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_class" to sym_id
 }
 
 # Struct declaration
 on StructDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_struct" to sym_id
 }
 
 # Interface declaration
 on InterfaceDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_interface" to sym_id
 }
 
 # Enum declaration
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_enum" to sym_id
 }
 
 # Record declaration
 on RecordDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_record" to sym_id
 }
 
 # Delegate declaration
 on DelegateDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Delegate", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Delegate", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Method declaration

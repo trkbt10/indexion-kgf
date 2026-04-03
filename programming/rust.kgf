@@ -127,26 +127,26 @@ UsePathSegment -> Ident / STAR / LBRACE UseList RBRACE
 UseList -> UsePath ( COMMA UsePath )* COMMA?
 
 # Module declaration
-ModDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_mod id:Ident ( SEMI / Body )
+ModDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_mod id:Ident ( SEMI / Body )
 
 # Function declaration
-FnDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? Body?
+FnDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? Body?
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
+StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
 StructBody -> LBRACE StructField* RBRACE
 TupleBody -> LPAREN TupleField* RPAREN
 StructField -> field_doc:DocBlock? Attribute* KW_pub? field_id:Ident COLON Type COMMA? / NL / LineComment
 TupleField -> field_doc:DocBlock? Attribute* KW_pub? Type COMMA? / NL / LineComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
+EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
 EnumBody -> LBRACE EnumVariant* RBRACE
 EnumVariant -> variant_doc:DocBlock? Attribute* variant_id:Ident VariantPayload? COMMA? / NL / LineComment
 VariantPayload -> TupleBody / StructBody / FATARROW Expr
 
 # Trait declaration
-TraitDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
+TraitDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
 SuperTraits -> COLON TypeBound ( Operator TypeBound )*
 TraitBody -> LBRACE TraitItem* RBRACE
 TraitItem -> method_doc:DocBlock? Attribute* KW_fn method_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? ( Body / SEMI ) / NL / LineComment
@@ -157,13 +157,13 @@ ImplBody -> LBRACE ImplItem* RBRACE
 ImplItem -> FnDecl / TypeDecl / ConstDecl / NL / LineComment
 
 # Type alias
-TypeDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_type id:Ident GenericParams? WhereClause? ( FATARROW Type )? SEMI
+TypeDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_type id:Ident GenericParams? WhereClause? ( FATARROW Type )? SEMI
 
 # Const declaration
-ConstDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_const id:Ident COLON Type FATARROW Expr SEMI
+ConstDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const id:Ident COLON Type FATARROW Expr SEMI
 
 # Static declaration
-StaticDecl -> doc:DocBlock? NL? Attribute* KW_pub? KW_static KW_mut? id:Ident COLON Type FATARROW Expr SEMI
+StaticDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_static KW_mut? id:Ident COLON Type FATARROW Expr SEMI
 
 # Parameters and types
 ParamList -> Param ( COMMA Param )*
@@ -218,52 +218,52 @@ on ModuleDoc {
 # Function declaration
 on FnDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Struct declaration
 on StructDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_struct" to sym_id
 }
 
 # Enum declaration
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_enum" to sym_id
 }
 
 # Trait declaration
 on TraitDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_trait" to sym_id
 }
 
 # Type alias
 on TypeDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Module declaration
 on ModDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Const declaration
 on ConstDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Static declaration
 on StaticDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Static", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Static", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Struct field

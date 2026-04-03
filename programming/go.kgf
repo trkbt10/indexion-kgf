@@ -49,8 +49,8 @@ TOKEN KeywordType /\b(?:bool|byte|complex64|complex128|error|float32|float64|int
 # Identifiers
 TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
 
-# Operators
-TOKEN Operator /:=|<-|\.\.\.|\+\+|--|&&|\|\||[+\-*\/%&|^<>=!]=?|<<|>>/
+# Operators (STAR excluded — separate token for pointer/dereference)
+TOKEN Operator /:=|<-|\*=|\.\.\.|\+\+|--|&&|\|\||[+\-\/%&|^<>=!]=?|<<|>>/
 
 # Punctuation
 TOKEN LBRACE /\{/
@@ -169,16 +169,16 @@ on ImportSpec {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Function declaration
+# Function declaration (exported if uppercase)
 on FuncDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
 }
 
-# Type declaration
+# Type declaration (exported if uppercase)
 on TypeSpec {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
   bind ns "value" name "current_type" to sym_id
 }
 
@@ -196,16 +196,16 @@ on InterfaceMethod when $scope("value", "current_type") {
   edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $method_doc)
 }
 
-# Variable declaration
+# Variable declaration (exported if uppercase)
 on VarSpec {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
 }
 
-# Constant declaration
+# Constant declaration (exported if uppercase)
 on ConstSpec {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
 }
 
 === resolver

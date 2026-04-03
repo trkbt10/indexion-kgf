@@ -152,57 +152,57 @@ on RequireSpec {
 # Namespace declaration
 on NsDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Namespace", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Namespace", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_ns" to sym_id
 }
 
 # Def declaration
 on DefDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Var", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Var", "doc", $doc, "visibility", "public")
 }
 
 # Defn declaration
 on DefnDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
 }
 
 # DefMacro declaration
 on DefMacroDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Macro", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Macro", "doc", $doc, "visibility", "public")
 }
 
 # DefProtocol declaration
 on DefProtocolDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_protocol" to sym_id
 }
 
 # DefRecord declaration
 on DefRecordDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc, "visibility", "public")
 }
 
 # DefType declaration
 on DefTypeDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", "public")
 }
 
 # DefMulti declaration
 on DefMultiDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Multimethod", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Multimethod", "doc", $doc, "visibility", "public")
 }
 
 # DefMethod declaration
 on DefMethodDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc, "visibility", "public")
 }
 
 # Protocol method

@@ -119,18 +119,18 @@ ImportDecl -> KW_import path:QualifiedName
 QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
 
 # Class declaration
-ClassDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_class id:TypeIdent SimpleInheritance? LBRACE ClassMember* RBRACE
+ClassDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_class id:TypeIdent SimpleInheritance? LBRACE ClassMember* RBRACE
 InheritanceClause -> COLON TypeList
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> FuncDecl / VarDecl / InitDecl / DeinitDecl / SubscriptDecl / ClassDecl / StructDecl / EnumDecl / TypeAliasDecl / NL / LineComment / BlockComment
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_struct id:TypeIdent TypeParams? SimpleInheritance? LBRACE StructMember* RBRACE
+StructDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_struct id:TypeIdent TypeParams? SimpleInheritance? LBRACE StructMember* RBRACE
 SimpleInheritance -> COLON TypeIdent COMMA TypeIdent COMMA TypeIdent / COLON TypeIdent COMMA TypeIdent / COLON TypeIdent
 StructMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? EnumBody
+EnumDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? EnumBody
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> EnumCase / FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
 EnumCase -> case_doc:DocBlock? Attribute* KW_case case_id:Ident AssociatedValues? RawValue? ( COMMA case_id:Ident AssociatedValues? RawValue? )*
@@ -138,7 +138,7 @@ AssociatedValues -> LPAREN ParamList? RPAREN
 RawValue -> Operator Expr
 
 # Protocol declaration
-ProtocolDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_protocol id:TypeIdent InheritanceClause? WhereClause? ProtocolBody
+ProtocolDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_protocol id:TypeIdent InheritanceClause? WhereClause? ProtocolBody
 ProtocolBody -> LBRACE ProtocolMember* RBRACE
 ProtocolMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / AssociatedType / NL / LineComment / BlockComment
 AssociatedType -> assoc_doc:DocBlock? Attribute* KW_typealias assoc_id:TypeIdent ( COLON Type )? WhereClause?
@@ -149,10 +149,10 @@ ExtensionBody -> LBRACE ExtensionMember* RBRACE
 ExtensionMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / ClassDecl / StructDecl / EnumDecl / NL / LineComment / BlockComment
 
 # Actor declaration
-ActorDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_actor id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
+ActorDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_actor id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
 
 # Function declaration
-FuncDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_func id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_throws / KW_async KW_throws? )? ( ARROW Type )? WhereClause? Body?
+FuncDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_func id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_throws / KW_async KW_throws? )? ( ARROW Type )? WhereClause? Body?
 
 # Variable declaration
 VarDecl -> doc:DocBlock? NL? Attribute* Modifier* ( KW_let / KW_var ) id:Ident ( COLON Type )? ( Operator Expr )? Accessors?
@@ -169,10 +169,12 @@ DeinitDecl -> doc:DocBlock? NL? KW_deinit Body
 SubscriptDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_subscript TypeParams? LPAREN ParamList? RPAREN ARROW Type WhereClause? Accessors
 
 # Type alias
-TypeAliasDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
+TypeAliasDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
 
+# Visibility (public or open = externally visible)
+Visibility -> KW_public LPAREN KW_set RPAREN / KW_open / KW_public
 # Modifiers
-Modifier -> KW_public LPAREN KW_set RPAREN / KW_private LPAREN KW_set RPAREN / KW_internal LPAREN KW_set RPAREN / KW_fileprivate LPAREN KW_set RPAREN / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async
+Modifier -> Visibility / KW_private LPAREN KW_set RPAREN / KW_internal LPAREN KW_set RPAREN / KW_fileprivate LPAREN KW_set RPAREN / KW_private / KW_internal / KW_fileprivate / KW_final / KW_static / KW_override / KW_mutating / KW_async
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
@@ -223,54 +225,54 @@ on ImportDecl {
 # Class declaration
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_type" to sym_id
 }
 
 # Struct declaration
 on StructDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_type" to sym_id
 }
 
 # Enum declaration
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_enum" to sym_id
 }
 
 # Protocol declaration
 on ProtocolDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_protocol" to sym_id
 }
 
 # Actor declaration
 on ActorDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Actor", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Actor", "doc", $doc, "visibility", cond($vis, "public"))
   bind ns "value" name "current_type" to sym_id
 }
 
 # Function declaration
 on FuncDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Variable declaration
 on VarDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Type alias
 on TypeAliasDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc, "visibility", cond($vis, "public"))
 }
 
 # Enum case

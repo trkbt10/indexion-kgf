@@ -58,8 +58,8 @@ TOKEN SEMI    /;/
 TOKEN COMMA   /,/
 TOKEN COLON   /:/
 TOKEN DOT     /\./
-TOKEN EQ      /=/
 TOKEN ARROW   /=>/
+TOKEN EQ      /=/
 TOKEN QMARK   /\?/
 TOKEN STAR    /\*/
 TOKEN PIPE    /\|/
@@ -118,8 +118,9 @@ PropertyDecl -> id:Ident QMARK? TypeAnnotation? ( EQ Expr )? SEMI?
 
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
 InterfaceMember -> doc:DocComment? ( MethodSig / PropertySig ) / NL / LineComment / BlockComment
-MethodSig -> id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? SEMI?
-PropertySig -> id:Ident QMARK? TypeAnnotation? SEMI?
+MethodSig -> id:MemberName GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? SEMI?
+PropertySig -> id:MemberName QMARK? TypeAnnotation? SEMI?
+MemberName -> Ident / KW_type / KW_class / KW_interface / KW_enum / KW_function / KW_const / KW_let / KW_var / KW_default / KW_export / KW_import / KW_from / KW_as
 
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> doc:DocComment? id:Ident ( EQ Expr )? COMMA? / NL / LineComment / BlockComment
@@ -131,7 +132,10 @@ Param -> id:Ident QMARK? TypeAnnotation? ( EQ Expr )?
 # Type annotations
 TypeAnnotation -> COLON Type
 Type -> TypeAtom ( PIPE TypeAtom )*
-TypeAtom -> Ident GenericArgs? / LPAREN Type RPAREN / LBRACE TypeMembers RBRACE / LBRACKET Type RBRACKET
+TypeAtom -> LPAREN ParamList? RPAREN ARROW Type
+         / Ident ( DOT Ident )* GenericArgs?
+         / StringLit / Number
+         / LPAREN Type RPAREN / LBRACE TypeMembers RBRACE / LBRACKET Type RBRACKET
 GenericParams -> LT Ident ( COMMA Ident )* GT
 GenericArgs -> LT Type ( COMMA Type )* GT
 TypeMembers -> ( Ident COLON Type SEMI? )*
@@ -200,33 +204,33 @@ on ImportDefault {
 # Declaration edges with documentation
 on FunctionDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
 }
 
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_class" to sym_id
 }
 
 on InterfaceDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", "public")
 }
 
 on TypeDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", "public")
 }
 
 on VarDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", "public")
 }
 
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", "public")
   bind ns "value" name "current_enum" to sym_id
 }
 
