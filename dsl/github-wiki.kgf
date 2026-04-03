@@ -1,0 +1,60 @@
+
+kgf 0.6
+language: github-wiki
+sources: .md
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL           /\r?\n/
+TOKEN HEADING      /^(?:#{1,6})(?=\s)/
+TOKEN CODE_FENCE   /^```[A-Za-z0-9_-]*/
+TOKEN INLINE_CODE  /`[^`\n]+`/
+TOKEN META_COMMENT /<!--\s*indexion:([^-]*?)-->/
+TOKEN LBRACK       /\[/
+TOKEN RBRACK       /\]/
+TOKEN LPAREN       /\(/
+TOKEN RPAREN       /\)/
+TOKEN LIST_MARKER  /^[ \t]*[-*]\s+/
+TOKEN PIPE         /\|/
+TOKEN HASH         /#/
+TOKEN TEXT         /[^\[\]<>()|#\n`]+/
+
+=== grammar
+Doc          -> ( WikiLink / MdLink / MetaComment / Other )*
+Other        -> TEXT / HEADING / CODE_FENCE / INLINE_CODE / PIPE / HASH / NL / LIST_MARKER / LPAREN / RPAREN / LBRACK / RBRACK
+
+WikiLink     -> LBRACK LBRACK wpath:TEXT ( PIPE alias:TEXT )? RBRACK RBRACK
+MdLink       -> LBRACK label:TextLike RBRACK LPAREN path:TEXT RPAREN
+MetaComment  -> META_COMMENT
+TextLike     -> ( TEXT )*
+
+=== attrs
+on WikiLink:     import module=wpath
+on MdLink:       import module=path
+on MetaComment:  def id kind=Metadata
+
+=== features
+reference_token_kinds: INLINE_CODE
+coverage_token_kinds: INLINE_CODE, TEXT
+nav_file: _Sidebar.md
+footer_file: _Footer.md
+home_file: Home.md
+special_files: _Sidebar.md, _Footer.md, _Header.md
+
+=== semantics
+on WikiLink {
+  edge moduleDependsOn from $file to $resolve($wpath) attrs obj("via", $wpath, "dep_kind", "wiki_link")
+}
+on MdLink {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+=== resolver
+relative_prefixes: ./, ../, /
+exts: .md, .markdown
+indexes: /Home.md
+bare_prefix: url:
+module_path_style: slash
+
+=== ignore
+.git/
