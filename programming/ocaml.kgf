@@ -18,39 +18,39 @@ TOKEN Char /'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
 
 # Keywords
-TOKEN KW_open    /open\b/
-TOKEN KW_include /include\b/
-TOKEN KW_module  /module\b/
-TOKEN KW_struct  /struct\b/
-TOKEN KW_sig     /sig\b/
-TOKEN KW_end     /end\b/
-TOKEN KW_functor /functor\b/
-TOKEN KW_let     /let\b/
-TOKEN KW_rec     /rec\b/
-TOKEN KW_and     /and\b/
-TOKEN KW_in      /in\b/
-TOKEN KW_type    /type\b/
-TOKEN KW_val     /val\b/
-TOKEN KW_external /external\b/
-TOKEN KW_exception /exception\b/
-TOKEN KW_class   /class\b/
-TOKEN KW_object  /object\b/
-TOKEN KW_method  /method\b/
-TOKEN KW_mutable /mutable\b/
-TOKEN KW_if      /if\b/
-TOKEN KW_then    /then\b/
-TOKEN KW_else    /else\b/
-TOKEN KW_match   /match\b/
-TOKEN KW_with    /with\b/
-TOKEN KW_function /function\b/
-TOKEN KW_fun     /fun\b/
-TOKEN KW_try     /try\b/
-TOKEN KW_begin   /begin\b/
-TOKEN KW_for     /for\b/
-TOKEN KW_while   /while\b/
-TOKEN KW_do      /do\b/
-TOKEN KW_done    /done\b/
-TOKEN KW_of      /of\b/
+KEYWORD KW_open    /open\b/
+KEYWORD KW_include /include\b/
+KEYWORD KW_module  /module\b/
+KEYWORD KW_struct  /struct\b/
+KEYWORD KW_sig     /sig\b/
+KEYWORD KW_end     /end\b/
+KEYWORD KW_functor /functor\b/
+KEYWORD KW_let     /let\b/
+KEYWORD KW_rec     /rec\b/
+KEYWORD KW_and     /and\b/
+KEYWORD KW_in      /in\b/
+KEYWORD KW_type    /type\b/
+KEYWORD KW_val     /val\b/
+KEYWORD KW_external /external\b/
+KEYWORD KW_exception /exception\b/
+KEYWORD KW_class   /class\b/
+KEYWORD KW_object  /object\b/
+KEYWORD KW_method  /method\b/
+KEYWORD KW_mutable /mutable\b/
+KEYWORD KW_if      /if\b/
+KEYWORD KW_then    /then\b/
+KEYWORD KW_else    /else\b/
+KEYWORD KW_match   /match\b/
+KEYWORD KW_with    /with\b/
+KEYWORD KW_function /function\b/
+KEYWORD KW_fun     /fun\b/
+KEYWORD KW_try     /try\b/
+KEYWORD KW_begin   /begin\b/
+KEYWORD KW_for     /for\b/
+KEYWORD KW_while   /while\b/
+KEYWORD KW_do      /do\b/
+KEYWORD KW_done    /done\b/
+KEYWORD KW_of      /of\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -166,6 +166,8 @@ on OpenDecl:      import module=path
 
 === features
 function_kinds: Function, External, Val
+function_keyword: KW_let
+identifier_kinds: Ident, ModuleIdent
 
 === semantics
 # Import dependency
@@ -174,13 +176,28 @@ on OpenDecl {
 }
 
 
-# Type declaration
-
-
-
-
-
-# Class declaration
+# OCaml top-level declarations (visibility controlled by .mli interface files)
+on ModuleDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+}
+on TypeDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", $doc)
+}
+on LetDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+on ValDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Val", "doc", $doc)
+}
+on ExternalDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "External", "doc", $doc)
+}
+on ExceptionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Exception", "doc", $doc)
+}
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
 
 # Variant
 on Variant when $scope("value", "current_type") {

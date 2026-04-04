@@ -24,33 +24,33 @@ TOKEN Number /0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)
 TOKEN Variable /\$[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
-TOKEN KW_namespace /namespace\b/
-TOKEN KW_use       /use\b/
-TOKEN KW_as        /as\b/
-TOKEN KW_class     /class\b/
-TOKEN KW_interface /interface\b/
-TOKEN KW_trait     /trait\b/
-TOKEN KW_enum      /enum\b/
-TOKEN KW_extends   /extends\b/
-TOKEN KW_implements /implements\b/
-TOKEN KW_abstract  /abstract\b/
-TOKEN KW_final     /final\b/
-TOKEN KW_static    /static\b/
-TOKEN KW_public    /public\b/
-TOKEN KW_private   /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_readonly  /readonly\b/
-TOKEN KW_const     /const\b/
-TOKEN KW_function  /function\b/
-TOKEN KW_fn        /fn\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_new       /new\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_else      /else\b/
-TOKEN KW_foreach   /foreach\b/
-TOKEN KW_for       /for\b/
-TOKEN KW_while     /while\b/
-TOKEN KW_case      /case\b/
+KEYWORD KW_namespace /namespace\b/
+KEYWORD KW_use       /use\b/
+KEYWORD KW_as        /as\b/
+KEYWORD KW_class     /class\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_trait     /trait\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_extends   /extends\b/
+KEYWORD KW_implements /implements\b/
+KEYWORD KW_abstract  /abstract\b/
+KEYWORD KW_final     /final\b/
+KEYWORD KW_static    /static\b/
+KEYWORD KW_public    /public\b/
+KEYWORD KW_private   /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_readonly  /readonly\b/
+KEYWORD KW_const     /const\b/
+KEYWORD KW_function  /function\b/
+KEYWORD KW_fn        /fn\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_new       /new\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_foreach   /foreach\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_while     /while\b/
+KEYWORD KW_case      /case\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:array|callable|iterable|mixed|void|never|object|bool|int|float|string|null|true|false|self|parent)\b/
@@ -184,6 +184,8 @@ on UseDecl:       import module=path
 
 === features
 function_kinds: Function
+function_keyword: KW_function
+identifier_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
@@ -191,14 +193,22 @@ on UseDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Class declaration
-
-# Interface declaration
-
-# Trait declaration
-
-# Enum declaration
-
+# PHP top-level declarations
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on InterfaceDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+}
+on TraitDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+}
+on EnumDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
 
 # Method declaration
 on MethodDecl when $scope("value", "current_class") {

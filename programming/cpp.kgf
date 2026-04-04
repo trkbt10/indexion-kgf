@@ -24,42 +24,42 @@ TOKEN Char /'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F]+|0b[01]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?[fFlLuU]*/
 
 # Keywords
-TOKEN KW_class     /class\b/
-TOKEN KW_struct    /struct\b/
-TOKEN KW_union     /union\b/
-TOKEN KW_enum      /enum\b/
-TOKEN KW_namespace /namespace\b/
-TOKEN KW_template  /template\b/
-TOKEN KW_typename  /typename\b/
-TOKEN KW_public    /public\b/
-TOKEN KW_private   /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_virtual   /virtual\b/
-TOKEN KW_override  /override\b/
-TOKEN KW_final     /final\b/
-TOKEN KW_const     /const\b/
-TOKEN KW_constexpr /constexpr\b/
-TOKEN KW_static    /static\b/
-TOKEN KW_extern    /extern\b/
-TOKEN KW_inline    /inline\b/
-TOKEN KW_using     /using\b/
-TOKEN KW_typedef   /typedef\b/
-TOKEN KW_friend    /friend\b/
-TOKEN KW_explicit  /explicit\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_else      /else\b/
-TOKEN KW_switch    /switch\b/
-TOKEN KW_case      /case\b/
-TOKEN KW_for       /for\b/
-TOKEN KW_while     /while\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_new       /new\b/
-TOKEN KW_delete    /delete\b/
-TOKEN KW_try       /try\b/
-TOKEN KW_catch     /catch\b/
-TOKEN KW_throw     /throw\b/
-TOKEN KW_noexcept  /noexcept\b/
-TOKEN KW_operator  /operator\b/
+KEYWORD KW_class     /class\b/
+KEYWORD KW_struct    /struct\b/
+KEYWORD KW_union     /union\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_namespace /namespace\b/
+KEYWORD KW_template  /template\b/
+KEYWORD KW_typename  /typename\b/
+KEYWORD KW_public    /public\b/
+KEYWORD KW_private   /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_virtual   /virtual\b/
+KEYWORD KW_override  /override\b/
+KEYWORD KW_final     /final\b/
+KEYWORD KW_const     /const\b/
+KEYWORD KW_constexpr /constexpr\b/
+KEYWORD KW_static    /static\b/
+KEYWORD KW_extern    /extern\b/
+KEYWORD KW_inline    /inline\b/
+KEYWORD KW_using     /using\b/
+KEYWORD KW_typedef   /typedef\b/
+KEYWORD KW_friend    /friend\b/
+KEYWORD KW_explicit  /explicit\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_switch    /switch\b/
+KEYWORD KW_case      /case\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_while     /while\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_new       /new\b/
+KEYWORD KW_delete    /delete\b/
+KEYWORD KW_try       /try\b/
+KEYWORD KW_catch     /catch\b/
+KEYWORD KW_throw     /throw\b/
+KEYWORD KW_noexcept  /noexcept\b/
+KEYWORD KW_operator  /operator\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|int|char|short|long|float|double|bool|wchar_t|char8_t|char16_t|char32_t|signed|unsigned|auto|size_t)\b/
@@ -228,15 +228,34 @@ on Param:           def param_id kind=Param
 
 === features
 function_kinds: Function
+identifier_kinds: Ident, TypeIdent
 
 === semantics
-# Namespace declaration
-
-# Class declaration
-
-# Struct declaration
-
-# Enum declaration
+# C++ top-level declarations
+on NamespaceDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Namespace", "doc", $doc)
+}
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on StructDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on UnionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+}
+on EnumDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+}
+on VarDecl {
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+}
+on TypedefDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+}
 
 
 # Method in class

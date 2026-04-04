@@ -12,17 +12,17 @@ TOKEN Comment       /\/\/[^\r\n]*/
 TOKEN BlockComment  /\/\*[\s\S]*?\*\//
 
 # Keywords
-TOKEN KW_import     /import\b/
-TOKEN KW_let        /let\b/
-TOKEN KW_package    /package\b/
-TOKEN KW_Package    /Package\b/
-TOKEN KW_name       /name\b/
-TOKEN KW_platforms  /platforms\b/
-TOKEN KW_products   /products\b/
-TOKEN KW_dependencies /dependencies\b/
-TOKEN KW_targets    /targets\b/
-TOKEN KW_url        /url\b/
-TOKEN KW_from       /from\b/
+KEYWORD KW_import     /import\b/
+KEYWORD KW_let        /let\b/
+KEYWORD KW_package    /package\b/
+KEYWORD KW_Package    /Package\b/
+KEYWORD KW_name       /name\b/
+KEYWORD KW_platforms  /platforms\b/
+KEYWORD KW_products   /products\b/
+KEYWORD KW_dependencies /dependencies\b/
+KEYWORD KW_targets    /targets\b/
+KEYWORD KW_url        /url\b/
+KEYWORD KW_from       /from\b/
 
 # Literals
 TOKEN StringLit     /"([^"\\]|\\.)*"/

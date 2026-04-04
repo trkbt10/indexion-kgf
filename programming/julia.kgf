@@ -24,33 +24,33 @@ TOKEN Symbol /:[a-zA-Z_][a-zA-Z0-9_!]*/
 TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?([imf][0-9]+)?/
 
 # Keywords
-TOKEN KW_module     /module\b/
-TOKEN KW_baremodule /baremodule\b/
-TOKEN KW_using      /using\b/
-TOKEN KW_import     /import\b/
-TOKEN KW_export     /export\b/
-TOKEN KW_function   /function\b/
-TOKEN KW_macro      /macro\b/
-TOKEN KW_struct     /struct\b/
-TOKEN KW_mutable    /mutable\b/
-TOKEN KW_abstract   /abstract\b/
-TOKEN KW_primitive  /primitive\b/
-TOKEN KW_type       /type\b/
-TOKEN KW_const      /const\b/
-TOKEN KW_let        /let\b/
-TOKEN KW_begin      /begin\b/
-TOKEN KW_end        /end\b/
-TOKEN KW_if         /if\b/
-TOKEN KW_elseif     /elseif\b/
-TOKEN KW_else       /else\b/
-TOKEN KW_for        /for\b/
-TOKEN KW_in         /in\b/
-TOKEN KW_while      /while\b/
-TOKEN KW_return     /return\b/
-TOKEN KW_try        /try\b/
-TOKEN KW_catch      /catch\b/
-TOKEN KW_finally    /finally\b/
-TOKEN KW_where      /where\b/
+KEYWORD KW_module     /module\b/
+KEYWORD KW_baremodule /baremodule\b/
+KEYWORD KW_using      /using\b/
+KEYWORD KW_import     /import\b/
+KEYWORD KW_export     /export\b/
+KEYWORD KW_function   /function\b/
+KEYWORD KW_macro      /macro\b/
+KEYWORD KW_struct     /struct\b/
+KEYWORD KW_mutable    /mutable\b/
+KEYWORD KW_abstract   /abstract\b/
+KEYWORD KW_primitive  /primitive\b/
+KEYWORD KW_type       /type\b/
+KEYWORD KW_const      /const\b/
+KEYWORD KW_let        /let\b/
+KEYWORD KW_begin      /begin\b/
+KEYWORD KW_end        /end\b/
+KEYWORD KW_if         /if\b/
+KEYWORD KW_elseif     /elseif\b/
+KEYWORD KW_else       /else\b/
+KEYWORD KW_for        /for\b/
+KEYWORD KW_in         /in\b/
+KEYWORD KW_while      /while\b/
+KEYWORD KW_return     /return\b/
+KEYWORD KW_try        /try\b/
+KEYWORD KW_catch      /catch\b/
+KEYWORD KW_finally    /finally\b/
+KEYWORD KW_where      /where\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -165,6 +165,8 @@ on ImportDecl:   import module=path
 
 === features
 function_kinds: Function, Macro
+function_keyword: KW_function
+identifier_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
@@ -172,13 +174,25 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Module declaration
-
-
-
-# Struct declaration
-
-
+# Julia top-level declarations (visibility controlled by export, not declaration-level)
+on ModuleDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+}
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+on MacroDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Macro", "doc", $doc)
+}
+on StructDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on AbstractDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "AbstractType", "doc", $doc)
+}
+on ConstDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc)
+}
 
 # Struct field
 on FieldDecl when $scope("value", "current_struct") {

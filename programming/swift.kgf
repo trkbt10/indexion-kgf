@@ -22,44 +22,44 @@ TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+
 TOKEN Attribute /@[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
-TOKEN KW_import     /import\b/
-TOKEN KW_let        /let\b/
-TOKEN KW_var        /var\b/
-TOKEN KW_func       /func\b/
-TOKEN KW_class      /class\b/
-TOKEN KW_struct     /struct\b/
-TOKEN KW_enum       /enum\b/
-TOKEN KW_protocol   /protocol\b/
-TOKEN KW_extension  /extension\b/
-TOKEN KW_typealias  /typealias\b/
-TOKEN KW_actor      /actor\b/
-TOKEN KW_init       /init\b/
-TOKEN KW_deinit     /deinit\b/
-TOKEN KW_subscript  /subscript\b/
-TOKEN KW_public     /public\b/
-TOKEN KW_private    /private\b/
-TOKEN KW_internal   /internal\b/
-TOKEN KW_fileprivate /fileprivate\b/
-TOKEN KW_open       /open\b/
-TOKEN KW_final      /final\b/
-TOKEN KW_static     /static\b/
-TOKEN KW_override   /override\b/
-TOKEN KW_mutating   /mutating\b/
-TOKEN KW_async      /async\b/
-TOKEN KW_await      /await\b/
-TOKEN KW_throws     /throws\b/
-TOKEN KW_if         /if\b/
-TOKEN KW_else       /else\b/
-TOKEN KW_guard      /guard\b/
-TOKEN KW_switch     /switch\b/
-TOKEN KW_case       /case\b/
-TOKEN KW_for        /for\b/
-TOKEN KW_in         /in\b/
-TOKEN KW_while      /while\b/
-TOKEN KW_return     /return\b/
-TOKEN KW_where      /where\b/
-TOKEN KW_self       /self\b/
-TOKEN KW_Self       /Self\b/
+KEYWORD KW_import     /import\b/
+KEYWORD KW_let        /let\b/
+KEYWORD KW_var        /var\b/
+KEYWORD KW_func       /func\b/
+KEYWORD KW_class      /class\b/
+KEYWORD KW_struct     /struct\b/
+KEYWORD KW_enum       /enum\b/
+KEYWORD KW_protocol   /protocol\b/
+KEYWORD KW_extension  /extension\b/
+KEYWORD KW_typealias  /typealias\b/
+KEYWORD KW_actor      /actor\b/
+KEYWORD KW_init       /init\b/
+KEYWORD KW_deinit     /deinit\b/
+KEYWORD KW_subscript  /subscript\b/
+KEYWORD KW_public     /public\b/
+KEYWORD KW_private    /private\b/
+KEYWORD KW_internal   /internal\b/
+KEYWORD KW_fileprivate /fileprivate\b/
+KEYWORD KW_open       /open\b/
+KEYWORD KW_final      /final\b/
+KEYWORD KW_static     /static\b/
+KEYWORD KW_override   /override\b/
+KEYWORD KW_mutating   /mutating\b/
+KEYWORD KW_async      /async\b/
+KEYWORD KW_await      /await\b/
+KEYWORD KW_throws     /throws\b/
+KEYWORD KW_if         /if\b/
+KEYWORD KW_else       /else\b/
+KEYWORD KW_guard      /guard\b/
+KEYWORD KW_switch     /switch\b/
+KEYWORD KW_case       /case\b/
+KEYWORD KW_for        /for\b/
+KEYWORD KW_in         /in\b/
+KEYWORD KW_while      /while\b/
+KEYWORD KW_return     /return\b/
+KEYWORD KW_where      /where\b/
+KEYWORD KW_self       /self\b/
+KEYWORD KW_Self       /Self\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -90,8 +90,8 @@ TOKEN QMARK    /\?/
 TOKEN AT       /@/
 
 # Property accessors (referenced in grammar)
-TOKEN KW_get    /get\b/
-TOKEN KW_set    /set\b/
+KEYWORD KW_get    /get\b/
+KEYWORD KW_set    /set\b/
 
 === grammar
 Module -> Item*
@@ -218,11 +218,40 @@ on ImportDecl:    import module=path
 
 === features
 function_kinds: Function
+function_keyword: KW_func
+identifier_kinds: Ident, TypeIdent
+self_keyword: KW_self
 
 === semantics
 # Import dependency
 on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Public declarations (vis:Visibility? in grammar — Visibility = public | open)
+on ClassDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on StructDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on EnumDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on ProtocolDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+}
+on ActorDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Actor", "doc", $doc)
+}
+on FuncDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+on VarDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+on TypeAliasDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc)
 }
 
 === resolver

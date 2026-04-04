@@ -21,30 +21,30 @@ TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+
 TOKEN Builtin /@[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
-TOKEN KW_const    /const\b/
-TOKEN KW_var      /var\b/
-TOKEN KW_fn       /fn\b/
-TOKEN KW_pub      /pub\b/
-TOKEN KW_extern   /extern\b/
-TOKEN KW_packed   /packed\b/
-TOKEN KW_export   /export\b/
-TOKEN KW_inline   /inline\b/
-TOKEN KW_comptime /comptime\b/
-TOKEN KW_test     /test\b/
-TOKEN KW_struct   /struct\b/
-TOKEN KW_enum     /enum\b/
-TOKEN KW_union    /union\b/
-TOKEN KW_error    /error\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_switch   /switch\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_defer    /defer\b/
-TOKEN KW_try      /try\b/
-TOKEN KW_catch    /catch\b/
-TOKEN KW_orelse   /orelse\b/
+KEYWORD KW_const    /const\b/
+KEYWORD KW_var      /var\b/
+KEYWORD KW_fn       /fn\b/
+KEYWORD KW_pub      /pub\b/
+KEYWORD KW_extern   /extern\b/
+KEYWORD KW_packed   /packed\b/
+KEYWORD KW_export   /export\b/
+KEYWORD KW_inline   /inline\b/
+KEYWORD KW_comptime /comptime\b/
+KEYWORD KW_test     /test\b/
+KEYWORD KW_struct   /struct\b/
+KEYWORD KW_enum     /enum\b/
+KEYWORD KW_union    /union\b/
+KEYWORD KW_error    /error\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_switch   /switch\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_defer    /defer\b/
+KEYWORD KW_try      /try\b/
+KEYWORD KW_catch    /catch\b/
+KEYWORD KW_orelse   /orelse\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|bool|noreturn|type|anyerror|anytype|anyframe|anyopaque|null|undefined|true|false)\b/
@@ -89,30 +89,30 @@ Item -> NL
 DocBlock -> DocComment ( NL DocComment )*
 
 # Const declaration
-ConstDecl -> doc:DocBlock? NL? KW_pub? KW_comptime? KW_const id:Ident ( COLON Type )? EQ Expr SEMI
+ConstDecl -> doc:DocBlock? NL? vis:KW_pub? KW_comptime? KW_const id:Ident ( COLON Type )? EQ Expr SEMI
 
 # Var declaration
-VarDecl -> doc:DocBlock? NL? KW_pub? KW_var id:Ident ( COLON Type )? EQ Expr SEMI
+VarDecl -> doc:DocBlock? NL? vis:KW_pub? KW_var id:Ident ( COLON Type )? EQ Expr SEMI
 
 # Function declaration
-FnDecl -> doc:DocBlock? NL? KW_pub? KW_export? KW_extern? KW_inline? KW_fn id:Ident LPAREN ParamList? RPAREN ( Type )? Body?
+FnDecl -> doc:DocBlock? NL? vis:KW_pub? KW_export? KW_extern? KW_inline? KW_fn id:Ident LPAREN ParamList? RPAREN ( Type )? Body?
 ParamList -> Param ( COMMA Param )*
 Param -> KW_comptime? param_id:Ident COLON ( KW_anytype / Type )
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_extern? KW_packed? KW_struct StructBody
+StructDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_extern? KW_packed? KW_struct StructBody
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> FieldDecl / FnDecl / NL / LineComment
 FieldDecl -> field_doc:DocBlock? field_id:Ident COLON Type ( EQ Expr )? COMMA?
 # KW_packed is defined in lex section
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_enum EnumBody
+EnumDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_enum EnumBody
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> value_doc:DocBlock? value_id:Ident ( EQ Expr )? COMMA? / NL / LineComment
 
 # Union declaration
-UnionDecl -> doc:DocBlock? NL? KW_pub? KW_const id:Ident EQ KW_extern? KW_union UnionBody
+UnionDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_extern? KW_union UnionBody
 UnionBody -> LBRACE UnionMember* RBRACE
 UnionMember -> field_doc:DocBlock? field_id:Ident COLON Type COMMA? / NL / LineComment
 
@@ -148,15 +148,29 @@ on Param:       def param_id kind=Param
 
 === features
 function_kinds: Function
+function_keyword: KW_fn
+identifier_kinds: Ident, TypeIdent
 
 === semantics
-
-
-
-# Struct declaration
-
-# Enum declaration
-
+# Zig public declarations (vis:KW_pub? in grammar)
+on FnDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+on ConstDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc)
+}
+on VarDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+on StructDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on EnumDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on UnionDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+}
 
 # Struct field
 on FieldDecl when $scope("value", "current_struct") {

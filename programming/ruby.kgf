@@ -25,38 +25,38 @@ TOKEN Symbol /:[a-zA-Z_][a-zA-Z0-9_]*|:'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
 
 # Keywords
-TOKEN KW_def      /def\b/
-TOKEN KW_class    /class\b/
-TOKEN KW_module   /module\b/
-TOKEN KW_end      /end\b/
-TOKEN KW_do       /do\b/
-TOKEN KW_begin    /begin\b/
-TOKEN KW_rescue   /rescue\b/
-TOKEN KW_ensure   /ensure\b/
-TOKEN KW_raise    /raise\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_yield    /yield\b/
-TOKEN KW_self     /self\b/
-TOKEN KW_super    /super\b/
-TOKEN KW_alias    /alias\b/
-TOKEN KW_attr     /attr_reader|attr_writer|attr_accessor/
-TOKEN KW_private  /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_public   /public\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_elsif    /elsif\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_unless   /unless\b/
-TOKEN KW_case     /case\b/
-TOKEN KW_when     /when\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_until    /until\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_in       /in\b/
-TOKEN KW_require  /require\b/
-TOKEN KW_require_relative /require_relative\b/
-TOKEN KW_include  /include\b/
-TOKEN KW_extend   /extend\b/
+KEYWORD KW_def      /def\b/
+KEYWORD KW_class    /class\b/
+KEYWORD KW_module   /module\b/
+KEYWORD KW_end      /end\b/
+KEYWORD KW_do       /do\b/
+KEYWORD KW_begin    /begin\b/
+KEYWORD KW_rescue   /rescue\b/
+KEYWORD KW_ensure   /ensure\b/
+KEYWORD KW_raise    /raise\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_yield    /yield\b/
+KEYWORD KW_self     /self\b/
+KEYWORD KW_super    /super\b/
+KEYWORD KW_alias    /alias\b/
+KEYWORD KW_attr     /attr_reader|attr_writer|attr_accessor/
+KEYWORD KW_private  /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_public   /public\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_elsif    /elsif\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_unless   /unless\b/
+KEYWORD KW_case     /case\b/
+KEYWORD KW_when     /when\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_until    /until\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_in       /in\b/
+KEYWORD KW_require  /require\b/
+KEYWORD KW_require_relative /require_relative\b/
+KEYWORD KW_include  /include\b/
+KEYWORD KW_extend   /extend\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -154,6 +154,9 @@ on RequireDecl: import module=path
 
 === features
 function_kinds: Method
+function_keyword: KW_def
+identifier_kinds: Ident, ConstIdent
+self_keyword: KW_self
 
 === semantics
 # Import dependency
@@ -164,14 +167,23 @@ on RequireDecl {
 # Visibility modifier — track current visibility state in scope.
 # Ruby's visibility modifiers (private/protected/public) apply to all
 # subsequent method definitions until the next modifier.
-# The attrs def directive reads current_visibility from scope to set
-# the visibility attribute on declares edges.
 on VisibilityMod {
   bind ns "value" name "current_visibility" to $visibility
 }
 
-# Class declaration — set initial visibility to "public" for methods
+# Class and module declarations are always public in Ruby
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on ModuleDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+}
 
+# Method declarations — public unless preceded by private/protected modifier.
+# coalesce returns current_visibility if set, "public" otherwise (Ruby default).
+on MethodDecl when eq(coalesce($scope("value", "current_visibility"), "public"), "public") {
+  edge declares from $file to concat($file, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+}
 
 === resolver
 relative_prefixes: ./, ../

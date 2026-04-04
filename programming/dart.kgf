@@ -21,48 +21,48 @@ TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
 TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
-TOKEN KW_import   /import\b/
-TOKEN KW_export   /export\b/
-TOKEN KW_library  /library\b/
-TOKEN KW_part     /part\b/
-TOKEN KW_show     /show\b/
-TOKEN KW_hide     /hide\b/
-TOKEN KW_as       /as\b/
-TOKEN KW_deferred /deferred\b/
-TOKEN KW_class    /class\b/
-TOKEN KW_mixin    /mixin\b/
-TOKEN KW_extension /extension\b/
-TOKEN KW_enum     /enum\b/
-TOKEN KW_typedef  /typedef\b/
-TOKEN KW_abstract /abstract\b/
-TOKEN KW_sealed   /sealed\b/
-TOKEN KW_base     /base\b/
-TOKEN KW_interface /interface\b/
-TOKEN KW_final    /final\b/
-TOKEN KW_const    /const\b/
-TOKEN KW_var      /var\b/
-TOKEN KW_late     /late\b/
-TOKEN KW_static   /static\b/
-TOKEN KW_external /external\b/
-TOKEN KW_factory  /factory\b/
-TOKEN KW_extends  /extends\b/
-TOKEN KW_implements /implements\b/
-TOKEN KW_with     /with\b/
-TOKEN KW_get      /get\b/
-TOKEN KW_set      /set\b/
-TOKEN KW_operator /operator\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_switch   /switch\b/
-TOKEN KW_case     /case\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_in       /in\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_async    /async\b/
-TOKEN KW_await    /await\b/
-TOKEN KW_on       /on\b/
-TOKEN KW_super    /super\b/
+KEYWORD KW_import   /import\b/
+KEYWORD KW_export   /export\b/
+KEYWORD KW_library  /library\b/
+KEYWORD KW_part     /part\b/
+KEYWORD KW_show     /show\b/
+KEYWORD KW_hide     /hide\b/
+KEYWORD KW_as       /as\b/
+KEYWORD KW_deferred /deferred\b/
+KEYWORD KW_class    /class\b/
+KEYWORD KW_mixin    /mixin\b/
+KEYWORD KW_extension /extension\b/
+KEYWORD KW_enum     /enum\b/
+KEYWORD KW_typedef  /typedef\b/
+KEYWORD KW_abstract /abstract\b/
+KEYWORD KW_sealed   /sealed\b/
+KEYWORD KW_base     /base\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_final    /final\b/
+KEYWORD KW_const    /const\b/
+KEYWORD KW_var      /var\b/
+KEYWORD KW_late     /late\b/
+KEYWORD KW_static   /static\b/
+KEYWORD KW_external /external\b/
+KEYWORD KW_factory  /factory\b/
+KEYWORD KW_extends  /extends\b/
+KEYWORD KW_implements /implements\b/
+KEYWORD KW_with     /with\b/
+KEYWORD KW_get      /get\b/
+KEYWORD KW_set      /set\b/
+KEYWORD KW_operator /operator\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_switch   /switch\b/
+KEYWORD KW_case     /case\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_in       /in\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_async    /async\b/
+KEYWORD KW_await    /await\b/
+KEYWORD KW_on       /on\b/
+KEYWORD KW_super    /super\b/
 
 # Built-in types and values
 TOKEN KeywordType /\b(?:void|dynamic|Function|Never|Object)\b/
@@ -226,6 +226,7 @@ on ImportDecl:    import module=path
 
 === features
 function_kinds: Function
+identifier_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
@@ -233,16 +234,29 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Class declaration
-
-# Mixin declaration
-
-# Extension declaration
-
-# Enum declaration
-
-
-
+# Dart top-level declarations
+# In Dart, names starting with _ are library-private.
+on ClassDecl when not(eq(slice($id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on MixinDecl when not(eq(slice($id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Mixin", "doc", $doc)
+}
+on ExtensionDecl when not(eq(slice($id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Extension", "doc", $doc)
+}
+on EnumDecl when not(eq(slice($id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on TypedefDecl when not(eq(slice($id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+}
+on FunctionDecl when not(eq(slice($func_id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+}
+on VarDecl when not(eq(slice($var_id, 0, 1), "_")) {
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+}
 
 # Method in class
 on MethodDecl when $scope("value", "current_class") {

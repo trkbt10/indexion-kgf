@@ -24,24 +24,24 @@ TOKEN Char /'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F]+|0b[01]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?[fFlLuU]*/
 
 # Keywords
-TOKEN KW_typedef  /typedef\b/
-TOKEN KW_struct   /struct\b/
-TOKEN KW_union    /union\b/
-TOKEN KW_enum     /enum\b/
-TOKEN KW_static   /static\b/
-TOKEN KW_extern   /extern\b/
-TOKEN KW_inline   /inline\b/
-TOKEN KW_const    /const\b/
-TOKEN KW_volatile /volatile\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_switch   /switch\b/
-TOKEN KW_case     /case\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_do       /do\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_sizeof   /sizeof\b/
+KEYWORD KW_typedef  /typedef\b/
+KEYWORD KW_struct   /struct\b/
+KEYWORD KW_union    /union\b/
+KEYWORD KW_enum     /enum\b/
+KEYWORD KW_static   /static\b/
+KEYWORD KW_extern   /extern\b/
+KEYWORD KW_inline   /inline\b/
+KEYWORD KW_const    /const\b/
+KEYWORD KW_volatile /volatile\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_switch   /switch\b/
+KEYWORD KW_case     /case\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_do       /do\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_sizeof   /sizeof\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|int|char|short|long|float|double|signed|unsigned|_Bool|_Complex|_Imaginary|size_t|ptrdiff_t)\b/
@@ -151,15 +151,28 @@ on Param:        def param_id kind=Param
 document_symbol_kinds: Function, Struct, Union, Enum, Typedef
 function_kinds: Function
 coverage_token_kinds: Ident, TypeIdent
+identifier_kinds: Ident, TypeIdent
 
 === semantics
-# Struct declaration
-
-
-# Enum declaration
-
-
-
+# C declarations are public by default (header-visible)
+on StructDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on UnionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+}
+on EnumDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on TypedefDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+}
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+}
+on VarDecl {
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+}
 
 # Struct field
 on StructMember when $scope("value", "current_struct") {

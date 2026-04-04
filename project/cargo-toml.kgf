@@ -19,22 +19,22 @@ TOKEN SectionWorkspace    /\[workspace\]/
 TOKEN SectionOther        /\[[a-zA-Z][a-zA-Z0-9._-]*\]/
 
 # Key names (before generic)
-TOKEN KW_name        /name\b/
-TOKEN KW_version     /version\b/
-TOKEN KW_description /description\b/
-TOKEN KW_license     /license\b/
-TOKEN KW_repository  /repository\b/
-TOKEN KW_keywords    /keywords\b/
-TOKEN KW_authors     /authors\b/
-TOKEN KW_edition     /edition\b/
-TOKEN KW_readme      /readme\b/
+KEYWORD KW_name        /name\b/
+KEYWORD KW_version     /version\b/
+KEYWORD KW_description /description\b/
+KEYWORD KW_license     /license\b/
+KEYWORD KW_repository  /repository\b/
+KEYWORD KW_keywords    /keywords\b/
+KEYWORD KW_authors     /authors\b/
+KEYWORD KW_edition     /edition\b/
+KEYWORD KW_readme      /readme\b/
 
 # Values
 TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
 TOKEN MultiString   /"""[\s\S]*?"""/
 TOKEN NumberLit     /[0-9]+(\.[0-9]+)?/
-TOKEN KW_true       /true\b/
-TOKEN KW_false      /false\b/
+KEYWORD KW_true       /true\b/
+KEYWORD KW_false      /false\b/
 
 # Punctuation
 TOKEN EQUALS        /=/

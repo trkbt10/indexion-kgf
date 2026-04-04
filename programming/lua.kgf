@@ -18,21 +18,21 @@ TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|\[\[[\s\S]*?\]\]|\[=\[[\s\S]*?\]=\
 TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
 
 # Keywords
-TOKEN KW_function /function\b/
-TOKEN KW_local    /local\b/
-TOKEN KW_end      /end\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_then     /then\b/
-TOKEN KW_elseif   /elseif\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_in       /in\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_do       /do\b/
-TOKEN KW_repeat   /repeat\b/
-TOKEN KW_until    /until\b/
-TOKEN KW_break    /break\b/
+KEYWORD KW_function /function\b/
+KEYWORD KW_local    /local\b/
+KEYWORD KW_end      /end\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_then     /then\b/
+KEYWORD KW_elseif   /elseif\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_in       /in\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_do       /do\b/
+KEYWORD KW_repeat   /repeat\b/
+KEYWORD KW_until    /until\b/
+KEYWORD KW_break    /break\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -112,11 +112,19 @@ on Param:             def param_id kind=Param
 
 === features
 function_kinds: Function
+function_keyword: KW_function
+identifier_kinds: Ident
 
 === semantics
-
-
-
+# Lua public declarations
+# FunctionDecl = global function (public), LocalFunctionDecl = local (private)
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+# Global assignments are module-level exports
+on AssignmentDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
 
 === resolver
 relative_prefixes: ./

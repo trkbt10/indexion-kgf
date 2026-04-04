@@ -11,15 +11,15 @@ TOKEN NL            /\r?\n/
 TOKEN Comment       /#[^\r\n]*/
 
 # Keywords
-TOKEN KW_source     /source\b/
-TOKEN KW_ruby       /ruby\b/
-TOKEN KW_gem        /gem\b/
-TOKEN KW_group      /group\b/
-TOKEN KW_do         /do\b/
-TOKEN KW_end        /end\b/
-TOKEN KW_require    /require\b/
-TOKEN KW_true       /true\b/
-TOKEN KW_false      /false\b/
+KEYWORD KW_source     /source\b/
+KEYWORD KW_ruby       /ruby\b/
+KEYWORD KW_gem        /gem\b/
+KEYWORD KW_group      /group\b/
+KEYWORD KW_do         /do\b/
+KEYWORD KW_end        /end\b/
+KEYWORD KW_require    /require\b/
+KEYWORD KW_true       /true\b/
+KEYWORD KW_false      /false\b/
 
 # Literals
 TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/

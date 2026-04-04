@@ -15,24 +15,24 @@ TOKEN COLON         /:/
 TOKEN COMMA         /,/
 
 # Specific field name tokens (must come before StringLit)
-TOKEN KW_name            /"name"/
-TOKEN KW_version         /"version"/
-TOKEN KW_description     /"description"/
-TOKEN KW_license         /"license"/
-TOKEN KW_repository      /"repository"/
-TOKEN KW_keywords        /"keywords"/
-TOKEN KW_author          /"author"/
-TOKEN KW_homepage        /"homepage"/
-TOKEN KW_dependencies    /"dependencies"/
-TOKEN KW_devDependencies /"devDependencies"/
-TOKEN KW_peerDependencies /"peerDependencies"/
+KEYWORD KW_name            /"name"/
+KEYWORD KW_version         /"version"/
+KEYWORD KW_description     /"description"/
+KEYWORD KW_license         /"license"/
+KEYWORD KW_repository      /"repository"/
+KEYWORD KW_keywords        /"keywords"/
+KEYWORD KW_author          /"author"/
+KEYWORD KW_homepage        /"homepage"/
+KEYWORD KW_dependencies    /"dependencies"/
+KEYWORD KW_devDependencies /"devDependencies"/
+KEYWORD KW_peerDependencies /"peerDependencies"/
 
 # Generic string literal (after keywords)
 TOKEN StringLit     /"([^"\\]|\\.)*"/
 TOKEN NumberLit     /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/
-TOKEN KW_true       /true/
-TOKEN KW_false      /false/
-TOKEN KW_null       /null/
+KEYWORD KW_true       /true/
+KEYWORD KW_false      /false/
+KEYWORD KW_null       /null/
 
 === grammar
 PackageJson     -> LBRACE FieldList? RBRACE

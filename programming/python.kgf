@@ -16,16 +16,16 @@ TOKEN Comment /#[^\r\n]*/
 TOKEN String /[fFrRbBuU]?"([^"\\]|\\.)*"|[fFrRbBuU]?'([^'\\]|\\.)*'/
 
 # Keywords
-TOKEN KW_def      /def\b/
-TOKEN KW_class    /class\b/
-TOKEN KW_async    /async\b/
-TOKEN KW_import   /import\b/
-TOKEN KW_from     /from\b/
-TOKEN KW_as       /as\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_pass     /pass\b/
-TOKEN KW_self     /self\b/
-TOKEN KW_cls      /cls\b/
+KEYWORD KW_def      /def\b/
+KEYWORD KW_class    /class\b/
+KEYWORD KW_async    /async\b/
+KEYWORD KW_import   /import\b/
+KEYWORD KW_from     /from\b/
+KEYWORD KW_as       /as\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_pass     /pass\b/
+KEYWORD KW_self     /self\b/
+KEYWORD KW_cls      /cls\b/
 
 # Decorators
 TOKEN Decorator /@[A-Za-z_][A-Za-z0-9_.]*/
@@ -122,6 +122,9 @@ on FromImport:  import module=module
 
 === features
 function_kinds: Function
+function_keyword: KW_def
+identifier_kinds: Ident
+self_keyword: KW_self
 
 === semantics
 # Import dependency edge
@@ -134,7 +137,13 @@ on ModuleDoc {
   note module_doc payload obj("doc", $doc)
 }
 
-
+# Python top-level declarations (all public by default; _ prefix is convention only)
+on FunctionDef {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc, "decorators", $decorators)
+}
+on ClassDef {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc, "decorators", $decorators)
+}
 
 on MethodDef when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")

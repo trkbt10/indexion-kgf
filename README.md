@@ -156,8 +156,8 @@ SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 TOKEN Comment /#[^\n]*/
 TOKEN String /"([^"\\]|\\.)*"/
-TOKEN KW_def /def\b/
-TOKEN KW_end /end\b/
+KEYWORD KW_def /def\b/
+KEYWORD KW_end /end\b/
 TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 TOKEN Number /[0-9]+/
 

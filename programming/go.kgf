@@ -22,26 +22,26 @@ TOKEN Char /'(?:[^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?i?/
 
 # Keywords
-TOKEN KW_package   /package\b/
-TOKEN KW_import    /import\b/
-TOKEN KW_func      /func\b/
-TOKEN KW_type      /type\b/
-TOKEN KW_struct    /struct\b/
-TOKEN KW_interface /interface\b/
-TOKEN KW_var       /var\b/
-TOKEN KW_const     /const\b/
-TOKEN KW_map       /map\b/
-TOKEN KW_chan      /chan\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_else      /else\b/
-TOKEN KW_switch    /switch\b/
-TOKEN KW_case      /case\b/
-TOKEN KW_default   /default\b/
-TOKEN KW_for       /for\b/
-TOKEN KW_range     /range\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_defer     /defer\b/
-TOKEN KW_go        /go\b/
+KEYWORD KW_package   /package\b/
+KEYWORD KW_import    /import\b/
+KEYWORD KW_func      /func\b/
+KEYWORD KW_type      /type\b/
+KEYWORD KW_struct    /struct\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_var       /var\b/
+KEYWORD KW_const     /const\b/
+KEYWORD KW_map       /map\b/
+KEYWORD KW_chan      /chan\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_switch    /switch\b/
+KEYWORD KW_case      /case\b/
+KEYWORD KW_default   /default\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_range     /range\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_defer     /defer\b/
+KEYWORD KW_go        /go\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any|comparable)\b/
@@ -157,7 +157,9 @@ on ImportSpec: import module=path
 === features
 document_symbol_kinds: Function, Type
 function_kinds: Function
+function_keyword: KW_func
 coverage_token_kinds: Ident
+identifier_kinds: Ident
 
 === semantics
 # Module-level documentation (// Package xxx ...)

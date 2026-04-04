@@ -19,49 +19,49 @@ TOKEN Char /'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F]+|0b[01]+|[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?[fFdDmMlLuU]*/
 
 # Keywords
-TOKEN KW_namespace /namespace\b/
-TOKEN KW_using     /using\b/
-TOKEN KW_class     /class\b/
-TOKEN KW_struct    /struct\b/
-TOKEN KW_interface /interface\b/
-TOKEN KW_enum      /enum\b/
-TOKEN KW_record    /record\b/
-TOKEN KW_delegate  /delegate\b/
-TOKEN KW_public    /public\b/
-TOKEN KW_private   /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_internal  /internal\b/
-TOKEN KW_static    /static\b/
-TOKEN KW_abstract  /abstract\b/
-TOKEN KW_sealed    /sealed\b/
-TOKEN KW_partial   /partial\b/
-TOKEN KW_virtual   /virtual\b/
-TOKEN KW_override  /override\b/
-TOKEN KW_new       /new\b/
-TOKEN KW_readonly  /readonly\b/
-TOKEN KW_const     /const\b/
-TOKEN KW_async     /async\b/
-TOKEN KW_await     /await\b/
-TOKEN KW_void      /void\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_else      /else\b/
-TOKEN KW_switch    /switch\b/
-TOKEN KW_case      /case\b/
-TOKEN KW_for       /for\b/
-TOKEN KW_foreach   /foreach\b/
-TOKEN KW_while     /while\b/
-TOKEN KW_in        /in\b/
-TOKEN KW_out       /out\b/
-TOKEN KW_ref       /ref\b/
-TOKEN KW_get       /get\b/
-TOKEN KW_set       /set\b/
-TOKEN KW_init      /init\b/
-TOKEN KW_value     /value\b/
-TOKEN KW_this      /this\b/
-TOKEN KW_base      /base\b/
-TOKEN KW_where     /where\b/
-TOKEN KW_event     /event\b/
+KEYWORD KW_namespace /namespace\b/
+KEYWORD KW_using     /using\b/
+KEYWORD KW_class     /class\b/
+KEYWORD KW_struct    /struct\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_record    /record\b/
+KEYWORD KW_delegate  /delegate\b/
+KEYWORD KW_public    /public\b/
+KEYWORD KW_private   /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_internal  /internal\b/
+KEYWORD KW_static    /static\b/
+KEYWORD KW_abstract  /abstract\b/
+KEYWORD KW_sealed    /sealed\b/
+KEYWORD KW_partial   /partial\b/
+KEYWORD KW_virtual   /virtual\b/
+KEYWORD KW_override  /override\b/
+KEYWORD KW_new       /new\b/
+KEYWORD KW_readonly  /readonly\b/
+KEYWORD KW_const     /const\b/
+KEYWORD KW_async     /async\b/
+KEYWORD KW_await     /await\b/
+KEYWORD KW_void      /void\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_switch    /switch\b/
+KEYWORD KW_case      /case\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_foreach   /foreach\b/
+KEYWORD KW_while     /while\b/
+KEYWORD KW_in        /in\b/
+KEYWORD KW_out       /out\b/
+KEYWORD KW_ref       /ref\b/
+KEYWORD KW_get       /get\b/
+KEYWORD KW_set       /set\b/
+KEYWORD KW_init      /init\b/
+KEYWORD KW_value     /value\b/
+KEYWORD KW_this      /this\b/
+KEYWORD KW_base      /base\b/
+KEYWORD KW_where     /where\b/
+KEYWORD KW_event     /event\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|int|byte|sbyte|short|ushort|long|ulong|float|double|decimal|bool|char|string|object|dynamic|var)\b/
@@ -96,8 +96,8 @@ TOKEN QMARK    /\?/
 TOKEN COLON    /:/
 
 # Additional keywords used in grammar contexts
-TOKEN KW_extern /extern\b/
-TOKEN KW_unsafe /unsafe\b/
+KEYWORD KW_extern /extern\b/
+KEYWORD KW_unsafe /unsafe\b/
 
 === grammar
 Module -> Item*
@@ -231,11 +231,35 @@ on UsingDecl:     import module=path
 document_symbol_kinds: Class, Struct, Interface, Enum, Record, Delegate
 function_kinds: Method
 coverage_token_kinds: Ident, TypeIdent
+identifier_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
 on UsingDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Public declarations (vis:KW_public? in grammar)
+on ClassDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on StructDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+}
+on InterfaceDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+}
+on EnumDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on RecordDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Record", "doc", $doc)
+}
+on DelegateDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Delegate", "doc", $doc)
+}
+on MethodDecl when $vis {
+  edge declares from $file to concat($file, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
 }
 
 === resolver

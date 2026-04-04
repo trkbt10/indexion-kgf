@@ -23,42 +23,42 @@ TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+
 TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_.]*/
 
 # Keywords
-TOKEN KW_package    /package\b/
-TOKEN KW_import     /import\b/
-TOKEN KW_class      /class\b/
-TOKEN KW_interface  /interface\b/
-TOKEN KW_enum       /enum\b/
-TOKEN KW_record     /record\b/
-TOKEN KW_extends    /extends\b/
-TOKEN KW_implements /implements\b/
-TOKEN KW_public     /public\b/
-TOKEN KW_private    /private\b/
-TOKEN KW_protected  /protected\b/
-TOKEN KW_static     /static\b/
-TOKEN KW_final      /final\b/
-TOKEN KW_abstract   /abstract\b/
-TOKEN KW_sealed     /sealed\b/
-TOKEN KW_permits    /permits\b/
-TOKEN KW_default    /default\b/
-TOKEN KW_void       /void\b/
-TOKEN KW_new        /new\b/
-TOKEN KW_this       /this\b/
-TOKEN KW_super      /super\b/
-TOKEN KW_return     /return\b/
-TOKEN KW_throws     /throws\b/
-TOKEN KW_throw      /throw\b/
-TOKEN KW_try        /try\b/
-TOKEN KW_catch      /catch\b/
-TOKEN KW_finally    /finally\b/
-TOKEN KW_if         /if\b/
-TOKEN KW_else       /else\b/
-TOKEN KW_switch     /switch\b/
-TOKEN KW_case       /case\b/
-TOKEN KW_for        /for\b/
-TOKEN KW_while      /while\b/
-TOKEN KW_do         /do\b/
-TOKEN KW_break      /break\b/
-TOKEN KW_continue   /continue\b/
+KEYWORD KW_package    /package\b/
+KEYWORD KW_import     /import\b/
+KEYWORD KW_class      /class\b/
+KEYWORD KW_interface  /interface\b/
+KEYWORD KW_enum       /enum\b/
+KEYWORD KW_record     /record\b/
+KEYWORD KW_extends    /extends\b/
+KEYWORD KW_implements /implements\b/
+KEYWORD KW_public     /public\b/
+KEYWORD KW_private    /private\b/
+KEYWORD KW_protected  /protected\b/
+KEYWORD KW_static     /static\b/
+KEYWORD KW_final      /final\b/
+KEYWORD KW_abstract   /abstract\b/
+KEYWORD KW_sealed     /sealed\b/
+KEYWORD KW_permits    /permits\b/
+KEYWORD KW_default    /default\b/
+KEYWORD KW_void       /void\b/
+KEYWORD KW_new        /new\b/
+KEYWORD KW_this       /this\b/
+KEYWORD KW_super      /super\b/
+KEYWORD KW_return     /return\b/
+KEYWORD KW_throws     /throws\b/
+KEYWORD KW_throw      /throw\b/
+KEYWORD KW_try        /try\b/
+KEYWORD KW_catch      /catch\b/
+KEYWORD KW_finally    /finally\b/
+KEYWORD KW_if         /if\b/
+KEYWORD KW_else       /else\b/
+KEYWORD KW_switch     /switch\b/
+KEYWORD KW_case       /case\b/
+KEYWORD KW_for        /for\b/
+KEYWORD KW_while      /while\b/
+KEYWORD KW_do         /do\b/
+KEYWORD KW_break      /break\b/
+KEYWORD KW_continue   /continue\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:int|byte|short|long|float|double|boolean|char|var)\b/
@@ -194,11 +194,29 @@ on ImportDecl:    import module=path
 
 === features
 function_kinds: Method
+identifier_kinds: Ident
 
 === semantics
 # Import dependency
 on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# Public declarations (vis:KW_public? in grammar)
+on ClassDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on InterfaceDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+}
+on EnumDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on RecordDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Record", "doc", $doc)
+}
+on MethodDecl when $vis {
+  edge declares from $file to concat($file, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
 }
 
 

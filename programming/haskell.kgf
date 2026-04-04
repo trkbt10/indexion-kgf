@@ -21,27 +21,27 @@ TOKEN Char /'([^'\\]|\\.)*'/
 TOKEN Number /0x[0-9a-fA-F]+|0o[0-7]+|0b[01]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
 
 # Keywords
-TOKEN KW_module   /module\b/
-TOKEN KW_import   /import\b/
-TOKEN KW_qualified /qualified\b/
-TOKEN KW_as       /as\b/
-TOKEN KW_hiding   /hiding\b/
-TOKEN KW_data     /data\b/
-TOKEN KW_newtype  /newtype\b/
-TOKEN KW_type     /type\b/
-TOKEN KW_class    /class\b/
-TOKEN KW_instance /instance\b/
-TOKEN KW_deriving /deriving\b/
-TOKEN KW_where    /where\b/
-TOKEN KW_let      /let\b/
-TOKEN KW_in       /in\b/
-TOKEN KW_do       /do\b/
-TOKEN KW_case     /case\b/
-TOKEN KW_of       /of\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_then     /then\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_family   /family\b/
+KEYWORD KW_module   /module\b/
+KEYWORD KW_import   /import\b/
+KEYWORD KW_qualified /qualified\b/
+KEYWORD KW_as       /as\b/
+KEYWORD KW_hiding   /hiding\b/
+KEYWORD KW_data     /data\b/
+KEYWORD KW_newtype  /newtype\b/
+KEYWORD KW_type     /type\b/
+KEYWORD KW_class    /class\b/
+KEYWORD KW_instance /instance\b/
+KEYWORD KW_deriving /deriving\b/
+KEYWORD KW_where    /where\b/
+KEYWORD KW_let      /let\b/
+KEYWORD KW_in       /in\b/
+KEYWORD KW_do       /do\b/
+KEYWORD KW_case     /case\b/
+KEYWORD KW_of       /of\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_then     /then\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_family   /family\b/
 
 # Identifiers
 TOKEN ConIdent /[A-Z][a-zA-Z0-9_']*/
@@ -150,6 +150,7 @@ on ImportDecl:   import module=path
 
 === features
 function_kinds: Function
+identifier_kinds: VarIdent, ConIdent
 
 === semantics
 # Import dependency
@@ -158,12 +159,25 @@ on ImportDecl {
 }
 
 
-# Data declaration
-
-
-
-# Class declaration
-
+# Haskell top-level declarations (visibility controlled by module exports, not declaration-level)
+on ModuleDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+}
+on DataDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Data", "doc", $doc)
+}
+on NewtypeDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Newtype", "doc", $doc)
+}
+on TypeDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", $doc)
+}
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+}
 
 # Data constructor
 on DataCons when $scope("value", "current_data") {

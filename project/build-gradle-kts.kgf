@@ -12,19 +12,19 @@ TOKEN Comment       /\/\/[^\r\n]*/
 TOKEN BlockComment  /\/\*[\s\S]*?\*\//
 
 # Keywords
-TOKEN KW_plugins    /plugins\b/
-TOKEN KW_group      /group\b/
-TOKEN KW_version    /version\b/
-TOKEN KW_repositories /repositories\b/
-TOKEN KW_dependencies /dependencies\b/
-TOKEN KW_implementation /implementation\b/
-TOKEN KW_testImplementation /testImplementation\b/
-TOKEN KW_api        /api\b/
-TOKEN KW_compileOnly /compileOnly\b/
-TOKEN KW_runtimeOnly /runtimeOnly\b/
-TOKEN KW_kotlin     /kotlin\b/
-TOKEN KW_tasks      /tasks\b/
-TOKEN KW_id         /id\b/
+KEYWORD KW_plugins    /plugins\b/
+KEYWORD KW_group      /group\b/
+KEYWORD KW_version    /version\b/
+KEYWORD KW_repositories /repositories\b/
+KEYWORD KW_dependencies /dependencies\b/
+KEYWORD KW_implementation /implementation\b/
+KEYWORD KW_testImplementation /testImplementation\b/
+KEYWORD KW_api        /api\b/
+KEYWORD KW_compileOnly /compileOnly\b/
+KEYWORD KW_runtimeOnly /runtimeOnly\b/
+KEYWORD KW_kotlin     /kotlin\b/
+KEYWORD KW_tasks      /tasks\b/
+KEYWORD KW_id         /id\b/
 
 # Literals
 TOKEN StringLit     /"([^"\\]|\\.)*"/

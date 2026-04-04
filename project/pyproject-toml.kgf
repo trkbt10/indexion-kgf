@@ -19,22 +19,22 @@ TOKEN SectionBuildSystem  /\[build-system\]/
 TOKEN SectionOther        /\[[a-zA-Z][a-zA-Z0-9._-]*\]/
 
 # Key names
-TOKEN KW_name          /name\b/
-TOKEN KW_version       /version\b/
-TOKEN KW_description   /description\b/
-TOKEN KW_license       /license\b/
-TOKEN KW_readme        /readme\b/
-TOKEN KW_keywords      /keywords\b/
-TOKEN KW_authors       /authors\b/
-TOKEN KW_dependencies  /dependencies\b/
-TOKEN KW_requires_python /requires-python\b/
+KEYWORD KW_name          /name\b/
+KEYWORD KW_version       /version\b/
+KEYWORD KW_description   /description\b/
+KEYWORD KW_license       /license\b/
+KEYWORD KW_readme        /readme\b/
+KEYWORD KW_keywords      /keywords\b/
+KEYWORD KW_authors       /authors\b/
+KEYWORD KW_dependencies  /dependencies\b/
+KEYWORD KW_requires_python /requires-python\b/
 
 # Values
 TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
 TOKEN MultiString   /"""[\s\S]*?"""|'''[\s\S]*?'''/
 TOKEN NumberLit     /[0-9]+(\.[0-9]+)?/
-TOKEN KW_true       /true\b/
-TOKEN KW_false      /false\b/
+KEYWORD KW_true       /true\b/
+KEYWORD KW_false      /false\b/
 
 # Punctuation
 TOKEN EQUALS        /=/

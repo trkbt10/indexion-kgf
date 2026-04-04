@@ -25,30 +25,30 @@ TOKEN JSX_CLOSE_START /<\//
 TOKEN JSX_SELF_CLOSE /\/>/
 
 # Keywords
-TOKEN KW_import    /import\b/
-TOKEN KW_from      /from\b/
-TOKEN KW_export    /export\b/
-TOKEN KW_default   /default\b/
-TOKEN KW_function  /function\b/
-TOKEN KW_class     /class\b/
-TOKEN KW_interface /interface\b/
-TOKEN KW_type      /type\b/
-TOKEN KW_const     /const\b/
-TOKEN KW_let       /let\b/
-TOKEN KW_var       /var\b/
-TOKEN KW_enum      /enum\b/
-TOKEN KW_extends   /extends\b/
-TOKEN KW_implements /implements\b/
-TOKEN KW_async     /async\b/
-TOKEN KW_await     /await\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_public    /public\b/
-TOKEN KW_private   /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_static    /static\b/
-TOKEN KW_readonly  /readonly\b/
-TOKEN KW_abstract  /abstract\b/
-TOKEN KW_as        /as\b/
+KEYWORD KW_import    /import\b/
+KEYWORD KW_from      /from\b/
+KEYWORD KW_export    /export\b/
+KEYWORD KW_default   /default\b/
+KEYWORD KW_function  /function\b/
+KEYWORD KW_class     /class\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_type      /type\b/
+KEYWORD KW_const     /const\b/
+KEYWORD KW_let       /let\b/
+KEYWORD KW_var       /var\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_extends   /extends\b/
+KEYWORD KW_implements /implements\b/
+KEYWORD KW_async     /async\b/
+KEYWORD KW_await     /await\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_public    /public\b/
+KEYWORD KW_private   /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_static    /static\b/
+KEYWORD KW_readonly  /readonly\b/
+KEYWORD KW_abstract  /abstract\b/
+KEYWORD KW_as        /as\b/
 
 # Identifiers and literals
 TOKEN Ident   /[A-Za-z_$][A-Za-z0-9_$]*/
@@ -206,7 +206,9 @@ on ImportDefault:      import module=from
 === features
 document_symbol_kinds: Function, Class, Interface, Type, Enum
 function_kinds: Function
+function_keyword: KW_function
 coverage_token_kinds: Ident
+identifier_kinds: Ident
 
 === semantics
 # Module-level documentation (JSDoc with @module or @packageDocumentation)

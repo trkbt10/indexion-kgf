@@ -17,22 +17,22 @@ TOKEN COLON         /:/
 TOKEN COMMA         /,/
 
 # Key names
-TOKEN KW_name         /"name"/
-TOKEN KW_version      /"version"/
-TOKEN KW_description  /"description"/
-TOKEN KW_license      /"license"/
-TOKEN KW_type         /"type"/
-TOKEN KW_require      /"require"/
-TOKEN KW_require_dev  /"require-dev"/
-TOKEN KW_authors      /"authors"/
-TOKEN KW_autoload     /"autoload"/
+KEYWORD KW_name         /"name"/
+KEYWORD KW_version      /"version"/
+KEYWORD KW_description  /"description"/
+KEYWORD KW_license      /"license"/
+KEYWORD KW_type         /"type"/
+KEYWORD KW_require      /"require"/
+KEYWORD KW_require_dev  /"require-dev"/
+KEYWORD KW_authors      /"authors"/
+KEYWORD KW_autoload     /"autoload"/
 
 # Values
 TOKEN StringLit     /"([^"\\]|\\.)*"/
 TOKEN NumberLit     /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
-TOKEN KW_true       /true/
-TOKEN KW_false      /false/
-TOKEN KW_null       /null/
+KEYWORD KW_true       /true/
+KEYWORD KW_false      /false/
+KEYWORD KW_null       /null/
 
 === grammar
 JsonFile        -> LBRACE Members? RBRACE

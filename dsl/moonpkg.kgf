@@ -11,7 +11,7 @@ TOKEN NL /\r?\n/
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # Keywords
-TOKEN KW_import /import\b/
+KEYWORD KW_import /import\b/
 
 # Strings (package paths)
 TOKEN String /"([^"\\]|\\.)*"/

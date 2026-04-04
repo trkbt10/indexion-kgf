@@ -23,41 +23,41 @@ TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+
 TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_.]*/
 
 # Keywords
-TOKEN KW_package   /package\b/
-TOKEN KW_import    /import\b/
-TOKEN KW_def       /def\b/
-TOKEN KW_val       /val\b/
-TOKEN KW_var       /var\b/
-TOKEN KW_lazy      /lazy\b/
-TOKEN KW_type      /type\b/
-TOKEN KW_class     /class\b/
-TOKEN KW_trait     /trait\b/
-TOKEN KW_object    /object\b/
-TOKEN KW_enum      /enum\b/
-TOKEN KW_case      /case\b/
-TOKEN KW_sealed    /sealed\b/
-TOKEN KW_abstract  /abstract\b/
-TOKEN KW_final     /final\b/
-TOKEN KW_private   /private\b/
-TOKEN KW_protected /protected\b/
-TOKEN KW_override  /override\b/
-TOKEN KW_implicit  /implicit\b/
-TOKEN KW_given     /given\b/
-TOKEN KW_using     /using\b/
-TOKEN KW_extension /extension\b/
-TOKEN KW_extends   /extends\b/
-TOKEN KW_with      /with\b/
-TOKEN KW_new       /new\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_else      /else\b/
-TOKEN KW_match     /match\b/
-TOKEN KW_for       /for\b/
-TOKEN KW_while     /while\b/
-TOKEN KW_return    /return\b/
-TOKEN KW_yield     /yield\b/
-TOKEN KW_try       /try\b/
-TOKEN KW_catch     /catch\b/
-TOKEN KW_finally   /finally\b/
+KEYWORD KW_package   /package\b/
+KEYWORD KW_import    /import\b/
+KEYWORD KW_def       /def\b/
+KEYWORD KW_val       /val\b/
+KEYWORD KW_var       /var\b/
+KEYWORD KW_lazy      /lazy\b/
+KEYWORD KW_type      /type\b/
+KEYWORD KW_class     /class\b/
+KEYWORD KW_trait     /trait\b/
+KEYWORD KW_object    /object\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_case      /case\b/
+KEYWORD KW_sealed    /sealed\b/
+KEYWORD KW_abstract  /abstract\b/
+KEYWORD KW_final     /final\b/
+KEYWORD KW_private   /private\b/
+KEYWORD KW_protected /protected\b/
+KEYWORD KW_override  /override\b/
+KEYWORD KW_implicit  /implicit\b/
+KEYWORD KW_given     /given\b/
+KEYWORD KW_using     /using\b/
+KEYWORD KW_extension /extension\b/
+KEYWORD KW_extends   /extends\b/
+KEYWORD KW_with      /with\b/
+KEYWORD KW_new       /new\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_match     /match\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_while     /while\b/
+KEYWORD KW_return    /return\b/
+KEYWORD KW_yield     /yield\b/
+KEYWORD KW_try       /try\b/
+KEYWORD KW_catch     /catch\b/
+KEYWORD KW_finally   /finally\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -196,6 +196,8 @@ on ImportDecl:  import module=path
 
 === features
 function_kinds: Def
+function_keyword: KW_def
+identifier_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
@@ -203,16 +205,31 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Class declaration
-
-# Trait declaration
-
-# Object declaration
-
-# Enum declaration
-
-
-
+# Scala top-level declarations (default visibility is public)
+on ClassDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+}
+on TraitDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+}
+on ObjectDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Object", "doc", $doc)
+}
+on EnumDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+on DefDecl {
+  edge declares from $file to concat($file, "::", $def_id) attrs obj("name", $def_id, "kind", "Def", "doc", $doc)
+}
+on ValDecl {
+  edge declares from $file to concat($file, "::", $val_id) attrs obj("name", $val_id, "kind", "Val", "doc", $doc)
+}
+on VarDecl {
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Var", "doc", $doc)
+}
+on TypeDecl {
+  edge declares from $file to concat($file, "::", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", $doc)
+}
 
 # Enum case
 on EnumCase when $scope("value", "current_enum") {

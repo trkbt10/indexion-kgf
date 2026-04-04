@@ -23,39 +23,39 @@ TOKEN Atom /:[a-zA-Z_][a-zA-Z0-9_@]*|:"([^"\\]|\\.)*"/
 TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+)?/
 
 # Keywords
-TOKEN KW_defmodule /defmodule\b/
-TOKEN KW_defprotocol /defprotocol\b/
-TOKEN KW_defimpl /defimpl\b/
-TOKEN KW_defstruct /defstruct\b/
-TOKEN KW_defexception /defexception\b/
-TOKEN KW_defmacro /defmacro\b/
-TOKEN KW_defmacrop /defmacrop\b/
-TOKEN KW_defguard /defguard\b/
-TOKEN KW_defguardp /defguardp\b/
-TOKEN KW_def /def\b/
-TOKEN KW_defp /defp\b/
-TOKEN KW_defdelegate /defdelegate\b/
-TOKEN KW_if /if\b/
-TOKEN KW_unless /unless\b/
-TOKEN KW_case /case\b/
-TOKEN KW_cond /cond\b/
-TOKEN KW_with /with\b/
-TOKEN KW_for /for\b/
-TOKEN KW_try /try\b/
-TOKEN KW_receive /receive\b/
-TOKEN KW_after /after\b/
-TOKEN KW_rescue /rescue\b/
-TOKEN KW_catch /catch\b/
-TOKEN KW_else /else\b/
-TOKEN KW_end /end\b/
-TOKEN KW_do /do\b/
-TOKEN KW_fn /fn\b/
-TOKEN KW_raise /raise\b/
-TOKEN KW_require /require\b/
-TOKEN KW_import /import\b/
-TOKEN KW_alias /alias\b/
-TOKEN KW_use /use\b/
-TOKEN KW_when /when\b/
+KEYWORD KW_defmodule /defmodule\b/
+KEYWORD KW_defprotocol /defprotocol\b/
+KEYWORD KW_defimpl /defimpl\b/
+KEYWORD KW_defstruct /defstruct\b/
+KEYWORD KW_defexception /defexception\b/
+KEYWORD KW_defmacro /defmacro\b/
+KEYWORD KW_defmacrop /defmacrop\b/
+KEYWORD KW_defguard /defguard\b/
+KEYWORD KW_defguardp /defguardp\b/
+KEYWORD KW_def /def\b/
+KEYWORD KW_defp /defp\b/
+KEYWORD KW_defdelegate /defdelegate\b/
+KEYWORD KW_if /if\b/
+KEYWORD KW_unless /unless\b/
+KEYWORD KW_case /case\b/
+KEYWORD KW_cond /cond\b/
+KEYWORD KW_with /with\b/
+KEYWORD KW_for /for\b/
+KEYWORD KW_try /try\b/
+KEYWORD KW_receive /receive\b/
+KEYWORD KW_after /after\b/
+KEYWORD KW_rescue /rescue\b/
+KEYWORD KW_catch /catch\b/
+KEYWORD KW_else /else\b/
+KEYWORD KW_end /end\b/
+KEYWORD KW_do /do\b/
+KEYWORD KW_fn /fn\b/
+KEYWORD KW_raise /raise\b/
+KEYWORD KW_require /require\b/
+KEYWORD KW_import /import\b/
+KEYWORD KW_alias /alias\b/
+KEYWORD KW_use /use\b/
+KEYWORD KW_when /when\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -124,16 +124,16 @@ StructDecl -> KW_defstruct LBRACKET ( StructField ( COMMA StructField )* )? RBRA
 StructField -> Atom / Ident / LBRACE Atom COMMA Expr RBRACE
 
 # Def declaration
-DefDecl -> doc:DocAttr? NL? ( KW_def / KW_defp ) def_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
+DefDecl -> doc:DocAttr? NL? vis:( KW_def / KW_defp ) def_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
 DefArgs -> LPAREN ParamList? RPAREN
 DefBody -> ( DefContent )*
 DefContent -> NL / Comment / Expr / Statement
 
 # DefMacro declaration
-DefMacroDecl -> doc:DocAttr? NL? ( KW_defmacro / KW_defmacrop ) macro_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
+DefMacroDecl -> doc:DocAttr? NL? vis:( KW_defmacro / KW_defmacrop ) macro_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
 
 # DefGuard declaration
-DefGuardDecl -> doc:DocAttr? NL? ( KW_defguard / KW_defguardp ) guard_id:Ident DefArgs? ( KW_when Expr )?
+DefGuardDecl -> doc:DocAttr? NL? vis:( KW_defguard / KW_defguardp ) guard_id:Ident DefArgs? ( KW_when Expr )?
 
 # Use/Import/Alias/Require
 UseDecl -> KW_use ModulePath ( COMMA Expr )*
@@ -168,6 +168,8 @@ on ImportDecl:    import module=path
 
 === features
 function_kinds: Function, Guard, Macro
+function_keyword: KW_def
+identifier_kinds: Ident, ModuleIdent
 
 === semantics
 # Import dependency
@@ -175,10 +177,24 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Module declaration
+# Elixir public declarations
+on ModuleDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+}
+on ProtocolDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+}
 
-# Protocol declaration
-
+# def = public, defp = private
+on DefDecl when eq($vis, "def") {
+  edge declares from $file to concat($file, "::", $def_id) attrs obj("name", $def_id, "kind", "Function", "doc", $doc)
+}
+on DefMacroDecl when eq($vis, "defmacro") {
+  edge declares from $file to concat($file, "::", $macro_id) attrs obj("name", $macro_id, "kind", "Macro", "doc", $doc)
+}
+on DefGuardDecl when eq($vis, "defguard") {
+  edge declares from $file to concat($file, "::", $guard_id) attrs obj("name", $guard_id, "kind", "Guard", "doc", $doc)
+}
 
 # Def in module
 on DefDecl when $scope("value", "current_module") {
@@ -186,8 +202,6 @@ on DefDecl when $scope("value", "current_module") {
   let sym_id = concat(parent, ".", $def_id)
   edge declares from parent to sym_id attrs obj("name", $def_id, "kind", "Function", "doc", $doc)
 }
-
-
 
 === resolver
 relative_prefixes: ./

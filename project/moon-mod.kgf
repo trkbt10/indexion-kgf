@@ -15,22 +15,22 @@ TOKEN COLON         /:/
 TOKEN COMMA         /,/
 
 # Specific field name tokens
-TOKEN KW_name            /"name"/
-TOKEN KW_version         /"version"/
-TOKEN KW_description     /"description"/
-TOKEN KW_license         /"license"/
-TOKEN KW_repository      /"repository"/
-TOKEN KW_keywords        /"keywords"/
-TOKEN KW_readme          /"readme"/
-TOKEN KW_deps            /"deps"/
-TOKEN KW_source          /"source"/
+KEYWORD KW_name            /"name"/
+KEYWORD KW_version         /"version"/
+KEYWORD KW_description     /"description"/
+KEYWORD KW_license         /"license"/
+KEYWORD KW_repository      /"repository"/
+KEYWORD KW_keywords        /"keywords"/
+KEYWORD KW_readme          /"readme"/
+KEYWORD KW_deps            /"deps"/
+KEYWORD KW_source          /"source"/
 
 # Generic string/number/bool
 TOKEN StringLit     /"([^"\\]|\\.)*"/
 TOKEN NumberLit     /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
-TOKEN KW_true       /true/
-TOKEN KW_false      /false/
-TOKEN KW_null       /null/
+KEYWORD KW_true       /true/
+KEYWORD KW_false      /false/
+KEYWORD KW_null       /null/
 
 === grammar
 ModJson         -> LBRACE FieldList? RBRACE

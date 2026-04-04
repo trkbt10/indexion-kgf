@@ -29,21 +29,21 @@ TOKEN MultiString /#\|[\s\S]*?\|#/
 TOKEN Char /'([^'\\]|\\.)'/
 
 # Keywords (ordered before identifiers to match first)
-TOKEN KW_fn       /fn\b/
-TOKEN KW_pub      /pub\b/
-TOKEN KW_priv     /priv\b/
-TOKEN KW_struct   /struct\b/
-TOKEN KW_enum     /enum\b/
-TOKEN KW_type     /type\b/
-TOKEN KW_trait    /trait\b/
-TOKEN KW_impl     /impl\b/
-TOKEN KW_let      /let\b/
-TOKEN KW_mut      /mut\b/
-TOKEN KW_const    /const\b/
-TOKEN KW_test     /test\b/
-TOKEN KW_derive   /derive\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_with     /with\b/
+KEYWORD KW_fn       /fn\b/
+KEYWORD KW_pub      /pub\b/
+KEYWORD KW_priv     /priv\b/
+KEYWORD KW_struct   /struct\b/
+KEYWORD KW_enum     /enum\b/
+KEYWORD KW_type     /type\b/
+KEYWORD KW_trait    /trait\b/
+KEYWORD KW_impl     /impl\b/
+KEYWORD KW_let      /let\b/
+KEYWORD KW_mut      /mut\b/
+KEYWORD KW_const    /const\b/
+KEYWORD KW_test     /test\b/
+KEYWORD KW_derive   /derive\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_with     /with\b/
 
 # Identifiers
 TOKEN TypeIdent /[A-Z][A-Za-z0-9_]*/
@@ -193,7 +193,9 @@ on Param:       def param_id kind=Param
 === features
 document_symbol_kinds: Function, Struct, Enum, Type, Trait
 function_kinds: Function
+function_keyword: KW_fn
 coverage_token_kinds: Ident, TypeIdent, PackageRef
+identifier_kinds: Ident, TypeIdent, PackageRef
 
 === semantics
 # Module-level documentation

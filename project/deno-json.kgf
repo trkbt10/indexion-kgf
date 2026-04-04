@@ -18,21 +18,21 @@ TOKEN COLON         /:/
 TOKEN COMMA         /,/
 
 # Specific field name tokens
-TOKEN KW_name            /"name"/
-TOKEN KW_version         /"version"/
-TOKEN KW_description     /"description"/
-TOKEN KW_license         /"license"/
-TOKEN KW_repository      /"repository"/
-TOKEN KW_imports         /"imports"/
-TOKEN KW_tasks           /"tasks"/
-TOKEN KW_exports         /"exports"/
+KEYWORD KW_name            /"name"/
+KEYWORD KW_version         /"version"/
+KEYWORD KW_description     /"description"/
+KEYWORD KW_license         /"license"/
+KEYWORD KW_repository      /"repository"/
+KEYWORD KW_imports         /"imports"/
+KEYWORD KW_tasks           /"tasks"/
+KEYWORD KW_exports         /"exports"/
 
 # Generic string/number/bool
 TOKEN StringLit     /"([^"\\]|\\.)*"/
 TOKEN NumberLit     /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
-TOKEN KW_true       /true/
-TOKEN KW_false      /false/
-TOKEN KW_null       /null/
+KEYWORD KW_true       /true/
+KEYWORD KW_false      /false/
+KEYWORD KW_null       /null/
 
 === grammar
 DenoJson        -> LBRACE FieldList? RBRACE

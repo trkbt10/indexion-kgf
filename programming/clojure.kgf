@@ -25,23 +25,23 @@ TOKEN Number /[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?[MN]?|[+-]?0x[0-9a-fA-F]+|
 TOKEN Keyword /:[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-.:]*/
 
 # Special forms
-TOKEN KW_def       /def\b/
-TOKEN KW_defn      /defn\b/
-TOKEN KW_defn_     /defn-\b/
-TOKEN KW_defmacro  /defmacro\b/
-TOKEN KW_defmethod /defmethod\b/
-TOKEN KW_defmulti  /defmulti\b/
-TOKEN KW_defprotocol /defprotocol\b/
-TOKEN KW_defrecord /defrecord\b/
-TOKEN KW_deftype   /deftype\b/
-TOKEN KW_fn        /fn\b/
-TOKEN KW_let       /let\b/
-TOKEN KW_if        /if\b/
-TOKEN KW_do        /do\b/
-TOKEN KW_ns        /ns\b/
-TOKEN KW_require   /require\b/
-TOKEN KW_use       /use\b/
-TOKEN KW_import    /import\b/
+KEYWORD KW_def       /def\b/
+KEYWORD KW_defn      /defn\b/
+KEYWORD KW_defn_     /defn-\b/
+KEYWORD KW_defmacro  /defmacro\b/
+KEYWORD KW_defmethod /defmethod\b/
+KEYWORD KW_defmulti  /defmulti\b/
+KEYWORD KW_defprotocol /defprotocol\b/
+KEYWORD KW_defrecord /defrecord\b/
+KEYWORD KW_deftype   /deftype\b/
+KEYWORD KW_fn        /fn\b/
+KEYWORD KW_let       /let\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_do        /do\b/
+KEYWORD KW_ns        /ns\b/
+KEYWORD KW_require   /require\b/
+KEYWORD KW_use       /use\b/
+KEYWORD KW_import    /import\b/
 
 # Symbols
 TOKEN NamespacedSymbol /[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*\/[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*/
@@ -145,6 +145,8 @@ on RequireSpec:     import module=path
 
 === features
 function_kinds: Function, Macro, Method, Multimethod
+function_keyword: KW_defn
+identifier_kinds: Symbol, NamespacedSymbol
 
 === semantics
 # Import dependency
@@ -152,15 +154,34 @@ on RequireSpec {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Namespace declaration
-
-
-
-
-# DefProtocol declaration
-
-
-
+# Clojure top-level declarations (public by default)
+on NsDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Namespace", "doc", $doc)
+}
+on DefDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Var", "doc", $doc)
+}
+on DefnDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+}
+on DefMacroDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Macro", "doc", $doc)
+}
+on DefProtocolDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+}
+on DefRecordDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Record", "doc", $doc)
+}
+on DefTypeDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", $doc)
+}
+on DefMultiDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Multimethod", "doc", $doc)
+}
+on DefMethodDecl {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Method", "doc", $doc)
+}
 
 
 # Protocol method

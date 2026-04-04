@@ -29,39 +29,39 @@ TOKEN Number /0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*(?:\.[0-9_]+)?(?:[e
 TOKEN Lifetime /'[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
-TOKEN KW_fn       /fn\b/
-TOKEN KW_pub      /pub\b/
-TOKEN KW_struct   /struct\b/
-TOKEN KW_enum     /enum\b/
-TOKEN KW_trait    /trait\b/
-TOKEN KW_impl     /impl\b/
-TOKEN KW_type     /type\b/
-TOKEN KW_mod      /mod\b/
-TOKEN KW_use      /use\b/
-TOKEN KW_let      /let\b/
-TOKEN KW_mut      /mut\b/
-TOKEN KW_const    /const\b/
-TOKEN KW_static   /static\b/
-TOKEN KW_crate    /crate\b/
-TOKEN KW_self     /self\b/
-TOKEN KW_super    /super\b/
-TOKEN KW_extern   /extern\b/
-TOKEN KW_async    /async\b/
-TOKEN KW_await    /await\b/
-TOKEN KW_dyn      /dyn\b/
-TOKEN KW_where    /where\b/
-TOKEN KW_if       /if\b/
-TOKEN KW_else     /else\b/
-TOKEN KW_match    /match\b/
-TOKEN KW_loop     /loop\b/
-TOKEN KW_while    /while\b/
-TOKEN KW_for      /for\b/
-TOKEN KW_in       /in\b/
-TOKEN KW_return   /return\b/
-TOKEN KW_unsafe   /unsafe\b/
-TOKEN KW_as       /as\b/
-TOKEN KW_ref      /ref\b/
-TOKEN KW_move     /move\b/
+KEYWORD KW_fn       /fn\b/
+KEYWORD KW_pub      /pub\b/
+KEYWORD KW_struct   /struct\b/
+KEYWORD KW_enum     /enum\b/
+KEYWORD KW_trait    /trait\b/
+KEYWORD KW_impl     /impl\b/
+KEYWORD KW_type     /type\b/
+KEYWORD KW_mod      /mod\b/
+KEYWORD KW_use      /use\b/
+KEYWORD KW_let      /let\b/
+KEYWORD KW_mut      /mut\b/
+KEYWORD KW_const    /const\b/
+KEYWORD KW_static   /static\b/
+KEYWORD KW_crate    /crate\b/
+KEYWORD KW_self     /self\b/
+KEYWORD KW_super    /super\b/
+KEYWORD KW_extern   /extern\b/
+KEYWORD KW_async    /async\b/
+KEYWORD KW_await    /await\b/
+KEYWORD KW_dyn      /dyn\b/
+KEYWORD KW_where    /where\b/
+KEYWORD KW_if       /if\b/
+KEYWORD KW_else     /else\b/
+KEYWORD KW_match    /match\b/
+KEYWORD KW_loop     /loop\b/
+KEYWORD KW_while    /while\b/
+KEYWORD KW_for      /for\b/
+KEYWORD KW_in       /in\b/
+KEYWORD KW_return   /return\b/
+KEYWORD KW_unsafe   /unsafe\b/
+KEYWORD KW_as       /as\b/
+KEYWORD KW_ref      /ref\b/
+KEYWORD KW_move     /move\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:Self|bool|char|str|i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|Box|Vec|String|Option|Result|Some|None|Ok|Err)\b/
@@ -211,6 +211,9 @@ on Param:       def param_id kind=Param
 
 === features
 function_kinds: Function
+function_keyword: KW_fn
+identifier_kinds: Ident
+self_keyword: KW_self
 
 === semantics
 # Module-level documentation (//! inner doc comments)
