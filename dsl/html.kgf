@@ -20,6 +20,9 @@ Other      -> TAG_CLOSE
 === attrs
 on Attr:      import module=_last
 
+=== features
+content_type: document
+
 === semantics
 on Attr {
   edge moduleDependsOn from $file to $resolve($_last) attrs obj("via", $_last, "dep_kind", "value")

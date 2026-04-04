@@ -34,6 +34,10 @@ on MdLink:       import module=path
 on MetaComment:  def id kind=Metadata
 
 === features
+content_type: document
+section_token: HEADING
+section_level: text_length
+heading_text_tokens: TEXT, INLINE_CODE
 reference_token_kinds: INLINE_CODE
 coverage_token_kinds: INLINE_CODE, TEXT
 nav_file: _sidebar.md
