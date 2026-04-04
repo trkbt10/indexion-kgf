@@ -157,43 +157,13 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Module declaration
-on ModuleDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc, "visibility", "public")
-}
 
 # Data declaration
-on DataDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Data", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_data" to sym_id
-}
 
-# Newtype declaration
-on NewtypeDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Newtype", "doc", $doc, "visibility", "public")
-}
 
-# Type declaration
-on TypeDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", "public")
-}
 
 # Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_class" to sym_id
-}
 
-# Function declaration
-on FunctionDecl {
-  let sym_id = concat($file, "::", $func_id)
-  edge declares from $file to sym_id attrs obj("name", $func_id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
 # Data constructor
 on DataCons when $scope("value", "current_data") {

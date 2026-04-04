@@ -173,42 +173,12 @@ on ImportDecl {
 }
 
 # Module declaration
-on ModuleDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_module" to sym_id
-}
 
-# Function declaration
-on FunctionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
-# Macro declaration
-on MacroDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Macro", "doc", $doc, "visibility", "public")
-}
 
 # Struct declaration
-on StructDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_struct" to sym_id
-}
 
-# Abstract type declaration
-on AbstractDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "AbstractType", "doc", $doc, "visibility", "public")
-}
 
-# Const declaration
-on ConstDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc, "visibility", "public")
-}
 
 # Struct field
 on FieldDecl when $scope("value", "current_struct") {

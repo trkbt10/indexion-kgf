@@ -134,17 +134,7 @@ on ModuleDoc {
   note module_doc payload obj("doc", $doc)
 }
 
-# Declaration edges with documentation
-on FunctionDef {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "decorators", $decorators, "visibility", "public")
-}
 
-on ClassDef {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "decorators", $decorators, "visibility", "public")
-  bind ns "value" name "current_class" to sym_id
-}
 
 on MethodDef when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")

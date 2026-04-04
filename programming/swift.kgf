@@ -225,66 +225,6 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_type" to sym_id
-}
-
-# Struct declaration
-on StructDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_type" to sym_id
-}
-
-# Enum declaration
-on EnumDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_enum" to sym_id
-}
-
-# Protocol declaration
-on ProtocolDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Protocol", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_protocol" to sym_id
-}
-
-# Actor declaration
-on ActorDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Actor", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_type" to sym_id
-}
-
-# Function declaration
-on FuncDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", cond($vis, "public"))
-}
-
-# Variable declaration
-on VarDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", cond($vis, "public"))
-}
-
-# Type alias
-on TypeAliasDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc, "visibility", cond($vis, "public"))
-}
-
-# Enum case
-on EnumCase when $scope("value", "current_enum") {
-  let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $case_id)
-  edge declares from parent to sym_id attrs obj("name", $case_id, "kind", "EnumCase", "doc", $case_doc)
-}
-
 === resolver
 relative_prefixes: ./
 module_path_style: dot

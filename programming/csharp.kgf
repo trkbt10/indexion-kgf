@@ -132,17 +132,17 @@ BaseList -> COLON TypeList
 ClassMember -> ConstructorDecl / MethodDecl / PropertyDecl / FieldDecl / EventDecl / IndexerDecl / ClassDecl / StructDecl / InterfaceDecl / EnumDecl / DelegateDecl / NL / LineComment / BlockComment
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_readonly? KW_struct id:TypeIdent TypeParams? BaseList? WhereClause? StructBody
+StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_readonly? KW_struct id:TypeIdent TypeParams? BaseList? WhereClause? NL? StructBody
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> ConstructorDecl / MethodDecl / PropertyDecl / FieldDecl / EventDecl / IndexerDecl / ClassDecl / StructDecl / InterfaceDecl / EnumDecl / DelegateDecl / NL / LineComment / BlockComment
 
 # Interface declaration
-InterfaceDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_interface id:TypeIdent TypeParams? BaseList? WhereClause? InterfaceBody
+InterfaceDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_partial? KW_interface id:TypeIdent TypeParams? BaseList? WhereClause? NL? InterfaceBody
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
 InterfaceMember -> MethodDecl / PropertyDecl / EventDecl / IndexerDecl / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_enum id:TypeIdent ( COLON Type )? EnumBody
+EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* KW_enum id:TypeIdent ( COLON Type )? NL? EnumBody
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> member_doc:DocBlock? Attribute* member_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
@@ -159,7 +159,7 @@ ConstructorDecl -> doc:DocBlock? NL? Attribute* Modifier* id:TypeIdent LPAREN Pa
 
 # Method declaration
 Name -> Ident / TypeIdent
-MethodDecl -> doc:DocBlock? NL? Attribute* Modifier* Type method_id:Name TypeParams? LPAREN ParamList? RPAREN WhereClause? NL? ( Body / ARROW Expr SEMI / SEMI )
+MethodDecl -> doc:DocBlock? NL? Attribute* vis:KW_public? Modifier* Type method_id:Name TypeParams? LPAREN ParamList? RPAREN WhereClause? NL? ( Body / ARROW Expr SEMI / SEMI )
 
 # Property declaration
 PropertyDecl -> doc:DocBlock? NL? Attribute* Modifier* Type prop_id:Name ( PropertyAccessors / ARROW Expr SEMI )
@@ -217,7 +217,7 @@ on InterfaceDecl: def id kind=Interface doc=doc
 on EnumDecl:      def id kind=Enum doc=doc
 on RecordDecl:    def id kind=Record doc=doc
 on DelegateDecl:  def id kind=Delegate doc=doc
-on MethodDecl:    def method_id kind=Method doc=doc
+on MethodDecl:    def method_id kind=Method doc=doc vis=vis
 on PropertyDecl:  def prop_id kind=Property doc=doc
 on FieldDecl:     def field_id kind=Field doc=doc
 on EventDecl:     def event_id kind=Event doc=doc
@@ -229,82 +229,13 @@ on UsingDecl:     import module=path
 
 === features
 document_symbol_kinds: Class, Struct, Interface, Enum, Record, Delegate
-function_kinds:
+function_kinds: Method
 coverage_token_kinds: Ident, TypeIdent
 
 === semantics
 # Import dependency
 on UsingDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
-}
-
-# Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_class" to sym_id
-}
-
-# Struct declaration
-on StructDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_struct" to sym_id
-}
-
-# Interface declaration
-on InterfaceDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_interface" to sym_id
-}
-
-# Enum declaration
-on EnumDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_enum" to sym_id
-}
-
-# Record declaration
-on RecordDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_record" to sym_id
-}
-
-# Delegate declaration
-on DelegateDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Delegate", "doc", $doc, "visibility", cond($vis, "public"))
-}
-
-# Method declaration
-on MethodDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
-}
-
-# Property declaration
-on PropertyDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $prop_id)
-  edge declares from parent to sym_id attrs obj("name", $prop_id, "kind", "Property", "doc", $doc)
-}
-
-# Field declaration
-on FieldDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc)
-}
-
-# Enum member
-on EnumMember when $scope("value", "current_enum") {
-  let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $member_id)
-  edge declares from parent to sym_id attrs obj("name", $member_id, "kind", "EnumMember", "doc", $member_doc)
 }
 
 === resolver

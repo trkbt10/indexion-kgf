@@ -234,50 +234,15 @@ on ImportDecl {
 }
 
 # Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_class" to sym_id
-}
 
 # Mixin declaration
-on MixinDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Mixin", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_mixin" to sym_id
-}
 
 # Extension declaration
-on ExtensionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Extension", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_extension" to sym_id
-}
 
 # Enum declaration
-on EnumDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_enum" to sym_id
-}
 
-# Typedef declaration
-on TypedefDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Typedef", "doc", $doc, "visibility", "public")
-}
 
-# Top-level function
-on FunctionDecl {
-  let sym_id = concat($file, "::", $func_id)
-  edge declares from $file to sym_id attrs obj("name", $func_id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
-# Top-level variable
-on VarDecl {
-  let sym_id = concat($file, "::", $var_id)
-  edge declares from $file to sym_id attrs obj("name", $var_id, "kind", "Variable", "doc", $doc, "visibility", "public")
-}
 
 # Method in class
 on MethodDecl when $scope("value", "current_class") {

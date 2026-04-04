@@ -173,49 +173,14 @@ on OpenDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Module declaration
-on ModuleDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc, "visibility", "public")
-}
 
 # Type declaration
-on TypeDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_type" to sym_id
-}
 
-# Let declaration
-on LetDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
-# Val declaration
-on ValDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Val", "doc", $doc, "visibility", "public")
-}
 
-# External declaration
-on ExternalDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "External", "doc", $doc, "visibility", "public")
-}
 
-# Exception declaration
-on ExceptionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Exception", "doc", $doc, "visibility", "public")
-}
 
 # Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_class" to sym_id
-}
 
 # Variant
 on Variant when $scope("value", "current_type") {

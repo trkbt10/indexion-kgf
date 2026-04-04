@@ -164,12 +164,12 @@ on ImportDefault {
 
 on FnDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
   bind ns "value" name "current_class" to sym_id
 }
 

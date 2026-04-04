@@ -170,43 +170,25 @@ on ImportSpec {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Function declaration (exported if uppercase)
-on FuncDecl {
+# Exported declarations only (uppercase identifier = exported in Go)
+on FuncDecl when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
-# Type declaration (exported if uppercase)
-on TypeSpec {
+on TypeSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
-  bind ns "value" name "current_type" to sym_id
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
 }
 
-# Struct field
-on StructField when $scope("value", "current_type") {
-  let parent = $scope("value", "current_type")
-  let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
-}
-
-# Interface method
-on InterfaceMethod when $scope("value", "current_type") {
-  let parent = $scope("value", "current_type")
-  let sym_id = concat(parent, ".", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $method_doc)
-}
-
-# Variable declaration (exported if uppercase)
-on VarSpec {
+on VarSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
 }
 
-# Constant declaration (exported if uppercase)
-on ConstSpec {
+on ConstSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc, "visibility", cond(eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))), "public"))
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
 }
 
 === resolver

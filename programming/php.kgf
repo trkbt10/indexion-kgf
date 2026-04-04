@@ -192,38 +192,13 @@ on UseDecl {
 }
 
 # Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_class" to sym_id
-}
 
 # Interface declaration
-on InterfaceDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_interface" to sym_id
-}
 
 # Trait declaration
-on TraitDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_trait" to sym_id
-}
 
 # Enum declaration
-on EnumDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", "public")
-  bind ns "value" name "current_enum" to sym_id
-}
 
-# Function declaration
-on FunctionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
 # Method declaration
 on MethodDecl when $scope("value", "current_class") {

@@ -138,7 +138,7 @@ RecordBody -> LBRACE ClassMember* RBRACE
 ConstructorDecl -> doc:DocComment? NL? Annotation* Modifier* id:Ident LPAREN ParamList? RPAREN ThrowsClause? Body
 
 # Method declaration
-MethodDecl -> doc:DocComment? NL? Annotation* Modifier* TypeParams? Type method_id:Ident LPAREN ParamList? RPAREN ThrowsClause? ( Body / SEMI )
+MethodDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* TypeParams? Type method_id:Ident LPAREN ParamList? RPAREN ThrowsClause? ( Body / SEMI )
 
 # Field declaration
 FieldDecl -> doc:DocComment? NL? Annotation* Modifier* Type field_id:Ident ( Operator Expr )? SEMI
@@ -183,7 +183,7 @@ on ClassDecl:     def id kind=Class doc=doc
 on InterfaceDecl: def id kind=Interface doc=doc
 on EnumDecl:      def id kind=Enum doc=doc
 on RecordDecl:    def id kind=Record doc=doc
-on MethodDecl:    def method_id kind=Method doc=doc
+on MethodDecl:    def method_id kind=Method doc=doc vis=vis
 on FieldDecl:     def field_id kind=Field doc=doc
 on ConstructorDecl: def id kind=Constructor doc=doc
 on EnumConstant:  def const_id kind=EnumConstant doc=const_doc
@@ -193,7 +193,7 @@ on Param:         def param_id kind=Param
 on ImportDecl:    import module=path
 
 === features
-function_kinds:
+function_kinds: Method
 
 === semantics
 # Import dependency
@@ -201,54 +201,6 @@ on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Class declaration
-on ClassDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_class" to sym_id
-}
-
-# Interface declaration
-on InterfaceDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_interface" to sym_id
-}
-
-# Enum declaration
-on EnumDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_enum" to sym_id
-}
-
-# Record declaration
-on RecordDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Record", "doc", $doc, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_record" to sym_id
-}
-
-# Method declaration
-on MethodDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
-}
-
-# Field declaration
-on FieldDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc)
-}
-
-# Enum constant
-on EnumConstant when $scope("value", "current_enum") {
-  let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $const_id)
-  edge declares from parent to sym_id attrs obj("name", $const_id, "kind", "EnumConstant", "doc", $const_doc)
-}
 
 === resolver
 relative_prefixes: ./, ../

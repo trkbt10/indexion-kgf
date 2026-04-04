@@ -202,55 +202,24 @@ on ModuleDoc {
   note module_doc payload obj("doc", $module_doc_text)
 }
 
-on FnDecl {
-  let sym_id = concat($file, "::", $fn_id)
-  edge declares from $file to sym_id attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text, "visibility", cond($vis, "public"))
+# Public declarations only (vis:Visibility? from grammar)
+on FnDecl when $vis {
+  edge declares from $file to concat($file, "::", $fn_id) attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text)
 }
-
-on StructDecl {
-  let sym_id = concat($file, "::", $struct_id)
-  edge declares from $file to sym_id attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_struct" to sym_id
+on StructDecl when $vis {
+  edge declares from $file to concat($file, "::", $struct_id) attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text)
 }
-
-on EnumDecl {
-  let sym_id = concat($file, "::", $enum_id)
-  edge declares from $file to sym_id attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_enum" to sym_id
+on EnumDecl when $vis {
+  edge declares from $file to concat($file, "::", $enum_id) attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text)
 }
-
-on TypeDecl {
-  let sym_id = concat($file, "::", $type_id)
-  edge declares from $file to sym_id attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text, "visibility", cond($vis, "public"))
+on TypeDecl when $vis {
+  edge declares from $file to concat($file, "::", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text)
 }
-
-on TraitDecl {
-  let sym_id = concat($file, "::", $trait_id)
-  edge declares from $file to sym_id attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text, "visibility", cond($vis, "public"))
-  bind ns "value" name "current_trait" to sym_id
+on TraitDecl when $vis {
+  edge declares from $file to concat($file, "::", $trait_id) attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text)
 }
-
-on LetDecl {
-  let sym_id = concat($file, "::", $let_id)
-  edge declares from $file to sym_id attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text, "visibility", cond($vis, "public"))
-}
-
-on StructField when $scope("value", "current_struct") {
-  let parent = $scope("value", "current_struct")
-  let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc_text)
-}
-
-on EnumVariant when $scope("value", "current_enum") {
-  let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $variant_id)
-  edge declares from parent to sym_id attrs obj("name", $variant_id, "kind", "Variant", "doc", $variant_doc_text)
-}
-
-on TraitMember when $scope("value", "current_trait") {
-  let parent = $scope("value", "current_trait")
-  let sym_id = concat(parent, ".", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $method_doc_text)
+on LetDecl when $vis {
+  edge declares from $file to concat($file, "::", $let_id) attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text)
 }
 
 on StandaloneDoc {

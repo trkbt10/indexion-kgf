@@ -114,29 +114,9 @@ on Param:             def param_id kind=Param
 function_kinds: Function
 
 === semantics
-# Function declaration
-on FunctionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
-# Local function declaration
-on LocalFunctionDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc, "visibility", "public")
-}
 
-# Local variable declaration
-on LocalVarDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", "public")
-}
 
-# Global assignment
-on AssignmentDecl {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc, "visibility", "public")
-}
 
 === resolver
 relative_prefixes: ./
