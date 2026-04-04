@@ -77,8 +77,14 @@ TOKEN AT       /@/
 Module -> ModuleDoc? Item*
 
 # Module-level documentation (first doc block at file level)
-# Supports both new format (/// Module:) and legacy format (///|)
-ModuleDoc -> module_doc:DocBlockWithSections / module_doc:DocBlock
+# Only matches when the doc block is NOT immediately followed by a declaration keyword.
+# This prevents ModuleDoc from consuming doc comments that belong to the first declaration.
+# PEG semantics: if the negative lookahead fails, ModuleDoc? backtracks and Item* re-parses.
+ModuleDoc -> module_doc:DocBlockWithSections NL !DeclKeyword
+           / module_doc:DocBlock NL !DeclKeyword
+
+# Declaration start keywords (used for negative lookahead in ModuleDoc)
+DeclKeyword -> KW_pub / KW_priv / KW_fn / KW_struct / KW_enum / KW_type / KW_trait / KW_impl / KW_let / KW_const
 
 # Visibility modifier: pub, pub(all), pub(readonly), priv
 Visibility -> KW_pub LPAREN Ident RPAREN / KW_pub / KW_priv
