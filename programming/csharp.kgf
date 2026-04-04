@@ -232,6 +232,7 @@ document_symbol_kinds: Class, Struct, Interface, Enum, Record, Delegate
 function_kinds: Method
 coverage_token_kinds: Ident, TypeIdent
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT
 
 === semantics
 # Import dependency

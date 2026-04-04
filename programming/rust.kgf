@@ -214,6 +214,7 @@ function_kinds: Function
 function_keyword: KW_fn
 identifier_kinds: Ident
 self_keyword: KW_self
+qualifier_separators: DOT, DCOLON
 
 === semantics
 # Module-level documentation (//! inner doc comments)

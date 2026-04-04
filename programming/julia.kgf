@@ -167,6 +167,7 @@ on ImportDecl:   import module=path
 function_kinds: Function, Macro
 function_keyword: KW_function
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT, DCOLON
 
 === semantics
 # Import dependency

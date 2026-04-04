@@ -168,6 +168,7 @@ on OpenDecl:      import module=path
 function_kinds: Function, External, Val
 function_keyword: KW_let
 identifier_kinds: Ident, ModuleIdent
+qualifier_separators: DOT
 
 === semantics
 # Import dependency

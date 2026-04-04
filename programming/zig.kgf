@@ -150,6 +150,7 @@ on Param:       def param_id kind=Param
 function_kinds: Function
 function_keyword: KW_fn
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT
 
 === semantics
 # Zig public declarations (vis:KW_pub? in grammar)

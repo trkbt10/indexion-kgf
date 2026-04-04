@@ -146,6 +146,7 @@ function_kinds: Function
 function_keyword: KW_function
 coverage_token_kinds: Ident
 identifier_kinds: Ident
+qualifier_separators: DOT
 
 === semantics
 on SideEffect {

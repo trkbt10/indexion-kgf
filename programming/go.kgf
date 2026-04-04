@@ -160,6 +160,7 @@ function_kinds: Function
 function_keyword: KW_func
 coverage_token_kinds: Ident
 identifier_kinds: Ident
+qualifier_separators: DOT
 
 === semantics
 # Module-level documentation (// Package xxx ...)

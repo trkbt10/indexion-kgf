@@ -152,6 +152,7 @@ document_symbol_kinds: Function, Struct, Union, Enum, Typedef
 function_kinds: Function
 coverage_token_kinds: Ident, TypeIdent
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT, ARROW
 
 === semantics
 # C declarations are public by default (header-visible)

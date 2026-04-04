@@ -198,6 +198,7 @@ on ImportDecl:  import module=path
 function_kinds: Def
 function_keyword: KW_def
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT
 
 === semantics
 # Import dependency

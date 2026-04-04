@@ -229,6 +229,7 @@ on Param:           def param_id kind=Param
 === features
 function_kinds: Function
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT, SCOPE, ARROW
 
 === semantics
 # C++ top-level declarations

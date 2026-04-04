@@ -186,6 +186,7 @@ on UseDecl:       import module=path
 function_kinds: Function
 function_keyword: KW_function
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: OBJOP, DCOLON
 
 === semantics
 # Import dependency

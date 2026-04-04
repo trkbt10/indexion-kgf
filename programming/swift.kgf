@@ -221,6 +221,7 @@ function_kinds: Function
 function_keyword: KW_func
 identifier_kinds: Ident, TypeIdent
 self_keyword: KW_self
+qualifier_separators: DOT
 
 === semantics
 # Import dependency

@@ -227,6 +227,7 @@ on ImportDecl:    import module=path
 === features
 function_kinds: Function
 identifier_kinds: Ident, TypeIdent
+qualifier_separators: DOT
 
 === semantics
 # Import dependency

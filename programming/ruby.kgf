@@ -157,6 +157,7 @@ function_kinds: Method
 function_keyword: KW_def
 identifier_kinds: Ident, ConstIdent
 self_keyword: KW_self
+qualifier_separators: DOT, DCOLON
 
 === semantics
 # Import dependency
