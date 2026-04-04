@@ -140,7 +140,12 @@ EnumMember -> doc:DocComment? id:Ident ( EQ Expr )? COMMA? / NL / LineComment / 
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
-Param -> id:Ident QMARK? TypeAnnotation? ( EQ Expr )?
+Param -> DestructurePattern TypeAnnotation? ( EQ Expr )?
+       / id:Ident QMARK? TypeAnnotation? ( EQ Expr )?
+DestructurePattern -> LBRACE DestructureField ( COMMA DestructureField )* COMMA? RBRACE
+                    / LBRACKET DestructureField ( COMMA DestructureField )* COMMA? RBRACKET
+DestructureField -> MemberName ( COLON MemberName )? ( EQ SimpleExpr )? / DOT DOT DOT Ident
+SimpleExpr -> Ident / Number / StringLit / TemplateLit
 
 # Type annotations
 TypeAnnotation -> COLON Type
