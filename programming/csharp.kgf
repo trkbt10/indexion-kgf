@@ -233,6 +233,7 @@ function_kinds: Method
 coverage_token_kinds: Ident, TypeIdent
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Import dependency

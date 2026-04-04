@@ -53,6 +53,7 @@ section_level: text_length
 heading_text_tokens: TEXT, INLINE_CODE
 reference_token_kinds: INLINE_CODE
 coverage_token_kinds: INLINE_CODE, TEXT
+vocabulary_token_kinds: TEXT, INLINE_CODE
 
 === semantics
 on InlineLink {

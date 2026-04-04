@@ -222,6 +222,7 @@ function_keyword: KW_func
 identifier_kinds: Ident, TypeIdent
 self_keyword: KW_self
 qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, DocBlockComment, String
 
 === semantics
 # Import dependency

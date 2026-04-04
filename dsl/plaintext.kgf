@@ -16,6 +16,7 @@ Block -> Text NL?
 === features
 content_type: document
 coverage_token_kinds: Text
+vocabulary_token_kinds: Text
 
 === semantics
 

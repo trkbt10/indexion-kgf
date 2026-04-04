@@ -197,6 +197,7 @@ function_keyword: KW_fn
 coverage_token_kinds: Ident, TypeIdent, PackageRef
 identifier_kinds: Ident, TypeIdent, PackageRef
 qualifier_separators: DOT, DCOLON
+vocabulary_token_kinds: DocLine, DocComment, DocSection, String
 
 === semantics
 # Module-level documentation

@@ -1,0 +1,29 @@
+
+kgf 0.6
+language: json
+sources: .json
+
+=== lex
+SKIP        /\s+/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COLON         /:/
+TOKEN COMMA         /,/
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/
+KEYWORD KW_true       /true/
+KEYWORD KW_false      /false/
+KEYWORD KW_null       /null/
+
+=== grammar
+Value      -> Object / Array / StringLit / NumberLit / KW_true / KW_false / KW_null
+Object     -> LBRACE ( Pair ( COMMA Pair )* )? RBRACE
+Pair       -> key:StringLit COLON Value
+Array      -> LBRACKET ( Value ( COMMA Value )* )? RBRACKET
+
+=== features
+content_type: data
+identifier_kinds: StringLit
+vocabulary_token_kinds: StringLit

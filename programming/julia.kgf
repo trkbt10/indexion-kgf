@@ -168,6 +168,7 @@ function_kinds: Function, Macro
 function_keyword: KW_function
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT, DCOLON
+vocabulary_token_kinds: DocString, String
 
 === semantics
 # Import dependency

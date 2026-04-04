@@ -169,6 +169,7 @@ function_kinds: Function, External, Val
 function_keyword: KW_let
 identifier_kinds: Ident, ModuleIdent
 qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Import dependency

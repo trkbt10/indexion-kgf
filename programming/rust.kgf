@@ -215,6 +215,7 @@ function_keyword: KW_fn
 identifier_kinds: Ident
 self_keyword: KW_self
 qualifier_separators: DOT, DCOLON
+vocabulary_token_kinds: DocComment, DocInnerComment, String, RawString
 
 === semantics
 # Module-level documentation (//! inner doc comments)

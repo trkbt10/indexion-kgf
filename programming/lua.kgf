@@ -115,6 +115,7 @@ function_kinds: Function
 function_keyword: KW_function
 identifier_kinds: Ident
 qualifier_separators: DOT, COLON
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Lua public declarations

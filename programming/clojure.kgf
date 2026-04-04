@@ -147,6 +147,7 @@ on RequireSpec:     import module=path
 function_kinds: Function, Macro, Method, Multimethod
 function_keyword: KW_defn
 identifier_kinds: Symbol, NamespacedSymbol
+vocabulary_token_kinds: DocString, String
 
 === semantics
 # Import dependency

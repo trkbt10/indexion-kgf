@@ -199,6 +199,7 @@ function_kinds: Def
 function_keyword: KW_def
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Import dependency

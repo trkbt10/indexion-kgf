@@ -126,6 +126,7 @@ function_keyword: KW_def
 identifier_kinds: Ident
 self_keyword: KW_self
 qualifier_separators: DOT
+vocabulary_token_kinds: Docstring, String
 
 === semantics
 # Import dependency edge

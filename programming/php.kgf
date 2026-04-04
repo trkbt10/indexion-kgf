@@ -187,6 +187,7 @@ function_kinds: Function
 function_keyword: KW_function
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: OBJOP, DCOLON
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Import dependency

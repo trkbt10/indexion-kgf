@@ -158,6 +158,7 @@ function_keyword: KW_def
 identifier_kinds: Ident, ConstIdent
 self_keyword: KW_self
 qualifier_separators: DOT, DCOLON
+vocabulary_token_kinds: HereDoc, String
 
 === semantics
 # Import dependency

@@ -228,6 +228,7 @@ on ImportDecl:    import module=path
 function_kinds: Function
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, String
 
 === semantics
 # Import dependency

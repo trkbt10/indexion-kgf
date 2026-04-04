@@ -171,6 +171,7 @@ function_kinds: Function, Guard, Macro
 function_keyword: KW_def
 identifier_kinds: Ident, ModuleIdent
 qualifier_separators: DOT
+vocabulary_token_kinds: DocAttr, String
 
 === semantics
 # Import dependency

@@ -161,6 +161,7 @@ function_keyword: KW_func
 coverage_token_kinds: Ident
 identifier_kinds: Ident
 qualifier_separators: DOT
+vocabulary_token_kinds: PackageDoc, DocComment, String, RawString
 
 === semantics
 # Module-level documentation (// Package xxx ...)
