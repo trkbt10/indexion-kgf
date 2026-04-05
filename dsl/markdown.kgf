@@ -6,8 +6,8 @@ sources: .md, .markdown, .mdx
 === lex
 SKIP        /(\s+)+/
 TOKEN HEADING     /^(?:#{1,6})(?=\s)/
-TOKEN CODE_FENCE  /^```[A-Za-z0-9_-]*/
-TOKEN INLINE_CODE /`[^`\n]+`/
+TOKEN CODE_FENCE  /^```([A-Za-z0-9_-]*)/
+TOKEN INLINE_CODE /`([^`\n]+)`/
 TOKEN TAG_OPEN    /<\/?[A-Za-z][A-Za-z0-9-]*(?=\s|\/?>)/
 TOKEN TAG_CLOSE   /\/?>/
 TOKEN ATTR_NAME   /\b[A-Za-z_:][A-Za-z0-9_:-]*(?=\s*=)/
@@ -54,6 +54,8 @@ heading_text_tokens: TEXT, INLINE_CODE
 reference_token_kinds: INLINE_CODE
 coverage_token_kinds: INLINE_CODE, TEXT
 vocabulary_token_kinds: TEXT, INLINE_CODE
+embedded_code_fence: CODE_FENCE
+embedded_content_token: TEXT
 
 === semantics
 on InlineLink {

@@ -7,8 +7,8 @@ sources: .md
 SKIP /[ \t]+/
 TOKEN NL           /\r?\n/
 TOKEN HEADING      /^(?:#{1,6})(?=\s)/
-TOKEN CODE_FENCE   /^```[A-Za-z0-9_-]*/
-TOKEN INLINE_CODE  /`[^`\n]+`/
+TOKEN CODE_FENCE   /^```([A-Za-z0-9_-]*)/
+TOKEN INLINE_CODE  /`([^`\n]+)`/
 TOKEN META_COMMENT /<!--\s*indexion:([^-]*?)-->/
 TOKEN LBRACK       /\[/
 TOKEN RBRACK       /\]/
@@ -41,6 +41,8 @@ heading_text_tokens: TEXT, INLINE_CODE
 reference_token_kinds: INLINE_CODE
 coverage_token_kinds: INLINE_CODE, TEXT
 vocabulary_token_kinds: TEXT, INLINE_CODE
+embedded_code_fence: CODE_FENCE
+embedded_content_token: TEXT
 nav_file: _Sidebar.md
 footer_file: _Footer.md
 home_file: Home.md
