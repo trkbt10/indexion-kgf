@@ -72,8 +72,8 @@ Names -> Ident ( KW_as Ident )? ( COMMA Ident ( KW_as Ident )? )*
 QN -> Ident ( DOT Ident )*
 
 # Decorated definitions
-FunctionDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
-ClassDef -> decorators:Decorator* KW_class id:Ident Bases? COLON ClassSuite
+FunctionDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
+ClassDef -> decorators:Decorator* KW_class id:Ident Bases? COLON body:ClassSuite
 
 # Suite (body) — without INDENT tokens, consume content until next top-level construct
 Suite -> NL doc:Docstring? SuiteContent* / SimpleStmt
@@ -82,8 +82,8 @@ ClassSuite -> NL doc:Docstring? ClassMember*
 SuiteContent -> NL / Comment / Statement
 ClassMember -> NL / Comment / MethodDef / PropertyDef / Assignment
 
-MethodDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
-PropertyDef -> Decorator KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON Suite
+MethodDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
+PropertyDef -> Decorator KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
@@ -100,7 +100,7 @@ TypeList -> Type ( COMMA Type )*
 # Simple statements
 SimpleStmt -> Statement NL?
 Statement -> Assignment / Expr
-Assignment -> id:Ident TypeHint? EQ Expr
+Assignment -> id:Ident TypeHint? EQ expr:Expr
 
 # Expressions (simplified)
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+

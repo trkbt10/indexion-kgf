@@ -130,7 +130,7 @@ UseList -> UsePath ( COMMA UsePath )* COMMA?
 ModDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_mod id:Ident ( SEMI / Body )
 
 # Function declaration
-FnDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? Body?
+FnDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? body:Body?
 
 # Struct declaration
 StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
@@ -143,7 +143,7 @@ TupleField -> field_doc:DocBlock? Attribute* KW_pub? Type COMMA? / NL / LineComm
 EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
 EnumBody -> LBRACE EnumVariant* RBRACE
 EnumVariant -> variant_doc:DocBlock? Attribute* variant_id:Ident VariantPayload? COMMA? / NL / LineComment
-VariantPayload -> TupleBody / StructBody / FATARROW Expr
+VariantPayload -> TupleBody / StructBody / EQ Expr
 
 # Trait declaration
 TraitDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
@@ -157,13 +157,13 @@ ImplBody -> LBRACE ImplItem* RBRACE
 ImplItem -> FnDecl / TypeDecl / ConstDecl / NL / LineComment
 
 # Type alias
-TypeDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_type id:Ident GenericParams? WhereClause? ( FATARROW Type )? SEMI
+TypeDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_type id:Ident GenericParams? WhereClause? ( EQ Type )? SEMI
 
 # Const declaration
-ConstDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const id:Ident COLON Type FATARROW Expr SEMI
+ConstDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const id:Ident COLON Type EQ expr:Expr SEMI
 
 # Static declaration
-StaticDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_static KW_mut? id:Ident COLON Type FATARROW Expr SEMI
+StaticDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_static KW_mut? id:Ident COLON Type EQ expr:Expr SEMI
 
 # Parameters and types
 ParamList -> Param ( COMMA Param )*

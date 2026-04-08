@@ -1,6 +1,6 @@
 
 kgf 0.6
-language: markdown
+language: sdd-user-story
 sources: .md, .markdown, .mdx
 
 === lex
@@ -48,6 +48,7 @@ on WikiLink:    import module=wpath
 
 === features
 content_type: document
+detection_scope: overlay
 section_token: HEADING
 heading_text_tokens: TEXT, INLINE_CODE
 reference_token_kinds: INLINE_CODE
@@ -68,6 +69,17 @@ on DocumentSection {
   note document_literals payload obj("line", $line, "values", regexCaptures($body, "^(?![^\\n]*(?:for example|e\\.g\\.|suppose|consider ))[^\\n]*(?:\\bmust\\b|\\bshall\\b|\\bshould\\b|\\brequired\\b|\\breturn(?:ed|s)?\\b|\\brespond(?:ed|s)?\\b)[^\\n]*`([^`\\n]+)`", 1, true))
   note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "\\|\\s*([0-9][0-9.+-]*)\\s*\\|\\s*([A-Za-z][A-Za-z0-9 /'_-]*[A-Za-z0-9/_-])\\s*\\|", 2, 1))
   note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*([0-9]+(?:\\.[0-9]+)?(?:-[0-9]+)?(?:\\+)?)\\s*$", 1, 2))
+}
+on DocumentSection when startsWith(trim($title), "US-") {
+  let req_id = trim(beforeFirst($title, ":"))
+  let req_title = trim(afterFirst($title, ":"))
+  let req_body = trim($body)
+  let normative = cond(containsStr(toUpper(req_body), "SHALL"), "SHALL", cond(containsStr(toUpper(req_body), "MUST"), "MUST", cond(containsStr(toUpper(req_body), "SHOULD"), "SHOULD")))
+  note document_requirement payload obj("id", req_id, "title", req_title, "description", req_body, "normative", normative, "line", $line, "end_line", $end_line)
+  bind ns "value" name "current_requirement" to req_id
+}
+on DocumentSection when eq(toLower(trim($title)), "success criteria") {
+  note document_requirement_criteria payload obj("parent_id", $scope("value", "current_requirement"), "criteria", collectLinesAfterPrefixes($body, "- [ ]", "- [x]", "- [X]", "-", "[ ]", "[x]", "[X]"), "line", $line, "end_line", $end_line)
 }
 on InlineLink {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")

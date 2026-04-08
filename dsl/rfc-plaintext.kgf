@@ -1,0 +1,87 @@
+kgf 0.6
+language: rfc-plaintext
+sources: .rfc.txt
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+TOKEN HEADING /^(?:\d+(?:\.\d+)*\.?|[A-Z]\.)\s+(?!.*\.{2,})(?!.*\s\d+\s*$)[^\r\n]*\S/
+TOKEN TEXT /[^\r\n]+/
+
+=== grammar
+Doc -> Line*
+Line -> HEADING TEXT? NL? / TEXT NL?
+
+=== attrs
+
+=== features
+content_type: document
+section_token: HEADING
+heading_text_tokens: HEADING
+coverage_token_kinds: TEXT
+vocabulary_token_kinds: TEXT
+
+=== semantics
+on DocumentSection {
+  note document_heading payload obj("line", $line, "level", add(countOccurrences($title, "."), cond(startsWith(trim($title), "A."), 0, cond(startsWith(trim($title), "B."), 0, cond(startsWith(trim($title), "C."), 0, 1))))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($title, "^(\\d+(?:\\.\\d+)*)\\.", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($title, "^([A-Z])\\.", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\bsections?\\s+((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\b(?:and|or)\\s+((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, ",\\s*((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_literals payload obj("line", $line, "values", regexCaptures($body, "^(?![^\\n]*(?:for example|e\\.g\\.|suppose|consider ))[^\\n]*(?:\\bmust\\b|\\bshall\\b|\\bshould\\b|\\brequired\\b|\\breturn(?:ed|s)?\\b|\\brespond(?:ed|s)?\\b)[^\\n]*\\b([0-9]{1,})\\b", 1, true))
+  note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "\\|\\s*([0-9][0-9.+-]*)\\s*\\|\\s*([A-Za-z][A-Za-z0-9 /'_-]*[A-Za-z0-9/_-])\\s*\\|", 2, 1))
+  note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "^\\s*([0-9][0-9.+-]*)\\s{2,}([A-Za-z][A-Za-z0-9 /'_-]*[A-Za-z0-9/_-])\\s*$", 2, 1))
+  note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*([0-9]+(?:\\.[0-9]+)?(?:-[0-9]+)?(?:\\+)?)\\s*$", 1, 2))
+}
+on DocumentSection when eq(toLower(trim($title)), "status of this memo") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "copyright notice") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "abstract") {
+  note document_section_role payload obj("line", $line, "role", "summary")
+}
+on DocumentSection when eq(toLower(trim($title)), "table of contents") {
+  note document_section_role payload obj("line", $line, "role", "index")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "references") {
+  note document_section_role payload obj("line", $line, "role", "reference")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "acknowledgements") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "author's address") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "full copyright statement") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "example") {
+  note document_section_role payload obj("line", $line, "role", "example")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "examples") {
+  note document_section_role payload obj("line", $line, "role", "example")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "trace") {
+  note document_section_role payload obj("line", $line, "role", "example")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "sample strings") {
+  note document_section_role payload obj("line", $line, "role", "example")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "sample implementation") {
+  note document_section_role payload obj("line", $line, "role", "appendix_code")
+}
+
+=== preprocess
+blankLineIfContains:[Page 
+blankLineIfTrimHasPrefix:RFC 
+blankLineIfContainsCodepoint:000c
+
+=== resolver
+relative_prefixes:
+exts: .rfc.txt
+indexes:
+bare_prefix:
+module_path_style: slash
