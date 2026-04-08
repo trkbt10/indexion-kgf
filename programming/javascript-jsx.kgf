@@ -70,7 +70,7 @@ TOKEN MINUS         /-/
 TOKEN BANG          /!/
 
 === grammar
-Module          -> ( ImportDecl / ExportDecl / ExportFrom / FnDecl / VarDecl / ExprStmt )*
+Module          -> ( ImportDecl / ExportDecl / ExportFrom / FnDecl / ClassDecl / VarDecl / ExprStmt / NL / LineComment / BlockComment / DocComment )*
 
 ImportDecl      -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
 SideEffect      -> path:StringLit
@@ -91,19 +91,16 @@ VarDecl         -> (KW_const / KW_let / KW_var) VarList SEMI?
 VarList         -> VarItem ( COMMA VarItem )*
 VarItem         -> id:Ident (EQ Expr)?
 
-FnDecl          -> doc:DocComment? KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Block
+FnDecl          -> doc:DocComment? KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Body?
 ClassDecl       -> doc:DocComment? KW_class id:Ident ExtendsClause? ClassBody
 ExtendsClause   -> KW_extends Ident
 ClassBody       -> LBRACE ClassMember* RBRACE
 ClassMember     -> doc:DocComment? ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
-MethodDecl      -> KW_async? id:Ident LPAREN ParamList? RPAREN Block
+MethodDecl      -> KW_async? id:Ident LPAREN ParamList? RPAREN Body?
 PropertyDecl    -> id:Ident ( EQ Expr )? SEMI?
 
 ParamList       -> Param ( COMMA Param )*
 Param           -> id:Ident ( EQ Expr )?
-Block           -> LBRACE BlockItem* RBRACE
-BlockItem       -> VarDecl / ReturnStmt / ExprStmt
-ReturnStmt      -> KW_return Expr? SEMI?
 
 # JSX Elements
 JsxElement -> JsxSelfClosing / JsxOpenClose / JsxFragment
@@ -114,14 +111,17 @@ JsxTagName -> Ident ( DOT Ident )*
 JsxAttr -> Ident ( EQ JsxAttrValue )?
 JsxAttrValue -> StringLit / TemplateLit / LBRACE Expr RBRACE
 JsxChild -> JsxElement / LBRACE Expr RBRACE / JsxText
-JsxText -> Atom+
+JsxText -> ( Ident / NumberLit / StringLit / TemplateLit )+
 
 ExprStmt        -> Expr SEMI?
-Expr            -> ExprAtom+
+Expr            -> JsxElement / ExprAtom+
 ExprAtom        -> Ident / NumberLit / StringLit / TemplateLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / SLASH / PLUS / MINUS / BANG
 CallExpr        -> callee:Ident LPAREN (Arg ( COMMA Arg )*)? RPAREN
 Arg             -> Expr
 NewExpr         -> KW_new Ident LPAREN (Arg ( COMMA Arg )*)? RPAREN
+Body            -> LBRACE BodyContent* RBRACE
+BodyContent     -> VarDecl / LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / BodyAtom
+BodyAtom        -> Ident / NumberLit / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / SLASH / PLUS / MINUS / BANG / KW_async / KW_await / KW_return / KW_new / NL / LineComment / BlockComment / DocComment / JSX_SELF_CLOSE / JSX_CLOSE_START / JSX_FRAG_OPEN / JSX_FRAG_CLOSE
 Atom            -> Ident / NumberLit / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / SLASH / PLUS / MINUS / BANG / NL / LineComment / BlockComment / DocComment
 
 === attrs
@@ -131,7 +131,7 @@ on ClassDecl:  def id kind=Class ns=value doc=doc ; scope push=class
 on MethodDecl: def id kind=Method ns=value doc=doc
 on PropertyDecl: def id kind=Property ns=value doc=doc
 on Param:      def id kind=Param ns=value
-on Block:      scope pop
+on Body:       scope pop
 
 on SideEffect:         import module=path
 on ImportNS:           import module=from
