@@ -116,6 +116,9 @@ on DepEntry {
   edge dependsOn from $file to concat("pkg:", depName)
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .json

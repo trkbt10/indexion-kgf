@@ -130,6 +130,9 @@ on DepEntry {
   edge dependsOn from $file to concat("npm:", depName) attrs obj("version", depVersion)
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes: ./
 exts: .json

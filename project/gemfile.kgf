@@ -69,6 +69,9 @@ on GemStmt {
   edge dependsOn from $file to concat("rubygems:", name) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: Gemfile

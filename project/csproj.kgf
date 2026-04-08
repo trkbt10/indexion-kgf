@@ -94,6 +94,9 @@ on PackageRefItem {
   edge dependsOn from $file to concat("nuget:", raw) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes: ../
 exts: .csproj

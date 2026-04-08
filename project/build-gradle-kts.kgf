@@ -101,6 +101,9 @@ on DepDecl {
   edge dependsOn from $file to concat("maven:", d) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .gradle.kts

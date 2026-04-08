@@ -101,6 +101,9 @@ on UrlArg {
   edge dependsOn from $file to concat("swift:", url) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .swift

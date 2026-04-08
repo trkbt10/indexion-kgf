@@ -1,0 +1,33 @@
+kgf 0.6
+language: gitmodules
+sources: .gitmodules
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+TOKEN Comment /#[^\r\n]*|;[^\r\n]*/
+TOKEN Section /\[[^\]\r\n]+\]/
+TOKEN Key /[A-Za-z0-9._-]+/
+TOKEN Equals /=/
+TOKEN Value /[^\r\n]+/
+
+=== grammar
+Doc -> Item*
+Item -> SectionLine / EntryLine / Comment / NL
+SectionLine -> section:Section NL?
+EntryLine -> key:Key Equals value:Value NL?
+
+=== features
+content_type: config
+section_token: Section
+section_level: flat
+heading_text_tokens: Section
+reference_token_kinds: Key
+vocabulary_token_kinds: Section, Key, Value
+
+=== resolver
+relative_prefixes:
+exts: .gitmodules
+indexes:
+bare_prefix:
+module_path_style: slash

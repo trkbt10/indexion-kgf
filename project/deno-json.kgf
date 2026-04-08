@@ -102,6 +102,9 @@ on ImportEntry {
   edge dependsOn from $file to dep attrs obj("alias", $alias)
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes: ./
 exts: .json, .jsonc

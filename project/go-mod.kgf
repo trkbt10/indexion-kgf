@@ -78,6 +78,9 @@ on RequireEntry {
   edge dependsOn from $file to concat("go:", dep) attrs obj("version", ver, "dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .mod

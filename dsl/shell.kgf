@@ -1,0 +1,39 @@
+kgf 0.6
+language: shell
+sources: .sh
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+TOKEN Comment /#[^\r\n]*/
+KEYWORD KW_export /export\b/
+KEYWORD KW_if /if\b/
+KEYWORD KW_then /then\b/
+KEYWORD KW_fi /fi\b/
+KEYWORD KW_for /for\b/
+KEYWORD KW_do /do\b/
+KEYWORD KW_done /done\b/
+TOKEN Assign /=/
+TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+TOKEN Ident /[A-Za-z_][A-Za-z0-9_]*/
+TOKEN Word /[^\s#]+/
+
+=== grammar
+Script -> Item*
+Item -> Assignment / KeywordLine / Comment / NL / WordLine
+Assignment -> name:Ident Assign value:ShellValue NL?
+KeywordLine -> ( KW_export / KW_if / KW_then / KW_fi / KW_for / KW_do / KW_done ) Word* NL?
+WordLine -> Word+ NL?
+ShellValue -> StringLit / Ident / Word
+
+=== features
+content_type: script
+identifier_kinds: Ident
+vocabulary_token_kinds: Ident, Word, StringLit, Comment
+
+=== resolver
+relative_prefixes:
+exts: .sh
+indexes:
+bare_prefix:
+module_path_style: slash

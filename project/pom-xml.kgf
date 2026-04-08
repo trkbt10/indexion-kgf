@@ -109,6 +109,9 @@ on Dependency {
   edge dependsOn from $file to concat("maven:", coord) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .xml

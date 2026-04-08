@@ -1,0 +1,34 @@
+kgf 0.6
+language: yaml
+sources: .yml, .yaml
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+TOKEN Comment /#[^\r\n]*/
+TOKEN Dash /-/
+TOKEN Colon /:/
+TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+TOKEN NumberLit /-?[0-9]+(\.[0-9]+)?/
+KEYWORD KW_true /true/
+KEYWORD KW_false /false/
+TOKEN BareWord /[A-Za-z0-9_.\/@-]+/
+
+=== grammar
+Doc -> Item*
+Item -> Mapping / ListItem / Comment / NL
+Mapping -> key:BareWord Colon value:YamlValue? NL?
+ListItem -> Dash value:YamlValue? NL?
+YamlValue -> StringLit / NumberLit / KW_true / KW_false / BareWord
+
+=== features
+content_type: config
+identifier_kinds: BareWord
+vocabulary_token_kinds: BareWord, StringLit, Comment
+
+=== resolver
+relative_prefixes:
+exts: .yml, .yaml
+indexes:
+bare_prefix:
+module_path_style: slash

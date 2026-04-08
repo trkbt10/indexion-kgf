@@ -99,6 +99,9 @@ on DevDepEntry {
   edge dependsOn from $file to concat("packagist:", dep) attrs obj("version", ver, "dep_kind", "dev")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .json

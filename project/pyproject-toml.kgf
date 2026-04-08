@@ -137,6 +137,9 @@ on DepItem {
   edge dependsOn from $file to concat("pypi:", dep) attrs obj("dep_kind", "runtime")
 }
 
+=== features
+content_type: config
+
 === resolver
 relative_prefixes:
 exts: .toml
