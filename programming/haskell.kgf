@@ -47,14 +47,13 @@ KEYWORD KW_family   /family\b/
 TOKEN ConIdent /[A-Z][a-zA-Z0-9_']*/
 TOKEN VarIdent /[a-z_][a-zA-Z0-9_']*/
 
-# Operators
+# Multi-character operators (must precede single-char punctuation and generic Operator)
 TOKEN DCOLON /::/
 TOKEN ARROW  /->/
 TOKEN LARROW /<-/
 TOKEN DARROW /=>/
-TOKEN Operator /[!#$%&*+.\/<=>?@\\^|\-~:]+/
 
-# Punctuation
+# Punctuation (must precede generic Operator to avoid = | being consumed as Operator)
 TOKEN LBRACE   /\{/
 TOKEN RBRACE   /\}/
 TOKEN LPAREN   /\(/
@@ -66,6 +65,9 @@ TOKEN COMMA    /,/
 TOKEN BACKTICK /`/
 TOKEN PIPE     /\|/
 TOKEN EQ       /=/
+
+# Generic operator (after specific punctuation to avoid conflicts)
+TOKEN Operator /[!#$%&*+.\/<=>?@\\^|\-~:]+/
 
 === grammar
 Module -> Item*
@@ -119,7 +121,7 @@ InstanceBody -> LBRACE InstanceMember* RBRACE / InstanceMember*
 InstanceMember -> FunctionDecl / NL / LineComment / BlockComment
 
 # Function declaration (signature + equations)
-FunctionDecl -> doc:DocComment? NL? func_id:VarIdent DCOLON Type / func_id:VarIdent Pattern* EQ Expr
+FunctionDecl -> doc:DocComment? NL? func_id:VarIdent DCOLON Type / doc:DocComment? NL? func_id:VarIdent Pattern* EQ Expr
 
 # Pattern
 Pattern -> VarIdent / ConIdent / LPAREN Pattern ( COMMA Pattern )* RPAREN / LBRACKET Pattern* RBRACKET / Operator

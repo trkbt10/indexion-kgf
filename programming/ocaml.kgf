@@ -59,14 +59,13 @@ TOKEN BoolLit /\b(?:true|false)\b/
 TOKEN ModuleIdent /[A-Z][a-zA-Z0-9_']*/
 TOKEN Ident /[a-z_][a-zA-Z0-9_']*/
 
-# Operators
+# Multi-character operators (must precede single-char punctuation and generic Operator)
 TOKEN ARROW    /->/
 TOKEN LARROW   /<-/
 TOKEN DCOLON   /::/
 TOKEN SEMI2    /;;/
-TOKEN Operator /[!$%&*+\-.\/:<=>?@^|~]+|:=/
 
-# Punctuation
+# Punctuation (must precede generic Operator to avoid = being consumed as Operator)
 TOKEN LPAREN   /\(/
 TOKEN RPAREN   /\)/
 TOKEN LBRACKET /\[/
@@ -80,6 +79,9 @@ TOKEN COLON    /:/
 TOKEN EQ       /=/
 TOKEN PIPE     /\|/
 TOKEN QUOTE    /'/
+
+# Generic operator (after specific punctuation to avoid conflicts)
+TOKEN Operator /[!$%&*+\-.\/:<=>?@^|~]+|:=/
 
 === grammar
 Module -> Item*
