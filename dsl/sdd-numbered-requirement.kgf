@@ -80,7 +80,7 @@ on DocumentSection when startsWith(trim($title), "Requirement ") {
   bind ns "value" name "current_requirement" to req_id
 }
 on DocumentSection when eq(toLower(trim($title)), "acceptance criteria") {
-  note document_requirement_criteria payload obj("parent_id", $scope("value", "current_requirement"), "criteria", collectLinesAfterPrefixes($body, "- [ ]", "- [x]", "- [X]", "-", "[ ]", "[x]", "[X]"), "line", $line, "end_line", $end_line)
+  note document_requirement_criteria payload obj("parent_id", $scope("value", "current_requirement"), "criteria", collectLinesAfterPrefixes($body, "- [ ]", "- [x]", "- [X]", "-", "[ ]", "[x]", "[X]", "1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9."), "line", $line, "end_line", $end_line)
 }
 on DocumentSection when startsWith(trim($title), "Scenario:") {
   note document_scenario payload obj("parent_id", $scope("value", "current_requirement"), "title", trim(afterFirst($title, "Scenario:")), "given", collectLinesAfterPrefixes($body, "- GIVEN", "GIVEN", "- **GIVEN**", "**GIVEN**"), "when", collectLinesAfterPrefixes($body, "- WHEN", "WHEN", "- **WHEN**", "**WHEN**"), "then", collectLinesAfterPrefixes($body, "- THEN", "THEN", "- **THEN**", "**THEN**"), "line", $line, "end_line", $end_line)

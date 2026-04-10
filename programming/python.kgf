@@ -72,8 +72,13 @@ Names -> Ident ( KW_as Ident )? ( COMMA Ident ( KW_as Ident )? )*
 QN -> Ident ( DOT Ident )*
 
 # Decorated definitions
-FunctionDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
-ClassDef -> decorators:Decorator* KW_class id:Ident Bases? COLON body:ClassSuite
+# DecoratorWithArgs handles @name(args) syntax (e.g. @dataclass(frozen=True))
+DecoratorLine -> Decorator DecoratorArgs? NL*
+DecoratorArgs -> LPAREN DecoratorArgContent* RPAREN
+DecoratorArgContent -> Ident / Number / String / Docstring / EQ / COMMA / STAR / STARSTAR / DOT / COLON / LPAREN DecoratorArgContent* RPAREN
+
+FunctionDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
+ClassDef -> decorators:DecoratorLine* KW_class id:Ident Bases? COLON body:ClassSuite
 
 # Suite (body) — without INDENT tokens, consume content until next top-level construct
 Suite -> NL doc:Docstring? SuiteContent* / SimpleStmt
@@ -82,8 +87,8 @@ ClassSuite -> NL doc:Docstring? ClassMember*
 SuiteContent -> NL / Comment / Statement
 ClassMember -> NL / Comment / MethodDef / PropertyDef / Assignment
 
-MethodDef -> decorators:Decorator* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
-PropertyDef -> Decorator KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
+MethodDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
+PropertyDef -> DecoratorLine KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
 
 # Parameters
 ParamList -> Param ( COMMA Param )*
@@ -104,7 +109,7 @@ Assignment -> id:Ident TypeHint? EQ expr:Expr
 
 # Expressions (simplified)
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
-ExprAtom -> Ident / Number / String / Docstring / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / STAR / STARSTAR / ARROW
+ExprAtom -> Ident / Number / String / Docstring / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / STAR / STARSTAR / ARROW / NL / Comment
 
 Other -> ExprAtom
 
@@ -139,24 +144,37 @@ on ModuleDoc {
   note module_doc payload obj("doc", $doc)
 }
 
+# Suite/ClassSuite fire before their parent (bottom-up), bind the docstring
+on Suite {
+  bind ns "value" name "suite_doc" to $doc
+}
+on ClassSuite {
+  bind ns "value" name "suite_doc" to $doc
+}
+
 # Python top-level declarations (all public by default; _ prefix is convention only)
+# Docstrings are inside the suite body in Python, so we retrieve them via scope
 on FunctionDef {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc, "decorators", $decorators)
+  let doc = $scope("value", "suite_doc")
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", doc, "decorators", $decorators)
 }
 on ClassDef {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc, "decorators", $decorators)
+  let doc = $scope("value", "suite_doc")
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", doc, "decorators", $decorators)
 }
 
 on MethodDef when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, ".", $id)
-  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc, "decorators", $decorators)
+  let doc = $scope("value", "suite_doc")
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Method", "doc", doc, "decorators", $decorators)
 }
 
 on PropertyDef when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, ".", $id)
-  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", $doc, "decorators", $decorators)
+  let doc = $scope("value", "suite_doc")
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", doc, "decorators", $decorators)
 }
 
 === resolver

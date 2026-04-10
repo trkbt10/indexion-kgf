@@ -91,7 +91,6 @@ Module -> ModuleDoc? Item*
 ModuleDoc -> module_doc:DocComment
 
 Item -> NL
-     / DocComment
      / ImportDecl
      / ExportDecl
      / FunctionDecl
@@ -100,6 +99,7 @@ Item -> NL
      / TypeDecl
      / VarDecl
      / EnumDecl
+     / DocComment
      / Other
 
 # Import declarations
@@ -114,18 +114,18 @@ ImportSpecList -> ImportSpec ( COMMA ImportSpec )*
 ImportSpec -> KW_type? origin:Ident ( KW_as local:Ident )?
 
 # Documented declarations (doc comment preceding)
-ExportDecl -> doc:DocComment? KW_export KW_default? ( FunctionDecl / ClassDecl / InterfaceDecl / TypeDecl / VarDecl / EnumDecl )
+ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDecl / InterfaceDecl / TypeDecl / VarDecl / EnumDecl )
            / KW_export STAR KW_from from:StringLit SEMI?
            / KW_export KW_type? LBRACE ExportList RBRACE KW_from from:StringLit SEMI?
            / KW_export KW_type? LBRACE ExportList RBRACE SEMI?
 ExportList -> KW_type? Ident ( KW_as Ident )? ( COMMA KW_type? Ident ( KW_as Ident )? )*
 
-FunctionDecl -> doc:DocComment? KW_async? KW_function id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? body:Body?
-ClassDecl -> doc:DocComment? KW_abstract? KW_class id:Ident GenericParams? ExtendsClause? ImplementsClause? ClassBody
-InterfaceDecl -> doc:DocComment? KW_interface id:Ident GenericParams? ExtendsClause? InterfaceBody
-TypeDecl -> doc:DocComment? KW_type id:Ident GenericParams? EQ Type SEMI?
-VarDecl -> doc:DocComment? (KW_const / KW_let / KW_var) id:Ident TypeAnnotation? ( EQ expr:Expr )? SEMI?
-EnumDecl -> doc:DocComment? KW_enum id:Ident EnumBody
+FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? body:Body?
+ClassDecl -> doc:DocComment? NL* KW_abstract? KW_class id:Ident GenericParams? ExtendsClause? ImplementsClause? ClassBody
+InterfaceDecl -> doc:DocComment? NL* KW_interface id:Ident GenericParams? ExtendsClause? InterfaceBody
+TypeDecl -> doc:DocComment? NL* KW_type id:Ident GenericParams? EQ Type SEMI?
+VarDecl -> doc:DocComment? NL* (KW_const / KW_let / KW_var) id:Ident TypeAnnotation? ( EQ expr:Expr )? SEMI?
+EnumDecl -> doc:DocComment? NL* KW_enum id:Ident EnumBody
 
 # Class/Interface bodies
 ClassBody -> LBRACE ClassMember* RBRACE
@@ -238,36 +238,74 @@ on ImportDefault {
 }
 
 # Declaration edges with documentation
+# Child rules fire before parent (bottom-up), so FunctionDecl etc. bind
+# their id/kind/doc, then ExportDecl fires and emits the declares edge
+# with its own doc (from the preceding JSDoc) merged in.
+
 on FunctionDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Function"
+  bind ns "value" name "child_decl_doc" to $doc
+  # Non-exported function: emit edge directly (ExportDecl will not fire)
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Class"
+  bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
   bind ns "value" name "current_class" to sym_id
 }
 
 on InterfaceDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Interface"
+  bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
 }
 
 on TypeDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Type"
+  bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
 }
 
 on VarDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Variable"
+  bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
 }
 
 on EnumDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Enum"
+  bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
   bind ns "value" name "current_enum" to sym_id
+}
+
+# ExportDecl fires after its child declaration (bottom-up).
+# If ExportDecl has a doc comment, re-emit the declares edge with the doc.
+on ExportDecl when $doc {
+  let sym_id = $scope("value", "child_decl_sym")
+  let id = $scope("value", "child_decl_id")
+  let kind = $scope("value", "child_decl_kind")
+  edge declares from $file to sym_id attrs obj("name", id, "kind", kind, "doc", $doc)
 }
 
 on MethodDecl when $scope("value", "current_class") {
