@@ -81,7 +81,7 @@ ImportDefault   -> defId:Ident KW_from from:StringLit
 ImportSpecList  -> ImportSpec ( COMMA ImportSpec )*
 ImportSpec      -> origin:Ident ( KW_as local:Ident )?
 
-ExportDecl      -> KW_export KW_default? ( FnDecl / ClassDecl / VarDecl )
+ExportDecl      -> doc:DocComment? NL* KW_export KW_default? ( FnDecl / ClassDecl / VarDecl )
 ExportFrom      -> KW_export ( STAR KW_from from:StringLit
                              / LBRACE ExportSpecList RBRACE KW_from from:StringLit ) SEMI?
 ExportSpecList  -> ExportSpec ( COMMA ExportSpec )*
@@ -91,8 +91,8 @@ VarDecl         -> (KW_const / KW_let / KW_var) VarList SEMI?
 VarList         -> VarItem ( COMMA VarItem )*
 VarItem         -> id:Ident (EQ Expr)?
 
-FnDecl          -> doc:DocComment? KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Body?
-ClassDecl       -> doc:DocComment? KW_class id:Ident ExtendsClause? ClassBody
+FnDecl          -> doc:DocComment? NL* KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Body?
+ClassDecl       -> doc:DocComment? NL* KW_class id:Ident ExtendsClause? ClassBody
 ExtendsClause   -> KW_extends Ident
 ClassBody       -> LBRACE ClassMember* RBRACE
 ClassMember     -> doc:DocComment? ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
@@ -168,13 +168,28 @@ on ImportDefault {
 
 on FnDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Function"
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
 on ClassDecl {
   let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Class"
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
   bind ns "value" name "current_class" to sym_id
+}
+
+# ExportDecl fires after its child declaration (bottom-up).
+# If ExportDecl has a doc comment, re-emit the declares edge with the doc.
+on ExportDecl when $doc {
+  let sym_id = $scope("value", "child_decl_sym")
+  let id = $scope("value", "child_decl_id")
+  let kind = $scope("value", "child_decl_kind")
+  edge declares from $file to sym_id attrs obj("name", id, "kind", kind, "doc", $doc)
 }
 
 on MethodDecl when $scope("value", "current_class") {

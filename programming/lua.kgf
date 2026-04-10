@@ -61,11 +61,11 @@ TOKEN EQ       /=/
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / FunctionDecl
      / LocalFunctionDecl
      / LocalVarDecl
      / AssignmentDecl
+     / DocComment
      / Other
 
 # Doc block

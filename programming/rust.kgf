@@ -103,8 +103,6 @@ Module -> ModuleDoc? Item*
 ModuleDoc -> module_doc:DocInnerComment ( NL DocInnerComment )*
 
 Item -> NL
-     / DocComment
-     / DocInnerComment
      / UseDecl
      / ModDecl
      / FnDecl
@@ -115,6 +113,8 @@ Item -> NL
      / TypeDecl
      / ConstDecl
      / StaticDecl
+     / DocComment
+     / DocInnerComment
      / Other
 
 # Doc block (consecutive /// comments)

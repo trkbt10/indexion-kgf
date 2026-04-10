@@ -75,7 +75,6 @@ TOKEN EQ       /=/
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / ConstDecl
      / VarDecl
      / FnDecl
@@ -83,6 +82,7 @@ Item -> NL
      / EnumDecl
      / UnionDecl
      / TestDecl
+     / DocComment
      / Other
 
 # Doc block

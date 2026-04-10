@@ -71,8 +71,6 @@ TOKEN EQ       /=/
 Module -> Item*
 
 Item -> NL
-     / DocComment
-     / DocBlockComment
      / ModuleDecl
      / ImportDecl
      / DataDecl
@@ -81,6 +79,8 @@ Item -> NL
      / ClassDecl
      / InstanceDecl
      / FunctionDecl
+     / DocComment
+     / DocBlockComment
      / Other
 
 # Module declaration

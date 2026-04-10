@@ -73,7 +73,6 @@ Module -> ModuleDoc? Item*
 ModuleDoc -> module_doc:PackageDoc ( NL DocComment )*
 
 Item -> NL
-     / DocComment
      / PackageDoc
      / PackageDecl
      / ImportDecl
@@ -81,6 +80,7 @@ Item -> NL
      / TypeDecl
      / VarDecl
      / ConstDecl
+     / DocComment
      / Other
 
 # Doc comment block (consecutive // comments)

@@ -85,7 +85,6 @@ TOKEN QUOTE    /'/
 Module -> Item*
 
 Item -> NL
-     / DocComment
      / OpenDecl
      / ModuleDecl
      / TypeDecl
@@ -94,6 +93,7 @@ Item -> NL
      / ExternalDecl
      / ExceptionDecl
      / ClassDecl
+     / DocComment
      / Other
 
 # Open declaration
