@@ -112,12 +112,13 @@ StandaloneDoc -> doc:DocBlockWithSections
 DocBlockWithSections -> DocSection ( NL DocLine )* ( NL DocSection ( NL DocLine )* )*
                       / DocBlock
 
-# Doc comment block: ///| marker followed by /// content lines (legacy format)
-# NL consumed separately so _last captures the last DocLine content
-# DocBlock: doc lines (///) followed by block marker (///|).
-# MoonBit convention: /// lines contain documentation, ///| is the separator.
-# Allow blank lines (extra NL) between doc lines and the marker.
-DocBlock -> ( DocLine NL )* NL* DocComment
+# Doc comment block: ///| marker with /// content lines.
+# MoonBit convention: ///| is the block marker, /// lines are documentation.
+# Two orderings are valid:
+#   1. ///| first, then /// lines (current convention: ///| starts the block)
+#   2. /// lines first, then ///| (legacy: ///| ends the block)
+DocBlock -> DocComment NL ( DocLine NL )*
+          / ( DocLine NL )* NL* DocComment
 
 # Function declaration (DocBlock optional, NL consumed separately)
 FnDecl -> fn_doc:DocBlock? NL? vis:Visibility? KW_fn TypeIdent? DCOLON? fn_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? Body?
