@@ -1,0 +1,9 @@
+kgf 0.6
+language: xlsx
+sources: .xlsx
+
+=== features
+content_type: archive
+archive_format: zip
+inner_includes: xl/worksheets/sheet*.xml, xl/sharedStrings.xml, xl/workbook.xml, xl/comments*.xml, xl/threadedComments/threadedComment*.xml, xl/tables/table*.xml, xl/pivotTables/pivotTable*.xml, xl/pivotCache/pivotCacheDefinition*.xml, xl/charts/chart*.xml, xl/calcChain.xml, xl/connections.xml, xl/metadata.xml, docProps/core.xml, docProps/app.xml, docProps/custom.xml
+inner_excludes: _rels/*, xl/_rels/*, xl/worksheets/_rels/*, [Content_Types].xml, xl/styles.xml, xl/theme/*

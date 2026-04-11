@@ -1,0 +1,28 @@
+
+kgf 0.6
+language: xml
+sources: .xml
+
+=== lex
+SKIP          /\s+/
+SKIP          /<!--[\s\S]*?-->/
+TOKEN XML_DECL    /<\?xml\b[^?]*\?>/
+TOKEN PI          /<\?[A-Za-z_][A-Za-z0-9_.-]*[^?]*\?>/
+TOKEN CDATA       /<!\[CDATA\[[\s\S]*?\]\]>/
+TOKEN TAG_OPEN    /<\/?[A-Za-z_][A-Za-z0-9_:.-]*/
+TOKEN TAG_CLOSE   /\/?>/
+TOKEN ATTR_NAME   /\b[A-Za-z_][A-Za-z0-9_:.-]*(?=\s*=)/
+TOKEN EQ          /=/
+TOKEN ATTR_VALUE  /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+TOKEN TEXT        /[^<]+/
+
+=== grammar
+Doc        -> ( Element / PI / XML_DECL / CDATA / Text )*
+Element    -> TAG_OPEN Attr* TAG_CLOSE
+Attr       -> ATTR_NAME EQ ATTR_VALUE
+Text       -> TEXT
+
+=== features
+content_type: document
+vocabulary_token_kinds: TEXT
+identifier_kinds: TAG_OPEN, ATTR_NAME

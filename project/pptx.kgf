@@ -1,0 +1,9 @@
+kgf 0.6
+language: pptx
+sources: .pptx
+
+=== features
+content_type: archive
+archive_format: zip
+inner_includes: ppt/slides/slide*.xml, ppt/notesSlides/notesSlide*.xml, ppt/slideMasters/slideMaster*.xml, ppt/slideLayouts/slideLayout*.xml, ppt/presentation.xml, ppt/comments/comment*.xml, ppt/commentAuthors.xml, ppt/handoutMasters/handoutMaster*.xml, ppt/tags/tag*.xml, docProps/core.xml, docProps/app.xml, docProps/custom.xml
+inner_excludes: ppt/_rels/*, ppt/slides/_rels/*, ppt/notesSlides/_rels/*, ppt/slideMasters/_rels/*, ppt/slideLayouts/_rels/*, ppt/comments/_rels/*, ppt/handoutMasters/_rels/*

@@ -1,0 +1,9 @@
+kgf 0.6
+language: docx
+sources: .docx
+
+=== features
+content_type: archive
+archive_format: zip
+inner_includes: word/document.xml, word/footnotes.xml, word/endnotes.xml, word/comments.xml, word/commentsExtended.xml, word/header*.xml, word/footer*.xml, word/numbering.xml, word/styles.xml, word/glossary/document.xml, docProps/core.xml, docProps/app.xml, docProps/custom.xml
+inner_excludes: word/_rels/*, word/glossary/_rels/*
