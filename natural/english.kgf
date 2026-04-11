@@ -66,6 +66,9 @@ Token -> Contraction / Article / Pronoun / Preposition / Conjunction
 
 === attrs
 
+=== features
+detection_scope: overlay
+
 === semantics
 
 === resolver

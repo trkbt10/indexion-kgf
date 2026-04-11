@@ -117,7 +117,7 @@ DocBlockWithSections -> DocSection ( NL DocLine )* ( NL DocSection ( NL DocLine 
 # Two orderings are valid:
 #   1. ///| first, then /// lines (current convention: ///| starts the block)
 #   2. /// lines first, then ///| (legacy: ///| ends the block)
-DocBlock -> DocComment NL ( DocLine NL )*
+DocBlock -> DocComment ( NL DocLine )*
           / ( DocLine NL )* NL* DocComment
 
 # Function declaration (DocBlock optional, NL consumed separately)
@@ -211,34 +211,34 @@ vocabulary_token_kinds: DocLine, DocComment, DocSection, String
 
 === semantics
 # Module-level documentation
-# Note: doc values are already cleaned by lexer strip/skip_value
+# trim() strips leading/trailing whitespace from _text which accumulates NL values
 on ModuleDoc {
-  note module_doc payload obj("doc", $module_doc_text)
+  note module_doc payload obj("doc", trim($module_doc_text))
 }
 
 # Public declarations only (vis:Visibility? from grammar)
 on FnDecl when $vis {
-  edge declares from $file to concat($file, "::", $fn_id) attrs obj("name", $fn_id, "kind", "Function", "doc", $fn_doc_text)
+  edge declares from $file to concat($file, "::", $fn_id) attrs obj("name", $fn_id, "kind", "Function", "doc", trim($fn_doc_text))
 }
 on StructDecl when $vis {
-  edge declares from $file to concat($file, "::", $struct_id) attrs obj("name", $struct_id, "kind", "Struct", "doc", $struct_doc_text)
+  edge declares from $file to concat($file, "::", $struct_id) attrs obj("name", $struct_id, "kind", "Struct", "doc", trim($struct_doc_text))
 }
 on EnumDecl when $vis {
-  edge declares from $file to concat($file, "::", $enum_id) attrs obj("name", $enum_id, "kind", "Enum", "doc", $enum_doc_text)
+  edge declares from $file to concat($file, "::", $enum_id) attrs obj("name", $enum_id, "kind", "Enum", "doc", trim($enum_doc_text))
 }
 on TypeDecl when $vis {
-  edge declares from $file to concat($file, "::", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", $type_doc_text)
+  edge declares from $file to concat($file, "::", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", trim($type_doc_text))
 }
 on TraitDecl when $vis {
-  edge declares from $file to concat($file, "::", $trait_id) attrs obj("name", $trait_id, "kind", "Trait", "doc", $trait_doc_text)
+  edge declares from $file to concat($file, "::", $trait_id) attrs obj("name", $trait_id, "kind", "Trait", "doc", trim($trait_doc_text))
 }
 on LetDecl when $vis {
-  edge declares from $file to concat($file, "::", $let_id) attrs obj("name", $let_id, "kind", "Variable", "doc", $let_doc_text)
+  edge declares from $file to concat($file, "::", $let_id) attrs obj("name", $let_id, "kind", "Variable", "doc", trim($let_doc_text))
 }
 
 on StandaloneDoc {
-  let doc_id = concat($file, "::doc::", $doc_text)
-  edge declares from $file to doc_id attrs obj("kind", "Documentation", "doc", $doc_text)
+  let doc_id = concat($file, "::doc::", trim($doc_text))
+  edge declares from $file to doc_id attrs obj("kind", "Documentation", "doc", trim($doc_text))
 }
 
 === resolver

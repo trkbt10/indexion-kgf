@@ -62,6 +62,9 @@ Word -> Kanji / Hiragana / Katakana / Alnum / Nbsp / Other
 on Segment: def id=w kind=Word
 on Segment: def id=n kind=Number
 
+=== features
+detection_scope: overlay
+
 === semantics
 on Segment when $scope("value", "last_word") {
   let cur = $scope("value", $w)

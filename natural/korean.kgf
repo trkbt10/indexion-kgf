@@ -60,6 +60,9 @@ Token -> Particle / Pronoun / Conjunction / Adverb / Ending
 
 === attrs
 
+=== features
+detection_scope: overlay
+
 === semantics
 
 === resolver
