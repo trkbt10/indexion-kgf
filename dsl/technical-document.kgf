@@ -1,0 +1,93 @@
+kgf 0.6
+language: technical-document
+sources: .spec.txt
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+TOKEN HEADING /^(?:\d{1,2}(?:\.\d+)+\.?)\s+(?!.*\.{2,})[A-Z][A-Za-z][^\r\n]*\S/
+TOKEN ANNEX_HEADING /^Annex\s+[A-Z]\s+/
+TOKEN TEXT /[^\r\n]+/
+
+=== grammar
+Doc -> Line*
+Line -> ANNEX_HEADING TEXT? NL? / HEADING TEXT? NL? / TEXT NL?
+
+=== attrs
+
+=== features
+content_type: document
+section_token: HEADING, ANNEX_HEADING
+heading_text_tokens: HEADING, ANNEX_HEADING
+coverage_token_kinds: TEXT
+vocabulary_token_kinds: TEXT
+
+=== semantics
+on DocumentSection {
+  note document_heading payload obj("line", $line, "level", add(countOccurrences($title, "."), cond(startsWith(trim($title), "Annex"), 0, 1)))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($title, "^(\\d+(?:\\.\\d+)*)\\.", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($title, "^Annex\\s+([A-Z])", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\b(?:sub)?clause\\s+(\\d+(?:\\.\\d+)*)\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\bsections?\\s+((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\bAnnex\\s+([A-Z])\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, "\\b(?:and|or)\\s+((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_section_refs payload obj("line", $line, "refs", regexCaptures($body, ",\\s*((?:[A-Z]|\\d+(?:\\.\\d+)*))\\.?\\b", 1, true))
+  note document_literals payload obj("line", $line, "values", regexCaptures($body, "^(?![^\\n]*(?:for example|e\\.g\\.|suppose|consider ))[^\\n]*(?:\\bshall\\b|\\bmust\\b|\\bshould\\b|\\brequired\\b)[^\\n]*\\b([0-9]{1,})\\b", 1, true))
+  note document_literals payload obj("line", $line, "values", regexCaptures($body, "^(?![^\\n]*(?:for example|e\\.g\\.|suppose|consider ))[^\\n]*(?:\\bshall\\b|\\bmust\\b|\\bshould\\b|\\brequired\\b)[^\\n]*\"([^\"\\n]+)\"", 1, true))
+  note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "\\|\\s*([0-9][0-9.+-]*)\\s*\\|\\s*([A-Za-z][A-Za-z0-9 /'_-]*[A-Za-z0-9/_-])\\s*\\|", 2, 1))
+  note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*([0-9]+(?:\\.[0-9]+)?(?:-[0-9]+)?(?:\\+)?)\\s*$", 1, 2))
+}
+on DocumentSection when eq(toLower(trim($title)), "scope") {
+  note document_section_role payload obj("line", $line, "role", "summary")
+}
+on DocumentSection when eq(toLower(trim($title)), "normative references") {
+  note document_section_role payload obj("line", $line, "role", "reference")
+}
+on DocumentSection when eq(toLower(trim($title)), "terms and definitions") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "notation") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "version designations") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "conformance") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "bibliography") {
+  note document_section_role payload obj("line", $line, "role", "reference")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "foreword") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "introduction") {
+  note document_section_role payload obj("line", $line, "role", "summary")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "example") {
+  note document_section_role payload obj("line", $line, "role", "example")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "informative") {
+  note document_section_role payload obj("line", $line, "role", "appendix_code")
+}
+
+=== preprocess
+blankLineIfContains:--- Page
+blankLineIfContains:© ISO
+blankLineIfContains:© IEC
+blankLineIfContains:All rights reserved
+blankLineIfContains:Sold by the
+blankLineIfContains:Single user only
+blankLineIfContains:copying and networking prohibited
+blankLineIfTrimHasPrefix:Goto errata
+blankLineIfRegex:^ISO[\s_/-]\d+
+blankLineIfRegex:^IEC[\s_/-]\d+
+blankLineIfRegex:^\d{1,3}\s*$
+blankLineIfContainsCodepoint:000c
+
+=== resolver
+relative_prefixes:
+exts: .spec.txt
+indexes:
+bare_prefix:
+module_path_style: slash
