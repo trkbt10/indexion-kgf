@@ -1,0 +1,146 @@
+kgf 0.6
+language: kgf
+sources: .kgf
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comment
+TOKEN Comment /#[^\r\n]*/
+
+# Section header: === lex, === grammar, etc.
+# Cannot use literal === (KGF parser treats it as section delimiter)
+TOKEN TripleEq /[=][=][=]/
+
+# Header fields
+KEYWORD KW_kgf /kgf\b/
+KEYWORD KW_language /language:/
+KEYWORD KW_sources /sources:/
+
+# Lex section keywords
+KEYWORD KW_TOKEN /TOKEN\b/
+KEYWORD KW_KEYWORD /KEYWORD\b/
+KEYWORD KW_SKIP /SKIP\b/
+KEYWORD KW_skip_value /skip_value\b/
+
+# Attrs / semantics keywords
+KEYWORD KW_on /on\b/
+KEYWORD KW_when /when\b/
+KEYWORD KW_edge /edge\b/
+KEYWORD KW_note /note\b/
+KEYWORD KW_let /let\b/
+KEYWORD KW_from /from\b/
+KEYWORD KW_to /to\b/
+KEYWORD KW_attrs /attrs\b/
+KEYWORD KW_payload /payload\b/
+
+# Builtin functions (obj, concat, trim, stripQuotes)
+TOKEN BuiltinFunc /(obj|concat|trim|stripQuotes)(?=[ \t]*\()/
+
+# Variable reference
+TOKEN Variable /\$[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Regex pattern delimiter and content
+# Full regex /…/ cannot be a single token because the KGF pattern
+# delimiter itself is /…/ and escaped slashes inside would conflict.
+# Instead, Slash is a standalone token and regex innards are caught
+# by other tokens (Ident, character classes in RegexBody, etc.)
+TOKEN RegexBody /[^\/ \t\r\n][^\/ \t\r\n]*/
+TOKEN Slash /\//
+
+# String literal
+TOKEN StringLit /"([^"\\]|\\.)*"/
+
+# Grammar operators
+TOKEN Arrow /->/
+TOKEN Pipe /\|/
+
+# Punctuation
+TOKEN LParen /\(/
+TOKEN RParen /\)/
+TOKEN LBrace /\{/
+TOKEN RBrace /\}/
+TOKEN LBracket /\[/
+TOKEN RBracket /\]/
+TOKEN Star /[*]/
+TOKEN QMark /[?]/
+TOKEN Bang /!/
+TOKEN Colon /:/
+TOKEN Comma /,/
+TOKEN Eq /[=]/
+TOKEN Tilde /~/
+TOKEN At /@/
+
+# Path-like values (resolver section)
+TOKEN PathLit /\.\/[^ \t\r\n,]*/
+
+# File extensions
+TOKEN ExtLit /\.[a-zA-Z0-9]+/
+
+# Dot (after ExtLit so .ext wins)
+TOKEN Dot /\./
+
+# List item dash (resolver section)
+TOKEN Dash /-/
+
+# Identifiers
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Version / numbers
+TOKEN Number /[0-9]+(\.[0-9]+)*/
+
+=== grammar
+Spec -> Header Section*
+
+Header -> KW_kgf Number NL
+          KW_language Ident NL
+          KW_sources ExtList NL
+
+ExtList -> ExtLit ( Comma ExtLit )*
+
+Section -> TripleEq Ident NL SectionBody
+
+SectionBody -> LexRule* / GrammarRule* / AttrRule* / SemanticBlock*
+             / FeatureEntry* / ResolverEntry* / IgnoreEntry*
+
+# Lex rules
+LexRule -> ( KW_TOKEN / KW_KEYWORD / KW_SKIP ) Ident? Slash RegexContent Slash KW_skip_value? NL
+         / Comment NL / NL
+RegexContent -> RegexBody*
+
+# Grammar rules
+GrammarRule -> rule_id:Ident Arrow Alternative NL
+             / Comment NL / NL
+Alternative -> GrammarAtom+
+
+GrammarAtom -> Ident Colon Ident / Ident Star? QMark?
+             / LParen Alternative ( Slash Alternative )* RParen Star? QMark?
+             / Bang Ident / StringLit / Slash
+
+# Attr rules
+AttrRule -> KW_on Ident Colon Ident+ NL / Comment NL / NL
+
+# Semantic blocks
+SemanticBlock -> KW_on Ident KW_when? Variable? LBrace SemanticStmt* RBrace NL?
+              / Comment NL / NL
+SemanticStmt -> KW_edge Ident KW_from Variable KW_to Expr KW_attrs? Expr? NL
+             / KW_note Ident KW_payload Expr NL
+             / KW_let Ident Eq Expr NL
+             / Comment NL / NL
+Expr -> BuiltinFunc LParen ExprList RParen / Variable / StringLit / Ident
+ExprList -> Expr ( Comma Expr )*
+
+# Feature entries
+FeatureEntry -> Ident Colon Ident ( Comma Ident )* NL / Comment NL / NL
+
+# Resolver entries
+ResolverEntry -> Ident Colon ResolverValue? NL / Dash ResolverValue NL / Comment NL / NL
+ResolverValue -> Ident+ / PathLit / ExtLit / StringLit / Number
+
+# Ignore entries
+IgnoreEntry -> Ident NL / Comment NL / NL
+
+=== features
+identifier_kinds: Ident
+vocabulary_token_kinds: Comment, StringLit
