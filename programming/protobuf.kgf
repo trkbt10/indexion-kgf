@@ -1,0 +1,240 @@
+kgf 0.6
+language: protobuf
+sources: .proto
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments
+TOKEN DocComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# String literals (used in imports, options, etc.)
+TOKEN String /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
+
+# Numeric literals (field numbers, default values, option values)
+TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+
+# Boolean literals
+TOKEN BoolLit /\b(?:true|false)\b/
+
+# Keywords — top-level declarations
+KEYWORD KW_syntax    /syntax\b/
+KEYWORD KW_edition   /edition\b/
+KEYWORD KW_package   /package\b/
+KEYWORD KW_import    /import\b/
+KEYWORD KW_option    /option\b/
+KEYWORD KW_message   /message\b/
+KEYWORD KW_enum      /enum\b/
+KEYWORD KW_service   /service\b/
+KEYWORD KW_rpc       /rpc\b/
+KEYWORD KW_returns   /returns\b/
+KEYWORD KW_oneof     /oneof\b/
+KEYWORD KW_map       /map\b/
+KEYWORD KW_extend    /extend\b/
+KEYWORD KW_extensions /extensions\b/
+KEYWORD KW_reserved  /reserved\b/
+
+# Keywords — field modifiers
+KEYWORD KW_optional  /optional\b/
+KEYWORD KW_required  /required\b/
+KEYWORD KW_repeated  /repeated\b/
+
+# Keywords — import modifiers
+KEYWORD KW_public    /public\b/
+KEYWORD KW_weak      /weak\b/
+
+# Keywords — stream modifier (for rpc)
+KEYWORD KW_stream    /stream\b/
+
+# Built-in scalar types
+TOKEN ScalarType /\b(?:double|float|int32|int64|uint32|uint64|sint32|sint64|fixed32|fixed64|sfixed32|sfixed64|bool|string|bytes)\b/
+
+# Identifiers (message names, field names, enum values, etc.)
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Operators
+TOKEN ASSIGN /=/
+TOKEN MINUS  /-/
+TOKEN PLUS   /\+/
+
+# Punctuation
+TOKEN LBRACE   /\{/
+TOKEN RBRACE   /\}/
+TOKEN LPAREN   /\(/
+TOKEN RPAREN   /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN LT       /</
+TOKEN GT       />/
+TOKEN SEMI     /;/
+TOKEN COMMA    /,/
+TOKEN DOT      /\./
+TOKEN COLON    /:/
+
+=== grammar
+Module -> Item*
+
+Item -> NL
+     / SyntaxDecl
+     / EditionDecl
+     / PackageDecl
+     / ImportDecl
+     / OptionDecl
+     / MessageDecl
+     / EnumDecl
+     / ServiceDecl
+     / ExtendDecl
+     / DocComment
+     / Other
+
+# Doc comment block (consecutive // comments)
+DocBlock -> DocComment ( NL DocComment )*
+
+# syntax = "proto3";
+SyntaxDecl -> KW_syntax ASSIGN String SEMI
+
+# edition = "2023";
+EditionDecl -> KW_edition ASSIGN String SEMI
+
+# package foo.bar.baz;
+PackageDecl -> KW_package package_name:QualifiedName SEMI
+QualifiedName -> Ident ( DOT Ident )*
+
+# import "other.proto";  /  import public "other.proto";  /  import weak "other.proto";
+ImportDecl -> KW_import ImportModifier? path:String SEMI
+ImportModifier -> KW_public / KW_weak
+
+# option java_package = "com.example.foo";
+OptionDecl -> KW_option OptionName ASSIGN OptionValue SEMI
+OptionName -> LPAREN QualifiedName RPAREN ( DOT Ident )* / QualifiedName
+OptionValue -> String / Number / BoolLit / Ident / MINUS Number / OptionAggregate
+OptionAggregate -> LBRACE OptionAggregateField* RBRACE
+OptionAggregateField -> OptionName ( ASSIGN / COLON ) OptionValue COMMA? SEMI? NL? / NL
+
+# Message declaration (may be nested)
+MessageDecl -> doc:DocBlock? NL? KW_message id:Ident MessageBody
+MessageBody -> LBRACE MessageElement* RBRACE
+MessageElement -> FieldDecl
+               / MapFieldDecl
+               / OneofDecl
+               / MessageDecl
+               / EnumDecl
+               / ExtensionsDecl
+               / ReservedDecl
+               / OptionDecl
+               / NL
+               / DocComment
+               / BlockComment
+               / SEMI
+
+# Field declaration: optional string name = 1 [json_name = "foo"];
+# FieldName allows keywords as field names (protobuf permits this, e.g. "string message = 1;")
+FieldDecl -> field_doc:DocBlock? NL? FieldModifier? FieldType field_id:FieldName ASSIGN Number FieldOptions? SEMI
+FieldModifier -> KW_optional / KW_required / KW_repeated
+FieldType -> QualifiedName / ScalarType
+FieldName -> Ident / KW_message / KW_enum / KW_service / KW_rpc / KW_option / KW_oneof / KW_map / KW_extend / KW_extensions / KW_reserved / KW_optional / KW_required / KW_repeated / KW_returns / KW_stream / KW_syntax / KW_edition / KW_package / KW_import / KW_public / KW_weak / ScalarType / BoolLit
+
+# Map field: map<string, Project> projects = 1;
+MapFieldDecl -> field_doc:DocBlock? NL? KW_map LT KeyType COMMA FieldType GT field_id:FieldName ASSIGN Number FieldOptions? SEMI
+KeyType -> ScalarType / Ident
+
+# Oneof declaration
+OneofDecl -> doc:DocBlock? NL? KW_oneof id:Ident LBRACE OneofField* RBRACE
+OneofField -> field_doc:DocBlock? NL? FieldType field_id:FieldName ASSIGN Number FieldOptions? SEMI / OptionDecl / NL / DocComment / BlockComment / SEMI
+
+# Field options: [deprecated = true, json_name = "foo"]
+FieldOptions -> LBRACKET FieldOption ( COMMA FieldOption )* RBRACKET
+FieldOption -> OptionName ASSIGN OptionValue
+
+# Enum declaration
+EnumDecl -> doc:DocBlock? NL? KW_enum id:Ident EnumBody
+EnumBody -> LBRACE EnumElement* RBRACE
+EnumElement -> EnumValue / OptionDecl / ReservedDecl / NL / DocComment / BlockComment / SEMI
+EnumValue -> value_doc:DocBlock? NL? value_id:Ident ASSIGN SignedNumber FieldOptions? SEMI
+SignedNumber -> MINUS? Number
+
+# Service declaration
+ServiceDecl -> doc:DocBlock? NL? KW_service id:Ident ServiceBody
+ServiceBody -> LBRACE ServiceElement* RBRACE
+ServiceElement -> RpcDecl / OptionDecl / NL / DocComment / BlockComment / SEMI
+
+# RPC declaration
+RpcDecl -> doc:DocBlock? NL? KW_rpc rpc_id:Ident LPAREN KW_stream? req:MessageType RPAREN KW_returns LPAREN KW_stream? resp:MessageType RPAREN ( RpcBody / SEMI )
+MessageType -> QualifiedName
+RpcBody -> LBRACE RpcOption* RBRACE
+RpcOption -> OptionDecl / NL / DocComment / BlockComment / SEMI
+
+# Extend declaration (proto2 primarily)
+ExtendDecl -> doc:DocBlock? NL? KW_extend ext_type:QualifiedName LBRACE FieldDecl* RBRACE
+
+# Extensions range declaration
+ExtensionsDecl -> KW_extensions Range ( COMMA Range )* SEMI
+Range -> Number ( Ident Number? )?
+
+# Reserved declaration
+ReservedDecl -> KW_reserved ( ReservedRanges / ReservedNames ) SEMI
+ReservedRanges -> Range ( COMMA Range )*
+ReservedNames -> String ( COMMA String )*
+
+Other -> Atom
+Atom -> Ident / Number / String / BoolLit / ScalarType / DocComment / BlockComment
+     / KW_syntax / KW_edition / KW_package / KW_import / KW_option / KW_message / KW_enum / KW_service / KW_rpc / KW_returns / KW_oneof / KW_map / KW_extend / KW_extensions / KW_reserved
+     / KW_optional / KW_required / KW_repeated / KW_public / KW_weak / KW_stream
+     / ASSIGN / MINUS / PLUS / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET / LT / GT / SEMI / COMMA / DOT / COLON / NL
+
+=== attrs
+on MessageDecl:  def id kind=Class doc=doc
+on EnumDecl:     def id kind=Enum doc=doc
+on ServiceDecl:  def id kind=Interface doc=doc
+on RpcDecl:      def rpc_id kind=Method doc=doc
+on FieldDecl:    def field_id kind=Field doc=field_doc
+on MapFieldDecl: def field_id kind=Field doc=field_doc
+on OneofDecl:    def id kind=Type doc=doc
+on EnumValue:    def value_id kind=EnumConstant doc=value_doc
+
+on ImportDecl:   import module=path
+
+=== features
+document_symbol_kinds: Class, Interface, Enum
+function_kinds: Method
+function_keyword: KW_rpc
+coverage_token_kinds: Ident
+identifier_kinds: Ident
+qualifier_separators: DOT
+vocabulary_token_kinds: DocComment, String
+
+=== semantics
+# Import dependency
+on ImportDecl {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+}
+
+# All top-level message declarations are public (protobuf has no visibility modifiers)
+on MessageDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Message", "doc", $doc)
+}
+
+on EnumDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+}
+
+on ServiceDecl {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Service", "doc", $doc)
+}
+
+on RpcDecl {
+  let sym_id = concat($file, "::", $rpc_id)
+  edge declares from $file to sym_id attrs obj("name", $rpc_id, "kind", "Rpc", "doc", $doc)
+}
+
+=== resolver
+relative_prefixes:
+module_path_style: slash
+resolve:
+  - ext: .proto
+  - fallback: proto:
