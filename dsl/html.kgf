@@ -22,7 +22,7 @@ on Attr:      import module=_last
 
 === features
 content_type: document
-vocabulary_token_kinds: TEXT
+vocabulary_token_kinds: ATTR_VALUE
 
 === semantics
 on Attr {

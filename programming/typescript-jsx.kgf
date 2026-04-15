@@ -49,6 +49,16 @@ KEYWORD KW_static    /static\b/
 KEYWORD KW_readonly  /readonly\b/
 KEYWORD KW_abstract  /abstract\b/
 KEYWORD KW_as        /as\b/
+KEYWORD KW_if        /if\b/
+KEYWORD KW_else      /else\b/
+KEYWORD KW_switch    /switch\b/
+KEYWORD KW_case      /case\b/
+KEYWORD KW_for       /for\b/
+KEYWORD KW_while     /while\b/
+KEYWORD KW_do        /do\b/
+KEYWORD KW_break     /break\b/
+KEYWORD KW_continue  /continue\b/
+KEYWORD KW_new       /new\b/
 
 # Identifiers and literals
 TOKEN Ident   /[A-Za-z_$][A-Za-z0-9_$]*/

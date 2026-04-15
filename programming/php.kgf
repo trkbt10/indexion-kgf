@@ -63,6 +63,7 @@ TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 TOKEN NamespaceSep /\\/
 
 # Operators
+TOKEN DOT      /\./
 TOKEN ARROW    /=>/
 TOKEN OBJOP    /->/
 TOKEN NULLSAFE /\?->/

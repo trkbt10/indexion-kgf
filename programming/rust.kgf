@@ -91,6 +91,7 @@ TOKEN COMMA    /,/
 TOKEN DOT      /\./
 TOKEN COLON    /:/
 TOKEN POUND    /#/
+TOKEN EQ       /=/
 TOKEN QMARK    /\?/
 TOKEN AMP      /&/
 TOKEN STAR     /\*/

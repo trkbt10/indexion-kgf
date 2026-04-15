@@ -13,7 +13,7 @@ TOKEN NL /\r?\n+/
 TOKEN Comment /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/
 TOKEN String /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/
 TOKEN Keyword /(function|const|let|var|if|else|for|while|return|import|export|from|class|def|async|await|try|catch|throw|new|this|self|true|false|null|undefined|None|True|False)\b/
-TOKEN Operator /[+\-*/%=<>!&|^~?:]+|\.{3}/
+TOKEN Operator /[+\-*\/%=<>!&|^~?:]+|\.{3}/
 TOKEN CodePunct /[;,{}[\]()]/
 
 # Punctuation (Japanese + Western)

@@ -45,6 +45,7 @@ KEYWORD KW_defer    /defer\b/
 KEYWORD KW_try      /try\b/
 KEYWORD KW_catch    /catch\b/
 KEYWORD KW_orelse   /orelse\b/
+KEYWORD KW_anytype  /anytype\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|bool|noreturn|type|anyerror|anytype|anyframe|anyopaque|null|undefined|true|false)\b/

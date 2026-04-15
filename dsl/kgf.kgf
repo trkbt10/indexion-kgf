@@ -9,9 +9,9 @@ TOKEN NL /\r?\n/
 # Comment
 TOKEN Comment /#[^\r\n]*/
 
-# Section header: === lex, === grammar, etc.
-# Cannot use literal === (KGF parser treats it as section delimiter)
-TOKEN TripleEq /[=][=][=]/
+# Section header: triple-equals lex, triple-equals grammar, etc.
+# Cannot use literal triple-equals (KGF parser treats it as section delimiter)
+TOKEN TripleEq /[=]{3}/
 
 # Header fields
 KEYWORD KW_kgf /kgf\b/

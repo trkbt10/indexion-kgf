@@ -35,7 +35,7 @@ section_level: flat
 heading_text_tokens: Section
 reference_token_kinds: Key
 coverage_token_kinds: Section, Key
-vocabulary_token_kinds: BareString, QuotedString
+vocabulary_token_kinds: Key, String
 
 === semantics
 

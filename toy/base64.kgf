@@ -7,7 +7,7 @@ sources: .b64, .base64, .txt
 SKIP /\\s+/
 
 # Base64 alphabet (user-requested): a-zA-Z0-9_/
-TOKEN B64_CHAR /[A-Za-z0-9_\\/]/
+TOKEN B64_CHAR /[A-Za-z0-9_\/]/
 
 # Padding (standard base64 uses '='). Keep as a separate token for highlighting.
 TOKEN PAD /=/

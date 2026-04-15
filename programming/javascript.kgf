@@ -15,6 +15,7 @@ KEYWORD KW_var        /var\b/
 KEYWORD KW_as         /as\b/
 KEYWORD KW_return     /return\b/
 KEYWORD KW_new        /new\b/
+KEYWORD KW_default    /default\b/
 KEYWORD KW_class      /class\b/
 TOKEN STAR          /\*/
 TOKEN Ident         /[A-Za-z_\$][A-Za-z0-9_\$]*/

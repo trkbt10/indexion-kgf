@@ -3,7 +3,7 @@ language: css
 sources: .css
 
 === lex
-SKIP           /(\s+|\/\*[^*]*\*+([^/*][^*]*\*+)*\/)+/
+SKIP           /(\s+|\/\*[^*]*\*+([^\/*][^*]*\*+)*\/)+/
 TOKEN AT_IMPORT   /@import\b/
 TOKEN AT_MEDIA    /@media\b/
 TOKEN AT_SUPPORTS /@supports\b/
