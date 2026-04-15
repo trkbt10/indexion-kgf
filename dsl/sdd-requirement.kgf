@@ -70,6 +70,21 @@ on DocumentSection {
   note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "\\|\\s*([0-9][0-9.+-]*)\\s*\\|\\s*([A-Za-z][A-Za-z0-9 /'_-]*[A-Za-z0-9/_-])\\s*\\|", 2, 1))
   note document_table_pairs payload obj("line", $line, "pairs", regexPairs($body, "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*([0-9]+(?:\\.[0-9]+)?(?:-[0-9]+)?(?:\\+)?)\\s*$", 1, 2))
 }
+on DocumentSection when eq(toLower(trim($title)), "sdd draft") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "requirements") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when eq(toLower(trim($title)), "feature description") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when containsStr(toLower(trim($title)), "generated from") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
+on DocumentSection when startsWith(toLower(trim($title)), "requirements for") {
+  note document_section_role payload obj("line", $line, "role", "meta")
+}
 on DocumentSection when startsWith(trim($title), "Requirement ") {
   let req_rest = trim(afterFirst($title, "Requirement "))
   let num = digits(beforeFirst(req_rest, ":"))
