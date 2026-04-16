@@ -1,0 +1,246 @@
+kgf 0.6
+language: mermaid
+sources: .mmd, .mermaid
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# Comments
+SKIP /%%[^\r\n]*/
+
+# Diagram type keywords (case-insensitive)
+KEYWORD KW_flowchart /\b(?:flowchart|graph)\b/i
+KEYWORD KW_sequenceDiagram /\bsequenceDiagram\b/
+KEYWORD KW_classDiagram /\bclassDiagram(?:-v2)?\b/
+KEYWORD KW_stateDiagram /\bstateDiagram(?:-v2)?\b/
+KEYWORD KW_erDiagram /\berDiagram\b/
+KEYWORD KW_gantt /\bgantt\b/
+KEYWORD KW_pie /\bpie\b/
+KEYWORD KW_mindmap /\bmindmap\b/
+KEYWORD KW_gitGraph /\bgitGraph\b/
+KEYWORD KW_journey /\bjourney\b/
+KEYWORD KW_timeline /\btimeline\b/
+KEYWORD KW_quadrantChart /\bquadrantChart\b/
+KEYWORD KW_requirementDiagram /\brequirementDiagram\b/
+KEYWORD KW_C4Context /\bC4Context\b/
+KEYWORD KW_block /\bblock-beta\b/
+
+# Structural keywords
+KEYWORD KW_subgraph /\bsubgraph\b/
+KEYWORD KW_end /\bend\b/
+KEYWORD KW_direction /\bdirection\b/
+KEYWORD KW_participant /\bparticipant\b/
+KEYWORD KW_actor /\bactor\b/
+KEYWORD KW_class /\bclass\b/
+KEYWORD KW_state /\bstate\b/
+KEYWORD KW_note /\bnote\b/
+KEYWORD KW_section /\bsection\b/
+KEYWORD KW_title /\btitle\b/
+KEYWORD KW_click /\bclick\b/
+KEYWORD KW_style /\bstyle\b/
+KEYWORD KW_classDef /\bclassDef\b/
+KEYWORD KW_linkStyle /\blinkStyle\b/
+
+# Sequence diagram keywords
+KEYWORD KW_activate /\bactivate\b/
+KEYWORD KW_deactivate /\bdeactivate\b/
+KEYWORD KW_loop /\bloop\b/
+KEYWORD KW_alt /\balt\b/
+KEYWORD KW_else /\belse\b/
+KEYWORD KW_opt /\bopt\b/
+KEYWORD KW_par /\bpar\b/
+KEYWORD KW_and /\band\b/
+KEYWORD KW_critical /\bcritical\b/
+KEYWORD KW_break /\bbreak\b/
+KEYWORD KW_rect /\brect\b/
+KEYWORD KW_autonumber /\bautonumber\b/
+
+# Class diagram keywords
+KEYWORD KW_namespace /\bnamespace\b/
+
+# Gantt keywords
+KEYWORD KW_dateFormat /\bdateFormat\b/
+KEYWORD KW_axisFormat /\baxisFormat\b/
+KEYWORD KW_excludes /\bexcludes\b/
+KEYWORD KW_todayMarker /\btodayMarker\b/
+
+# ER diagram cardinality
+TOKEN Cardinality /\|\||\}o|o\{|\}\{|\|o|o\||[|}{o]/
+
+# Flowchart edges (ordered: longest match first)
+TOKEN ThickArrow /==>|===/
+TOKEN DottedArrow /-.->|-\.-/
+TOKEN Arrow /-->|---|\|->|\|--/
+TOKEN SimpleArrow /-->/
+TOKEN LinkText /--\s*[^\r\n|>-]+\s*-->/
+
+# Node shapes
+TOKEN RoundOpen /\(/
+TOKEN RoundClose /\)/
+TOKEN SquareOpen /\[/
+TOKEN SquareClose /\]/
+TOKEN CurlyOpen /\{/
+TOKEN CurlyClose /\}/
+TOKEN DiamondOpen /\{\{/
+TOKEN DiamondClose /\}\}/
+TOKEN StadiumOpen /\(\[/
+TOKEN StadiumClose /\]\)/
+TOKEN SubroutineOpen /\[\[/
+TOKEN SubroutineClose /\]\]/
+TOKEN CylinderOpen /\[\(/
+TOKEN CylinderClose /\)\]/
+TOKEN TrapezoidOpen /\[\\/
+TOKEN TrapezoidClose /\\\/\]/
+TOKEN HexagonOpen /\{\{/
+TOKEN HexagonClose /\}\}/
+
+# Sequence diagram arrows
+TOKEN SeqArrowSolid /->>/
+TOKEN SeqArrowDotted /-->>/
+TOKEN SeqArrowCross /-x/i
+TOKEN SeqArrowOpen /-\)/
+
+# String literals
+TOKEN StringLit /"([^"\\]|\\.)*"/
+
+# Identifiers
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Numeric literals
+TOKEN NumberLit /[0-9]+(?:\.[0-9]+)?/
+
+# Punctuation
+TOKEN COLON /:/
+TOKEN SEMICOLON /;/
+TOKEN COMMA /,/
+TOKEN PIPE /\|/
+TOKEN DOT /\./
+TOKEN HASH /#/
+TOKEN TILDE /~/
+TOKEN PLUS /\+/
+TOKEN MINUS /-/
+TOKEN STAR /\*/
+TOKEN LT /</
+TOKEN GT />/
+TOKEN AMP /&/
+TOKEN AT /@/
+
+# Catch-all for other text
+TOKEN Text /[^\s()[\]{}<>|:;,."#~+\-*&@]+/
+
+=== grammar
+Doc -> DiagramDecl? NL? Block*
+Block -> (Line NL?) / NL
+
+DiagramDecl -> FlowchartDecl / SequenceDecl / ClassDecl / StateDecl
+             / ErDecl / GanttDecl / PieDecl / MindmapDecl / GitGraphDecl
+             / JourneyDecl / TimelineDecl / OtherDecl
+
+FlowchartDecl  -> diagramType:KW_flowchart DirectionSpec?
+SequenceDecl   -> diagramType:KW_sequenceDiagram
+ClassDecl      -> diagramType:KW_classDiagram
+StateDecl      -> diagramType:KW_stateDiagram
+ErDecl         -> diagramType:KW_erDiagram
+GanttDecl      -> diagramType:KW_gantt
+PieDecl        -> diagramType:KW_pie
+MindmapDecl    -> diagramType:KW_mindmap
+GitGraphDecl   -> diagramType:KW_gitGraph
+JourneyDecl    -> diagramType:KW_journey
+TimelineDecl   -> diagramType:KW_timeline
+OtherDecl      -> diagramType:Ident
+
+DirectionSpec  -> direction:Ident
+
+Line -> SubgraphLine / EndLine / ParticipantLine / EdgeLine
+      / ClickLine / StyleLine / ClassDefLine / DirectiveLine / ContentLine
+
+# Flowchart subgraph
+SubgraphLine -> KW_subgraph sgName:NodeIdent sgLabel:TextLike?
+EndLine      -> KW_end
+
+# Sequence diagram participant
+ParticipantLine -> (KW_participant / KW_actor) pName:NodeIdent (KW_class pAlias:NodeIdent)?
+
+# Edge definitions (flowchart, state, class, ER)
+EdgeLine -> srcNode:NodeIdent EdgeOp dstNode:NodeIdent edgeLabel:TextLike?
+
+EdgeOp -> Arrow / DottedArrow / ThickArrow / SimpleArrow / LinkText
+        / SeqArrowSolid / SeqArrowDotted / SeqArrowCross / SeqArrowOpen
+        / Cardinality
+
+# Click interactions (contain URLs or callback references)
+ClickLine -> KW_click clickTarget:NodeIdent clickDest:StringLit?
+
+# Style/class definitions
+StyleLine    -> KW_style styleTarget:NodeIdent TextLike
+ClassDefLine -> KW_classDef defName:Ident TextLike
+
+# Directives (title, dateFormat, etc.)
+DirectiveLine -> (KW_title / KW_dateFormat / KW_axisFormat / KW_direction
+               / KW_excludes / KW_todayMarker / KW_section / KW_note
+               / KW_activate / KW_deactivate / KW_autonumber
+               / KW_loop / KW_alt / KW_else / KW_opt / KW_par / KW_critical
+               / KW_break / KW_rect / KW_namespace) TextLike?
+
+# Fallback for any other content line
+ContentLine  -> Token+
+Token        -> StringLit / NumberLit / Ident / Text / COLON / SEMICOLON
+             / COMMA / PIPE / DOT / HASH / TILDE / PLUS / MINUS / STAR
+             / LT / GT / AMP / AT / RoundOpen / RoundClose / SquareOpen
+             / SquareClose / CurlyOpen / CurlyClose
+
+NodeIdent -> Ident / StringLit / Text
+TextLike  -> Token+
+
+=== attrs
+on FlowchartDecl:  def id=diagramType kind=Diagram
+on SequenceDecl:   def id=diagramType kind=Diagram
+on ClassDecl:      def id=diagramType kind=Diagram
+on StateDecl:      def id=diagramType kind=Diagram
+on ErDecl:         def id=diagramType kind=Diagram
+on GanttDecl:      def id=diagramType kind=Diagram
+on PieDecl:        def id=diagramType kind=Diagram
+on MindmapDecl:    def id=diagramType kind=Diagram
+on GitGraphDecl:   def id=diagramType kind=Diagram
+on JourneyDecl:    def id=diagramType kind=Diagram
+on TimelineDecl:   def id=diagramType kind=Diagram
+on SubgraphLine:   def id=sgName kind=Subgraph
+on ParticipantLine: def id=pName kind=Participant
+on EdgeLine:       ref srcNode ref dstNode
+
+=== features
+content_type: diagram
+identifier_kinds: Ident
+coverage_token_kinds: Ident, Text, StringLit
+vocabulary_token_kinds: Ident, Text, StringLit
+
+=== semantics
+on SubgraphLine {
+  let name = $sgName
+  edge declares from $file to concat($file, "::", name) attrs obj("name", name, "kind", "Subgraph")
+}
+
+on ParticipantLine {
+  let name = $pName
+  edge declares from $file to concat($file, "::", name) attrs obj("name", name, "kind", "Participant")
+}
+
+on EdgeLine {
+  let src = $srcNode
+  let dst = $dstNode
+  edge references from concat($file, "::", src) to concat($file, "::", dst) attrs obj("src", src, "dst", dst)
+}
+
+on ClickLine when $clickDest {
+  let target = $clickTarget
+  let dest = $clickDest
+  edge moduleDependsOn from $file to $resolve(dest) attrs obj("via", dest, "dep_kind", "click")
+}
+
+=== resolver
+relative_prefixes: ./, ../, /, http://, https://
+exts: .mmd, .mermaid, .md
+indexes:
+bare_prefix: url:
+module_path_style: slash
