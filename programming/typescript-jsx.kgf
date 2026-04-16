@@ -131,7 +131,7 @@ ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDe
            / KW_export KW_type? LBRACE ExportList RBRACE SEMI?
 ExportList -> KW_type? Ident ( KW_as Ident )? ( COMMA KW_type? Ident ( KW_as Ident )? )*
 
-FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? Body?
+FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident GenericParams? LPAREN NL* ParamList? NL* RPAREN TypeAnnotation? Body?
 ClassDecl -> ClassHeader ClassBody
 ClassHeader -> doc:DocComment? NL* KW_abstract? KW_class id:Ident GenericParams? ExtendsClause? ImplementsClause?
 InterfaceDecl -> InterfaceHeader InterfaceBody
@@ -145,12 +145,12 @@ EnumHeader -> doc:DocComment? NL* KW_enum id:Ident
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> doc:DocComment? NL* Modifier* ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
 Modifier -> KW_public / KW_private / KW_protected / KW_static / KW_readonly / KW_abstract / KW_async
-MethodDecl -> id:Ident GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? ( Body / SEMI? )
+MethodDecl -> id:Ident GenericParams? LPAREN NL* ParamList? NL* RPAREN TypeAnnotation? ( Body / SEMI? )
 PropertyDecl -> id:Ident QMARK? TypeAnnotation? ( EQ Expr )? SEMI?
 
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
 InterfaceMember -> doc:DocComment? NL* ( MethodSig / PropertySig ) / NL / LineComment / BlockComment
-MethodSig -> id:MemberName GenericParams? LPAREN ParamList? RPAREN TypeAnnotation? SEMI?
+MethodSig -> id:MemberName GenericParams? LPAREN NL* ParamList? NL* RPAREN TypeAnnotation? SEMI?
 PropertySig -> id:MemberName QMARK? TypeAnnotation? SEMI?
 MemberName -> Ident / KW_type / KW_class / KW_interface / KW_enum / KW_function / KW_const / KW_let / KW_var / KW_default / KW_export / KW_import / KW_from / KW_as
 
@@ -159,7 +159,7 @@ EnumMember -> doc:DocComment? NL* id:Ident ( EQ EnumValue )? COMMA? / NL / LineC
 EnumValue -> StringLit / Number / Ident ( DOT Ident )* / PLUS / MINUS
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
+ParamList -> Param ( NL* COMMA NL* Param )* NL* COMMA?
 Param -> DestructurePattern TypeAnnotation? ( EQ Expr )?
        / id:Ident QMARK? TypeAnnotation? ( EQ Expr )?
 DestructurePattern -> LBRACE DestructureField ( COMMA DestructureField )* COMMA? RBRACE
@@ -176,7 +176,7 @@ Type -> PIPE? NL* IntersectionType ( NL* PIPE NL* IntersectionType )* Conditiona
 ConditionalTail -> NL* KW_extends Type NL* QMARK NL* Type NL* COLON NL* Type
 IntersectionType -> TypeAtom ( AMP TypeAtom )*
 
-TypeAtom -> LPAREN ParamList? RPAREN ARROW Type
+TypeAtom -> LPAREN NL* ParamList? NL* RPAREN ARROW Type
          / TypeOperator TypeAtom
          / KW_infer Ident ( KW_extends Type )?
          / Ident ( DOT Ident )* GenericArgs? IndexAccess* ArraySuffix*
@@ -234,7 +234,7 @@ ArrayLit -> LBRACKET ArrayEntry* RBRACKET
 ArrayEntry -> NL / LineComment / BlockComment / DocComment / Expr COMMA? / COMMA
 ExprAtom -> Ident / Number / StringLit / TemplateLit / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_satisfies / KW_new / KW_typeof / KW_const / KW_in / JSX_SELF_CLOSE / JSX_CLOSE_START / JSX_FRAG_OPEN / JSX_FRAG_CLOSE
 BodyAtom -> Ident / Number / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / SLASH / PLUS / MINUS / BANG / KW_async / KW_await / KW_return / KW_if / KW_else / KW_switch / KW_case / KW_default / KW_for / KW_while / KW_do / KW_break / KW_continue / KW_new / KW_throw / KW_const / KW_let / KW_var / KW_function / KW_class / KW_interface / KW_type / KW_enum / KW_import / KW_export / KW_from / KW_as / KW_extends / KW_implements / KW_public / KW_private / KW_protected / KW_static / KW_readonly / KW_abstract / KW_typeof / KW_keyof / KW_infer / KW_in / KW_satisfies / NL / LineComment / BlockComment / DocComment / JSX_SELF_CLOSE / JSX_CLOSE_START / JSX_FRAG_OPEN / JSX_FRAG_CLOSE
-Atom -> Ident / Number / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / LPAREN / RPAREN / SLASH / PLUS / MINUS / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_keyof / KW_infer / KW_in / KW_satisfies
+Atom -> Ident / Number / StringLit / TemplateLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / LT / GT / LPAREN / RPAREN / SLASH / PLUS / MINUS / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_keyof / KW_infer / KW_in / KW_satisfies / KW_export / KW_function / KW_class / KW_interface / KW_type / KW_enum / KW_const / KW_let / KW_var / KW_async / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_break / KW_continue / KW_new / KW_throw / KW_default / KW_switch / KW_case / KW_import / KW_from / KW_extends / KW_implements / KW_abstract / KW_public / KW_private / KW_protected / KW_static / KW_readonly / KW_await
 
 # Fallback
 Other -> Atom
@@ -289,8 +289,9 @@ on ImportDefault {
 }
 
 # Declaration edges with documentation
-# ClassHeader/EnumHeader fire before their body children (bottom-up ordering),
-# so current_class/current_enum is available when MethodDecl/EnumMember fire.
+# Child rules fire before parent (bottom-up), so FunctionDecl etc. bind
+# their id/kind/doc, then ExportDecl fires and emits the declares edge
+# with its own doc (from the preceding JSDoc) merged in.
 
 on FunctionDecl {
   let sym_id = concat($file, "::", $id)

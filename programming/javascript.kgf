@@ -104,7 +104,7 @@ ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDe
 ExportSpecList -> ExportSpec ( COMMA ExportSpec )*
 ExportSpec -> origin:Ident ( KW_as local:Ident )?
 
-FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Body?
+FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident LPAREN NL* ParamList? NL* RPAREN Body?
 ClassDecl -> ClassHeader ClassBody
 ClassHeader -> doc:DocComment? NL* KW_class id:Ident ( KW_extends Ident ( DOT Ident )* )?
 VarDecl -> doc:DocComment? NL* (KW_const / KW_let / KW_var) id:Ident ( EQ Expr )? SEMI?
@@ -113,11 +113,11 @@ VarDecl -> doc:DocComment? NL* (KW_const / KW_let / KW_var) id:Ident ( EQ Expr )
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> doc:DocComment? NL* Modifier* ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
 Modifier -> KW_static / KW_async
-MethodDecl -> id:Ident LPAREN ParamList? RPAREN ( Body / SEMI? )
+MethodDecl -> id:Ident LPAREN NL* ParamList? NL* RPAREN ( Body / SEMI? )
 PropertyDecl -> id:Ident ( EQ Expr )? SEMI?
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
+ParamList -> Param ( NL* COMMA NL* Param )* NL* COMMA?
 Param -> DestructurePattern ( EQ Expr )?
        / id:Ident ( EQ Expr )?
 DestructurePattern -> LBRACE DestructureField ( COMMA DestructureField )* COMMA? RBRACE
@@ -138,7 +138,7 @@ ArrayLit -> LBRACKET ArrayEntry* RBRACKET
 ArrayEntry -> NL / LineComment / BlockComment / DocComment / Expr COMMA? / COMMA
 ExprAtom -> Ident / Number / StringLit / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_new / KW_typeof / KW_const / KW_in
 BodyAtom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / KW_async / KW_await / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_switch / KW_case / KW_break / KW_continue / KW_new / KW_throw / KW_const / KW_let / KW_var / KW_function / KW_class / KW_extends / KW_static / KW_import / KW_export / KW_from / KW_as / KW_default / KW_typeof / KW_in / NL / LineComment / BlockComment / DocComment
-Atom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / LPAREN / RPAREN / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_in
+Atom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / LPAREN / RPAREN / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_in / KW_export / KW_function / KW_class / KW_const / KW_let / KW_var / KW_async / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_break / KW_continue / KW_new / KW_throw / KW_default / KW_switch / KW_case / KW_import / KW_from / KW_extends / KW_static / KW_await
 
 # Fallback
 Other -> Atom
@@ -185,6 +185,7 @@ on FunctionDecl {
   bind ns "value" name "child_decl_sym" to sym_id
   bind ns "value" name "child_decl_kind" to "Function"
   bind ns "value" name "child_decl_doc" to $doc
+  # JS has no strict export model — all top-level declarations are public
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
@@ -212,6 +213,12 @@ on ExportDecl when $doc {
   let id = $scope("value", "child_decl_id")
   let kind = $scope("value", "child_decl_kind")
   edge declares from $file to sym_id attrs obj("name", id, "kind", kind, "doc", $doc)
+} else {
+  let sym_id = $scope("value", "child_decl_sym")
+  let id = $scope("value", "child_decl_id")
+  let kind = $scope("value", "child_decl_kind")
+  let child_doc = $scope("value", "child_decl_doc")
+  edge declares from $file to sym_id attrs obj("name", id, "kind", kind, "doc", child_doc)
 }
 
 on MethodDecl when $scope("value", "current_class") {
