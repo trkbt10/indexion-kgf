@@ -1,101 +1,166 @@
-
 kgf 0.6
 language: javascript
 sources: .js, .mjs, .cjs
 
 === lex
-SKIP        /(\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)+/
+# Whitespace (not comments - we capture those for JSDoc)
+SKIP /[ \t]+/
+TOKEN NL /\r?\n/
+
+# JSDoc comment block /** ... */
+TOKEN DocComment /\/\*\*([\s\S]*?)\*\//
+
+# Regular comments
+TOKEN LineComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+
+# String literals
+TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`/
+
+# Keywords
 KEYWORD KW_import     /import\b/
 KEYWORD KW_from       /from\b/
 KEYWORD KW_export     /export\b/
+KEYWORD KW_default    /default\b/
 KEYWORD KW_function   /function\b/
+KEYWORD KW_class      /class\b/
 KEYWORD KW_const      /const\b/
 KEYWORD KW_let        /let\b/
 KEYWORD KW_var        /var\b/
 KEYWORD KW_as         /as\b/
 KEYWORD KW_return     /return\b/
 KEYWORD KW_new        /new\b/
-KEYWORD KW_default    /default\b/
-KEYWORD KW_class      /class\b/
-TOKEN STAR          /\*/
-TOKEN Ident         /[A-Za-z_\$][A-Za-z0-9_\$]*/
-TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
-TOKEN NumberLit     /(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
-TOKEN LBRACE        /\{/
-TOKEN RBRACE        /\}/
-TOKEN LPAREN        /\(/
-TOKEN RPAREN        /\)/
-TOKEN SEMI          /;/
-TOKEN COMMA         /,/
-TOKEN COLON         /:/
-TOKEN DOT           /\./
-TOKEN EQ            /=/
+KEYWORD KW_async      /async\b/
+KEYWORD KW_await      /await\b/
+KEYWORD KW_extends    /extends\b/
+KEYWORD KW_if         /if\b/
+KEYWORD KW_else       /else\b/
+KEYWORD KW_for        /for\b/
+KEYWORD KW_while      /while\b/
+KEYWORD KW_do         /do\b/
+KEYWORD KW_switch     /switch\b/
+KEYWORD KW_case       /case\b/
+KEYWORD KW_break      /break\b/
+KEYWORD KW_continue   /continue\b/
+KEYWORD KW_throw      /throw\b/
+KEYWORD KW_static     /static\b/
+KEYWORD KW_typeof     /typeof\b/
+KEYWORD KW_in         /in\b/
+
+# Identifiers and literals
+TOKEN Ident         /[A-Za-z_$][A-Za-z0-9_$]*/
+TOKEN Number        /0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|[0-9]+(?:\.[0-9]+)?/
+
+# Punctuation
+TOKEN LBRACE  /\{/
+TOKEN RBRACE  /\}/
+TOKEN LPAREN  /\(/
+TOKEN RPAREN  /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN LT      /</
+TOKEN GT      />/
+TOKEN SEMI    /;/
+TOKEN COMMA   /,/
+TOKEN COLON   /:/
+TOKEN DOT     /\./
+TOKEN ARROW   /=>/
+TOKEN EQ      /=/
+TOKEN QMARK   /\?/
+TOKEN STAR    /\*/
+TOKEN PIPE    /\|/
+TOKEN AMP     /&/
+TOKEN PLUS    /\+/
+TOKEN MINUS   /-/
+TOKEN SLASH   /\//
+TOKEN BANG    /!/
 
 === grammar
-Module          -> ( ImportDecl / ExportFrom / ExportDecl / FnDecl / VarDecl / ExprStmt )*
+Module -> Item*
 
-ExportDecl      -> KW_export KW_default? ( FnDecl / VarDecl / ClassDecl )
-ClassDecl       -> KW_class id:Ident ClassBody
-ClassBody       -> LBRACE ClassBodyItem* RBRACE
-ClassBodyItem   -> FnDecl / ExprStmt
+Item -> NL
+     / ImportDecl
+     / ExportDecl
+     / FunctionDecl
+     / ClassDecl
+     / VarDecl
+     / DocComment
+     / Other
 
-ImportDecl      -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
-SideEffect      -> path:StringLit
-ImportNS        -> STAR KW_as ns:Ident KW_from from:StringLit
+# Import declarations
+ImportDecl -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
+SideEffect -> path:StringLit
+ImportNS -> STAR KW_as ns:Ident KW_from from:StringLit
 ImportNamedDefault -> defId:Ident COMMA LBRACE ImportSpecList RBRACE KW_from from:StringLit
-ImportNamed     -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
-ImportDefault   -> defId:Ident KW_from from:StringLit
-ImportSpecList  -> ImportSpec ( COMMA ImportSpec )*
-ImportSpec      -> origin:Ident ( KW_as local:Ident )?
+ImportNamed -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
+ImportDefault -> defId:Ident KW_from from:StringLit
+ImportSpecList -> ImportSpec ( COMMA ImportSpec )*
+ImportSpec -> origin:Ident ( KW_as local:Ident )?
 
-ExportFrom      -> KW_export ( STAR KW_from from:StringLit
-                             / LBRACE ExportSpecList RBRACE KW_from from:StringLit ) SEMI?
-ExportSpecList  -> ExportSpec ( COMMA ExportSpec )*
-ExportSpec      -> origin:Ident ( KW_as local:Ident )?
+ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDecl / VarDecl )
+           / KW_export STAR KW_from from:StringLit SEMI?
+           / KW_export LBRACE ExportSpecList RBRACE KW_from from:StringLit SEMI?
+           / KW_export LBRACE ExportSpecList RBRACE SEMI?
+ExportSpecList -> ExportSpec ( COMMA ExportSpec )*
+ExportSpec -> origin:Ident ( KW_as local:Ident )?
 
-VarDecl         -> (KW_const / KW_let / KW_var) VarList SEMI?
-VarList         -> VarItem ( COMMA VarItem )*
-VarItem         -> id:Ident (EQ Expr)?
+FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident LPAREN ParamList? RPAREN Body?
+ClassDecl -> ClassHeader ClassBody
+ClassHeader -> doc:DocComment? NL* KW_class id:Ident ( KW_extends Ident ( DOT Ident )* )?
+VarDecl -> doc:DocComment? NL* (KW_const / KW_let / KW_var) id:Ident ( EQ Expr )? SEMI?
 
-FnDecl          -> KW_function id:Ident LPAREN ParamList? RPAREN Block
-ParamList       -> Param ( COMMA Param )*
-Param           -> id:Ident
-Block           -> LBRACE BlockItem* RBRACE
-BlockItem       -> VarDecl / ReturnStmt / ExprStmt
-ReturnStmt      -> KW_return Expr? SEMI?
+# Class bodies
+ClassBody -> LBRACE ClassMember* RBRACE
+ClassMember -> doc:DocComment? NL* Modifier* ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
+Modifier -> KW_static / KW_async
+MethodDecl -> id:Ident LPAREN ParamList? RPAREN ( Body / SEMI? )
+PropertyDecl -> id:Ident ( EQ Expr )? SEMI?
 
-ExprStmt        -> Expr SEMI?
-Expr            -> CallExpr / Primary ( DOT Ident )*
-CallExpr        -> callee:Primary LPAREN (Arg ( COMMA Arg )*)? RPAREN
-Arg             -> Expr
-Primary         -> PrimaryName / LPAREN Expr RPAREN / NumberLit / StringLit / NewExpr
-PrimaryName     -> name:Ident
-NewExpr         -> KW_new Ident LPAREN (Arg ( COMMA Arg )*)? RPAREN
+# Parameters
+ParamList -> Param ( COMMA Param )*
+Param -> DestructurePattern ( EQ Expr )?
+       / id:Ident ( EQ Expr )?
+DestructurePattern -> LBRACE DestructureField ( COMMA DestructureField )* COMMA? RBRACE
+                    / LBRACKET DestructureField ( COMMA DestructureField )* COMMA? RBRACKET
+DestructureField -> Ident ( COLON Ident )? ( EQ SimpleExpr )? / DOT DOT DOT Ident
+SimpleExpr -> Ident / Number / StringLit
+
+# Bodies and expressions (simplified - just balance braces)
+Body -> LBRACE BodyContent* RBRACE
+BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / BodyAtom
+Expr -> ExprPart+
+ExprPart -> ObjectLit / ArrayLit / LBRACE BodyContent* RBRACE / LPAREN ExprPart* RPAREN / LBRACKET ExprPart* RBRACKET / ExprAtom
+ObjectLit -> LBRACE ObjectEntry* RBRACE
+ObjectEntry -> NL / LineComment / BlockComment / DocComment / ObjectProp COMMA? / COMMA
+ObjectProp -> PropertyName COLON Expr / PropertyName
+PropertyName -> Ident / StringLit / Number
+ArrayLit -> LBRACKET ArrayEntry* RBRACKET
+ArrayEntry -> NL / LineComment / BlockComment / DocComment / Expr COMMA? / COMMA
+ExprAtom -> Ident / Number / StringLit / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_new / KW_typeof / KW_const / KW_in
+BodyAtom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / KW_async / KW_await / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_switch / KW_case / KW_break / KW_continue / KW_new / KW_throw / KW_const / KW_let / KW_var / KW_function / KW_class / KW_extends / KW_static / KW_import / KW_export / KW_from / KW_as / KW_default / KW_typeof / KW_in / NL / LineComment / BlockComment / DocComment
+Atom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / LPAREN / RPAREN / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_in
+
+# Fallback
+Other -> Atom
 
 === attrs
-on VarItem:    def id kind=Variable ns=value
-on FnDecl:     def id kind=Function ns=value ; scope push=function
-on Param:      def id kind=Param ns=value
-on Block:      scope pop
-on PrimaryName: ref name ns=value
-on CallExpr:   call callee=callee
-on Arg:        argref
+on FunctionDecl: def id kind=Function doc=doc
+on ClassHeader:  def id kind=Class doc=doc
+on VarDecl:      def id kind=Variable doc=doc
+on MethodDecl:   def id kind=Method doc=doc
+on PropertyDecl: def id kind=Property doc=doc
+on Param:        def id kind=Param
 
-on SideEffect:         import module=path
-on ImportNS:           import module=from
-on ImportNamedDefault: import module=from
-on ImportNamed:        import module=from
-on ImportDefault:      import module=from
-on ExportFrom:         reexport module=from
+# Import edges are generated by === semantics only (avoid duplication)
 
 === features
-document_symbol_kinds: Function
+document_symbol_kinds: Function, Class
 function_kinds: Function
 function_keyword: KW_function
 coverage_token_kinds: Ident
 identifier_kinds: Ident
 qualifier_separators: DOT
-vocabulary_token_kinds: StringLit
+vocabulary_token_kinds: DocComment, StringLit
 
 === semantics
 on SideEffect {
@@ -114,19 +179,59 @@ on ImportDefault {
   edge moduleDependsOn from $file to $resolve($from) attrs obj("via", $from, "dep_kind", "value")
 }
 
-on FnDecl {
+on FunctionDecl {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function")
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Function"
+  bind ns "value" name "child_decl_doc" to $doc
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }
 
-on ClassDecl {
+on ClassHeader {
   let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class")
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Class"
+  bind ns "value" name "child_decl_doc" to $doc
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  bind ns "value" name "current_class" to sym_id
+}
+
+on VarDecl {
+  let sym_id = concat($file, "::", $id)
+  bind ns "value" name "child_decl_id" to $id
+  bind ns "value" name "child_decl_sym" to sym_id
+  bind ns "value" name "child_decl_kind" to "Variable"
+  bind ns "value" name "child_decl_doc" to $doc
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+}
+
+on ExportDecl when $doc {
+  let sym_id = $scope("value", "child_decl_sym")
+  let id = $scope("value", "child_decl_id")
+  let kind = $scope("value", "child_decl_kind")
+  edge declares from $file to sym_id attrs obj("name", id, "kind", kind, "doc", $doc)
+}
+
+on MethodDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc)
+}
+
+on PropertyDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", $doc)
 }
 
 === resolver
 relative_prefixes: ./, ../, /
 module_path_style: slash
+project_config: package.json
+install_cmd: npm install {name}
+build_cmd: npm run build
 resolve:
   - exact:
   - manifest: package.json @ exports["."] | main | module
