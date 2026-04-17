@@ -98,8 +98,14 @@ TOKEN BANG    /!/
 # Module with optional leading module doc (JSDoc with @module or @packageDocumentation)
 Module -> ModuleDoc? Item*
 
-# Module-level documentation (first JSDoc with @module/@packageDocumentation tag)
-ModuleDoc -> module_doc:DocComment
+# Module-level documentation (JSDoc at file top).
+# Negative lookahead: only match when the DocComment is NOT followed by a
+# declaration/export — otherwise the JSDoc belongs to the first declaration.
+# PEG backtracks if the lookahead fails, letting Item*/ExportDecl/etc. capture it.
+ModuleDoc -> module_doc:DocComment NL* !DeclKeyword
+
+# Declaration start keywords (used for negative lookahead in ModuleDoc)
+DeclKeyword -> KW_export / KW_import / KW_function / KW_class / KW_interface / KW_type / KW_const / KW_let / KW_var / KW_enum / KW_async / KW_abstract / KW_default
 
 Item -> NL
      / ImportDecl
@@ -118,18 +124,18 @@ Item -> NL
 ImportDecl -> KW_import KW_type? ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
 SideEffect -> path:StringLit
 ImportNS -> STAR KW_as ns:Ident KW_from from:StringLit
-ImportNamedDefault -> defId:Ident COMMA LBRACE ImportSpecList RBRACE KW_from from:StringLit
-ImportNamed -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
+ImportNamedDefault -> defId:Ident COMMA LBRACE NL* ImportSpecList NL* RBRACE KW_from from:StringLit
+ImportNamed -> LBRACE NL* ImportSpecList NL* RBRACE KW_from from:StringLit
 ImportDefault -> defId:Ident KW_from from:StringLit
-ImportSpecList -> ImportSpec ( COMMA ImportSpec )*
+ImportSpecList -> ImportSpec ( NL* COMMA NL* ImportSpec )* NL* COMMA?
 ImportSpec -> KW_type? origin:Ident ( KW_as local:Ident )?
 
 # Documented declarations (doc comment preceding)
 ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDecl / InterfaceDecl / TypeDecl / VarDecl / EnumDecl )
            / KW_export STAR KW_from from:StringLit SEMI?
-           / KW_export KW_type? LBRACE ExportList RBRACE KW_from from:StringLit SEMI?
-           / KW_export KW_type? LBRACE ExportList RBRACE SEMI?
-ExportList -> KW_type? Ident ( KW_as Ident )? ( COMMA KW_type? Ident ( KW_as Ident )? )*
+           / KW_export KW_type? LBRACE NL* ExportList NL* RBRACE KW_from from:StringLit SEMI?
+           / KW_export KW_type? LBRACE NL* ExportList NL* RBRACE SEMI?
+ExportList -> KW_type? Ident ( KW_as Ident )? ( NL* COMMA NL* KW_type? Ident ( KW_as Ident )? )* NL* COMMA?
 
 FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident GenericParams? LPAREN NL* ParamList? NL* RPAREN TypeAnnotation? Body?
 ClassDecl -> ClassHeader ClassBody

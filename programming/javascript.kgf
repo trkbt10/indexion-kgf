@@ -91,17 +91,17 @@ Item -> NL
 ImportDecl -> KW_import ( SideEffect / ImportNS / ImportNamedDefault / ImportNamed / ImportDefault ) SEMI?
 SideEffect -> path:StringLit
 ImportNS -> STAR KW_as ns:Ident KW_from from:StringLit
-ImportNamedDefault -> defId:Ident COMMA LBRACE ImportSpecList RBRACE KW_from from:StringLit
-ImportNamed -> LBRACE ImportSpecList RBRACE KW_from from:StringLit
+ImportNamedDefault -> defId:Ident COMMA LBRACE NL* ImportSpecList NL* RBRACE KW_from from:StringLit
+ImportNamed -> LBRACE NL* ImportSpecList NL* RBRACE KW_from from:StringLit
 ImportDefault -> defId:Ident KW_from from:StringLit
-ImportSpecList -> ImportSpec ( COMMA ImportSpec )*
+ImportSpecList -> ImportSpec ( NL* COMMA NL* ImportSpec )* NL* COMMA?
 ImportSpec -> origin:Ident ( KW_as local:Ident )?
 
 ExportDecl -> doc:DocComment? NL* KW_export KW_default? ( FunctionDecl / ClassDecl / VarDecl )
            / KW_export STAR KW_from from:StringLit SEMI?
-           / KW_export LBRACE ExportSpecList RBRACE KW_from from:StringLit SEMI?
-           / KW_export LBRACE ExportSpecList RBRACE SEMI?
-ExportSpecList -> ExportSpec ( COMMA ExportSpec )*
+           / KW_export LBRACE NL* ExportSpecList NL* RBRACE KW_from from:StringLit SEMI?
+           / KW_export LBRACE NL* ExportSpecList NL* RBRACE SEMI?
+ExportSpecList -> ExportSpec ( NL* COMMA NL* ExportSpec )* NL* COMMA?
 ExportSpec -> origin:Ident ( KW_as local:Ident )?
 
 FunctionDecl -> doc:DocComment? NL* KW_async? KW_function id:Ident LPAREN NL* ParamList? NL* RPAREN Body?
