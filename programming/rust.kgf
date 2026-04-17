@@ -121,11 +121,39 @@ Item -> NL
 # Doc block (consecutive /// comments)
 DocBlock -> DocComment ( NL DocComment )*
 
-# Use declaration (imports)
-UseDecl -> Attribute* KW_pub? KW_use UsePath SEMI
-UsePath -> ( KW_crate / KW_self / KW_super / Ident ) ( DCOLON UsePathSegment )*
+# Use declaration (imports).
+#
+# Rust's `use` has four semantically distinct heads, each of which must be
+# wired up to a different graph relation:
+#
+#   use crate::foo::bar;   — absolute path inside the current crate
+#   use self::foo::bar;    — path relative to the current module
+#   use super::foo::bar;   — path relative to the parent module
+#   use serde::Deserialize;— external crate (name is first path segment)
+#
+# The grammar splits on the head keyword so semantics can emit the right
+# kind of edge for each. The rest of the path (`rest:UsePathTail`) is
+# captured as a text label so the consumer can preserve the full import
+# string in edge attrs without having to recurse into every segment.
+UseDecl -> Attribute* KW_pub? KW_use UseVariant SEMI
+
+UseVariant -> CrateUse / SelfUse / SuperUse / ExternUse
+
+CrateUse  -> KW_crate DCOLON tail:UsePathTail
+SelfUse   -> KW_self  DCOLON tail:UsePathTail
+SuperUse  -> KW_super DCOLON tail:UsePathTail
+# External: the first identifier is the crate name (possibly a stdlib name
+# like `std`, `core`, `alloc`, or a dep declared in Cargo.toml).
+ExternUse -> crate_name:Ident UsePathContinuation?
+
+# Continuation after a path head (captured as unlabeled for now; semantics
+# only needs the head to determine the target cluster, and attrs preserve
+# the raw `via` text via the `_text` built-in label).
+UsePathContinuation -> DCOLON UsePathTail
+UsePathTail -> UsePathSegment ( DCOLON UsePathSegment )*
 UsePathSegment -> Ident / STAR / LBRACE UseList RBRACE
 UseList -> UsePath ( COMMA UsePath )* COMMA?
+UsePath -> ( KW_crate / KW_self / KW_super / Ident ) ( DCOLON UsePathSegment )*
 
 # Module declaration
 ModDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_mod id:Ident ( SEMI / Body )
@@ -249,6 +277,70 @@ on ConstDecl when $vis {
 on StaticDecl when $vis {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Static", "doc", $doc)
 }
+# Rust `use` statements — one rule per head variant so the graph faithfully
+# encodes what each `use` form means.
+#
+# The `rel` attr carries the head keyword (`crate`, `self`, `super`) or the
+# external crate name. The `tail` attr carries the remainder of the path
+# (what comes after the first `::`). The post-merge enrichment pass uses
+# both to compute the canonical internal id (or keeps the `pkg:` fallback
+# when the target belongs to a crate the grammar didn't analyze, such as
+# stdlib or unresolved Cargo deps).
+
+# Rust `use` path resolution:
+#
+# - External: the first identifier is a crate name. The resolver tries
+#   Cargo.toml dependencies; unresolved names fall back to `crate:` which
+#   the post-merge cluster canonicalization may still fix up if the name
+#   matches a known project (cargo-workspace case).
+# - Crate-relative: the path is anchored at the Cargo.toml's directory +
+#   source_dir. Ident segments are joined with `/` to form a file path.
+# - self-relative: anchored at the importing file's own directory.
+# - super-relative: anchored at the parent directory.
+#
+# To convert `::`-delimited paths to `/`-delimited filesystem paths, the
+# grammar extracts `$tail_text` (the raw source between the head keyword
+# and the semicolon). Because `use X::{A, B}` groups can produce multiple
+# tails, we keep the `tail` as the textual form; the resolver's ext/index/
+# sibling steps handle `.rs` / `mod.rs`.
+
+on ExternUse {
+  # Rust 2018+ edition: a bare `use ident::...` first looks for a sibling
+  # module inside the current crate (what was `use crate::ident::...` in
+  # 2015), and only falls back to the extern-crate interpretation when no
+  # such module exists. We mirror that by resolving against the crate root
+  # first; if that fails, `$resolve` uses Cargo.toml dependencies, which
+  # produces the external id.
+  let crate_root = $findAncestor("Cargo.toml")
+  let src_base = concat(crate_root, "/src")
+  let internal = $resolveFrom(src_base, $crate_name)
+  # Heuristic: when the internal resolution succeeded it returns a path
+  # that is not the resolver's bare-prefix fallback form. We detect that by
+  # checking whether the result still starts with the `crate:` prefix; if
+  # so, fall back to `$resolve` so external deps can be resolved through
+  # Cargo.toml. (`startsWith` is a KGF built-in.)
+  let looks_external = startsWith(internal, "crate:")
+  edge moduleDependsOn from $file to cond(not(looks_external), internal, $resolve($crate_name)) attrs obj("via", $crate_name, "dep_kind", "value", "rel", cond(not(looks_external), "crate", "extern"))
+}
+
+on CrateUse {
+  # The crate root contains `Cargo.toml` + a `src/` subdir (Cargo convention).
+  # Resolve the use path against `<crate_root>/src` so module paths map to
+  # `<crate_root>/src/foo/bar.rs`.
+  let crate_root = $findAncestor("Cargo.toml")
+  let src_base = concat(crate_root, "/src")
+  edge moduleDependsOn from $file to $resolveFrom(src_base, $tail_text) attrs obj("via", $tail_text, "dep_kind", "value", "rel", "crate")
+}
+
+on SelfUse {
+  edge moduleDependsOn from $file to $resolve($tail_text) attrs obj("via", $tail_text, "dep_kind", "value", "rel", "self")
+}
+
+on SuperUse {
+  # "super" means parent of the importing file's directory. We get that by
+  # resolving an upward relative path from $file.
+  edge moduleDependsOn from $file to $resolve(concat("../", $tail_text)) attrs obj("via", $tail_text, "dep_kind", "value", "rel", "super")
+}
 
 === resolver
 relative_prefixes: ./, ../
@@ -261,6 +353,11 @@ resolve:
   - index: /mod.rs
   - sibling: .rs
   - ext: .rs
+  # Rust `use a::b::c` can reference item `c` inside module `a::b`, so if no
+  # file matches the full path we retry with the trailing segment stripped.
+  # The chain driver replays index/sibling/ext with progressively shorter
+  # paths before giving up to the fallback.
+  - progressive:
   - fallback: crate:
 
 === ignore

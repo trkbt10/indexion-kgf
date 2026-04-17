@@ -80,6 +80,8 @@ on RequireEntry {
 
 === features
 content_type: config
+manifest_role: project
+identity_edge: projectName
 
 === resolver
 relative_prefixes:

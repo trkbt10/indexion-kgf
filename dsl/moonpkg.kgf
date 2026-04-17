@@ -39,17 +39,38 @@ ImportBlock -> KW_import LBRACE NL? ImportList? RBRACE
 
 ImportList -> ImportItem ( COMMA NL? ImportItem )* COMMA? NL?
 
-ImportItem -> module:String Alias? NL?
+ImportItem -> module:String alias:Alias? NL?
            / NL
 
 Other -> String / Ident / Alias / LBRACE / RBRACE / COMMA / COLON
 
 === semantics
+# The `alias` label, when present, is the raw `@name` token (including the `@`).
+# When absent, downstream consumers derive the implicit alias from the module
+# path's trailing segment. The raw alias token is preserved in the edge attrs
+# so the cross-file package context can build `(package_dir, alias) → id` maps
+# without reinventing MoonBit alias rules here.
 on ImportItem {
   let mod_path = $module
   let resolved = $resolve(mod_path)
-  edge moduleDependsOn from $file to resolved attrs obj("via", mod_path, "dep_kind", "value")
+  edge moduleDependsOn from $file to resolved attrs obj("via", mod_path, "dep_kind", "value", "alias", $alias)
 }
+# A moon.pkg file is the identity of its containing package. Emitting a
+# packageEntry edge pointing to itself lets the cross-package canonicalization
+# pass discover the cluster representative without hardcoding "moon.pkg".
+on Module {
+  edge packageEntry from $file to $file
+}
+
+=== features
+# This manifest represents a single package directory; its dirname IS the
+# package cluster root.
+manifest_role: package
+# Edge kind emitted by manifests of the umbrella project that names this
+# package's cluster. There is no single name edge for a MoonBit sub-package
+# (the project name lives in moon.mod.json); identity comes from the manifest
+# file's path relative to the project root.
+entry_edges: packageEntry
 
 === resolver
 relative_prefixes: ./

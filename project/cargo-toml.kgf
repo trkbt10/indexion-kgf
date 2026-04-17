@@ -145,6 +145,13 @@ on DepEntry {
 
 === features
 content_type: config
+manifest_role: package
+identity_edge: projectName
+# Cargo convention: sources live under `src/` relative to the Cargo.toml.
+# Enrichment uses this to map internal use paths (e.g. `crate::cli`, or a
+# re-export `use cli::Cli` that turns out to be a sibling module) back to
+# on-disk files such as `<root>/src/cli.rs`.
+source_dir_default: src
 
 === resolver
 relative_prefixes:

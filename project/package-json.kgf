@@ -132,6 +132,8 @@ on DepEntry {
 
 === features
 content_type: config
+manifest_role: package
+identity_edge: projectName
 
 === resolver
 relative_prefixes: ./

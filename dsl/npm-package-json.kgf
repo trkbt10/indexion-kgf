@@ -140,6 +140,14 @@ on ExportsField {
   edge exportsField from $file to "exports"
 }
 
+=== features
+# A package.json is a single package's manifest. Its `name` is the cluster
+# identity (e.g. `@indexion/api-client`), and `main`/`types`/`typings`/`exports`
+# declare the files that serve as the cluster's entry points.
+manifest_role: package
+identity_edge: packageName
+entry_edges: mainEntry, typesEntry
+
 === resolver
 relative_prefixes:
 exts: .json

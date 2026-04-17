@@ -90,9 +90,11 @@ DocBlock -> DocComment ( NL DocComment )*
 PackageDecl -> KW_package id:Ident
 
 # Import declaration
-ImportDecl -> KW_import ( ImportSpec / ImportGroup )
-ImportGroup -> LPAREN ( ImportSpec NL? )* RPAREN
-ImportSpec -> alias:Ident? path:String
+# Go permits whitespace (incl. newlines) between the `import` keyword and the
+# parenthesised group, and between successive import specs inside a group.
+ImportDecl -> KW_import NL* ( ImportSpec / ImportGroup )
+ImportGroup -> LPAREN ( NL / ImportSpec )* RPAREN
+ImportSpec -> alias:Ident? path:String NL?
 
 # Function declaration
 FuncDecl -> doc:DocBlock? NL? KW_func Receiver? id:Ident GenericParams? Signature Body?

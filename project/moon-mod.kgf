@@ -38,6 +38,7 @@ FieldList       -> Field ( COMMA Field )*
 
 Field           -> NameField / VersionField / DescriptionField / LicenseField
                  / RepositoryField / KeywordsField / ReadmeField / DepsField
+                 / SourceField
                  / GenericObjectField / GenericArrayField / GenericStringField / GenericOtherField
 
 # Named fields
@@ -47,6 +48,7 @@ DescriptionField -> KW_description COLON value:StringLit
 LicenseField     -> KW_license COLON value:StringLit
 RepositoryField  -> KW_repository COLON value:StringLit
 ReadmeField      -> KW_readme COLON value:StringLit
+SourceField      -> KW_source COLON value:StringLit
 
 # Keywords array
 KeywordsField    -> KW_keywords COLON LBRACKET KeywordList? RBRACKET
@@ -85,6 +87,7 @@ on RepositoryField:  note fieldKey payload="repository"
 on KeywordsField:    note fieldKey payload="keywords"
 on ReadmeField:      note fieldKey payload="readme"
 on DepsField:        note fieldKey payload="deps"
+on SourceField:      note fieldKey payload="source"
 
 === semantics
 on NameField {
@@ -115,9 +118,29 @@ on DepEntry {
   let depName = stripQuotes($name)
   edge dependsOn from $file to concat("pkg:", depName)
 }
+# The `source` field declares the sub-directory (relative to this manifest)
+# that holds the project's source packages. Default in MoonBit is "src" when
+# absent; consumers (see `entry_dir_edges`) read this as the project's layout
+# hint and use it to resolve `<project_name>/<rel>` back to the right on-disk
+# path during cross-package canonicalization.
+on SourceField {
+  let src = stripQuotes($value)
+  edge projectSourceDir from $file to src
+}
 
 === features
 content_type: config
+# This manifest represents an umbrella project (may contain multiple packages).
+manifest_role: project
+# Edge kind whose `to` is the project's canonical identity (e.g. "trkbt10/indexion").
+identity_edge: projectName
+# Edge kind whose `to` is a relative directory under the project root where
+# source packages live. `<project_name>/<rel>` is resolved to
+# `<project_root>/<source_dir>/<rel>` during canonicalization. Default value is
+# taken from the MoonBit toolchain convention ("src") when this edge is absent
+# for a given project.
+source_dir_edge: projectSourceDir
+source_dir_default: src
 
 === resolver
 relative_prefixes:
