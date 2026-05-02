@@ -69,25 +69,37 @@ TOKEN KrHangul /[가-힯]+/
 # ────────── English (Latin script; word-bounded so safe after CJK) ──────────
 TOKEN EnUrl /https?:\/\/[^\s<>"']+/
 TOKEN EnEmail /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
-# English function-word lists need to match both capitalised forms (sentence-
-# initial: "You", "And", "The") and lowercase forms. The KGF regex engine
-# does not honour `(?i)`, so we write the case alternatives explicitly with
-# bracket-class first letters: `[Yy]ou`, `[Tt]he`, etc. Without this,
-# sentence-initial occurrences slip past the function-word kinds and land on
-# EnProperNoun (`\b[A-Z][a-z]+\b`), polluting divergence reports.
-TOKEN EnContraction /\b([Ii]'m|[Yy]ou're|[Hh]e's|[Ss]he's|[Ii]t's|[Ww]e're|[Tt]hey're|[Ii]'ve|[Yy]ou've|[Ww]e've|[Tt]hey've|[Ii]'ll|[Yy]ou'll|[Hh]e'll|[Ss]he'll|[Ww]e'll|[Tt]hey'll|[Ii]'d|[Yy]ou'd|[Hh]e'd|[Ss]he'd|[Ww]e'd|[Tt]hey'd|[Ii]sn't|[Aa]ren't|[Ww]asn't|[Ww]eren't|[Hh]aven't|[Hh]asn't|[Hh]adn't|[Ww]on't|[Ww]ouldn't|[Dd]on't|[Dd]oesn't|[Dd]idn't|[Cc]an't|[Cc]ouldn't|[Ss]houldn't|[Mm]ightn't|[Mm]ustn't|[Ll]et's|[Tt]hat's|[Ww]ho's|[Ww]hat's|[Ww]here's|[Tt]here's|[Hh]ere's)\b/
-TOKEN EnArticle /\b([Aa]|[Aa]n|[Tt]he)\b/
-TOKEN EnPronoun /\b(I|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself|[Yy]ou|[Yy]our|[Yy]ours|[Yy]ourself|[Yy]ourselves|[Hh]e|[Hh]im|[Hh]is|[Hh]imself|[Ss]he|[Hh]er|[Hh]ers|[Hh]erself|[Ii]t|[Ii]ts|[Ii]tself|[Ww]e|[Uu]s|[Oo]ur|[Oo]urs|[Oo]urselves|[Tt]hey|[Tt]hem|[Tt]heir|[Tt]heirs|[Tt]hemselves|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ww]ho|[Ww]hom|[Ww]hose|[Ww]hich|[Ww]hat)\b/
-TOKEN EnPreposition /\b([Ii]n|[Oo]n|[Aa]t|[Bb]y|[Ff]or|[Ww]ith|[Tt]o|[Ff]rom|[Oo]f|[Aa]bout|[Ii]nto|[Tt]hrough|[Dd]uring|[Bb]efore|[Aa]fter|[Aa]bove|[Bb]elow|[Bb]etween|[Uu]nder|[Oo]ver|[Aa]gainst|[Aa]mong|[Ww]ithin|[Ww]ithout|[Aa]long|[Aa]round|[Bb]ehind|[Bb]eside|[Bb]eyond|[Ii]nside|[Oo]utside|[Tt]oward|[Tt]owards|[Uu]pon|[Aa]cross|[Oo]nto)\b/
-TOKEN EnConjunction /\b([Aa]nd|[Oo]r|[Bb]ut|[Nn]or|[Ss]o|[Yy]et|[Bb]ecause|[Aa]lthough|[Tt]hough|[Ww]hile|[Ww]hereas|[Ii]f|[Uu]nless|[Uu]ntil|[Ss]ince|[Ww]hen|[Ww]here|[Ww]hether|[Hh]owever|[Tt]herefore|[Mm]oreover|[Ff]urthermore|[Nn]evertheless|[Nn]onetheless|[Mm]eanwhile|[Oo]therwise)\b/
-TOKEN EnAuxiliary /\b([Bb]e|[Bb]een|[Bb]eing|[Aa]m|[Ii]s|[Aa]re|[Ww]as|[Ww]ere|[Hh]ave|[Hh]as|[Hh]ad|[Hh]aving|[Dd]o|[Dd]oes|[Dd]id|[Dd]oing|[Ww]ill|[Ww]ould|[Ss]hall|[Ss]hould|[Cc]an|[Cc]ould|[Mm]ay|[Mm]ight|[Mm]ust|[Oo]ught|[Nn]eed|[Dd]are)\b/
-TOKEN EnQuestion /\b([Ww]hat|[Ww]ho|[Ww]hom|[Ww]hose|[Ww]hich|[Ww]here|[Ww]hen|[Ww]hy|[Hh]ow)\b/
-TOKEN EnNegation /\b([Nn]ot|[Nn]o|[Nn]ever|[Nn]either|[Nn]one|[Nn]othing|[Nn]obody|[Nn]owhere|[Hh]ardly|[Bb]arely|[Ss]carcely)\b/
-TOKEN EnAdverb /\b([Vv]ery|[Rr]eally|[Qq]uite|[Jj]ust|[Oo]nly|[Aa]lso|[Tt]oo|[Aa]lways|[Oo]ften|[Uu]sually|[Ss]ometimes|[Nn]ever|[Aa]lready|[Ss]till|[Yy]et|[Hh]ere|[Tt]here|[Nn]ow|[Tt]hen|[Tt]oday|[Tt]omorrow|[Yy]esterday|[Ss]oon|[Ll]ater|[Ee]ver)\b/
+# English function-word lists are case-insensitive via the trailing `/i`
+# flag. KGF supports `/i` natively (see kgfs/dsl/sql.kgf for the same
+# pattern). Without case insensitivity, sentence-initial forms ("You",
+# "And", "The") would slip past these kinds and land on EnProperNoun
+# (`\b[A-Z][a-z]+\b`), polluting divergence reports.
+TOKEN EnContraction /\b(I'm|you're|he's|she's|it's|we're|they're|I've|you've|we've|they've|I'll|you'll|he'll|she'll|we'll|they'll|I'd|you'd|he'd|she'd|we'd|they'd|isn't|aren't|wasn't|weren't|haven't|hasn't|hadn't|won't|wouldn't|don't|doesn't|didn't|can't|couldn't|shouldn't|mightn't|mustn't|let's|that's|who's|what's|where's|there's|here's)\b/i
+TOKEN EnArticle /\b(a|an|the)\b/i
+TOKEN EnPronoun /\b(I|me|my|mine|myself|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|it|its|itself|we|us|our|ours|ourselves|they|them|their|theirs|themselves|this|that|these|those|who|whom|whose|which|what)\b/i
+TOKEN EnPreposition /\b(in|on|at|by|for|with|to|from|of|about|into|through|during|before|after|above|below|between|under|over|against|among|within|without|along|around|behind|beside|beyond|inside|outside|toward|towards|upon|across|onto)\b/i
+TOKEN EnConjunction /\b(and|or|but|nor|so|yet|because|although|though|while|whereas|if|unless|until|since|when|where|whether|however|therefore|moreover|furthermore|nevertheless|nonetheless|meanwhile|otherwise)\b/i
+TOKEN EnAuxiliary /\b(be|been|being|am|is|are|was|were|have|has|had|having|do|does|did|doing|will|would|shall|should|can|could|may|might|must|ought|need|dare)\b/i
+TOKEN EnQuestion /\b(what|who|whom|whose|which|where|when|why|how)\b/i
+TOKEN EnNegation /\b(not|no|never|neither|none|nothing|nobody|nowhere|hardly|barely|scarcely)\b/i
+TOKEN EnAdverb /\b(very|really|quite|just|only|also|too|always|often|usually|sometimes|never|already|still|yet|here|there|now|then|today|tomorrow|yesterday|soon|later|ever)\b/i
+# Quantifiers and indefinite determiners: non-narrative selectors that
+# appear in nearly every prose passage but rarely carry story-specific
+# signal in source-vs-prose divergence.
+TOKEN EnQuantifier /\b(all|any|some|many|much|few|little|several|both|each|every|either|neither|one|two|three|four|five|first|second|third|other|another|such|same|own|part)\b/i
+# Comparison particles ("like", "as") and intensifiers that don't fit
+# under preposition or adverb cleanly.
+TOKEN EnComparison /\b(like|as|than|rather|more|most|less|least|near|away|about)\b/i
 # Common abbreviated titles that pattern as ProperNoun but carry no
 # narrative meaning. Treated as a function-word kind so they are filtered
 # out alongside pronouns.
-TOKEN EnTitle /\b([Mm]r|[Mm]rs|[Mm]s|[Dd]r|[Pp]rof)\b/
+TOKEN EnTitle /\b(mr|mrs|ms|dr|prof)\b/i
+# Dialogue tag verbs (said, asked, replied, ...). These cluster heavily
+# in prose (especially conversation-driven scenes) but carry no plot
+# signal, so we drop them by feature kind. Kept distinct from EnWord so
+# the filter is declarative — adding a new tag verb extends the spec
+# rather than the reader.
+TOKEN EnDialogueTag /\b(said|asked|answered|replied|cried|whispered|murmured|exclaimed|laughed|smiled|sighed|muttered|thought|wondered|continued|added|began|told|spoke|says)\b/i
 TOKEN EnProperNoun /\b[A-Z][a-z]+(?:'s)?\b/
 TOKEN EnWord /\b[a-zA-Z]+(?:'s)?\b/
 
@@ -101,7 +113,8 @@ Token -> JpJoshi / JpKatakana / JpKanji / JpHiragana
        / KrParticle / KrPronoun / KrEnding / KrHangul
        / EnUrl / EnEmail / EnContraction / EnArticle / EnPronoun
        / EnPreposition / EnConjunction / EnAuxiliary / EnQuestion
-       / EnNegation / EnAdverb / EnTitle / EnProperNoun / EnWord
+       / EnNegation / EnAdverb / EnQuantifier / EnComparison
+       / EnTitle / EnDialogueTag / EnProperNoun / EnWord
        / MdHeading / MdListMarker
        / Number / Punct / Quote / BracketOpen / BracketClose
        / Other
