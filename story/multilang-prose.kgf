@@ -1,0 +1,139 @@
+kgf 0.6
+language: story-prose
+sources: .md, .markdown, .text, .txt
+
+# Multilingual prose tokenizer for the indexion `story` command.
+#
+# This spec exists because story analysis (sources/ + prose/) regularly mixes
+# English and Japanese — and on a per-document basis the language is not
+# announced anywhere. Markdown's `embedded_code_fence` mechanism delegates by
+# explicit language tag (```moonbit), but prose has no such tag.
+#
+# The solution mirrors that pattern at the lex layer: instead of dispatching
+# whole documents, we dispatch *runs of characters* by their Unicode block.
+# A document with mixed scripts produces a stream of language-tagged tokens
+# in order, and downstream consumers (story divergence, story reconcile)
+# keep only the content-bearing kinds while discarding function words and
+# punctuation declaratively.
+#
+# Token kinds are prefixed by language (En*, Jp*, Cn*, Kr*) so:
+#  - regex collisions are avoided (Number, Punct exist in every language),
+#  - downstream feature-kind filters can be precise per language without
+#    needing additional language inference,
+#  - new languages can be added by appending a section without disturbing
+#    existing ones.
+#
+# Order matters in `lex`: more specific patterns precede more general ones
+# (function words like `Joshi` come before the `Kanji`/`Hiragana` catch-all).
+
+=== lex
+SKIP /[ \t　]+/
+TOKEN NL /\r?\n+/
+
+# ────────── Common punctuation (cross-language; emitted as same kind) ──────────
+TOKEN Punct /[\.\,。、！\!？\?：；:;]+/
+TOKEN Quote /["'""''「」『』【】]+/
+TOKEN BracketOpen /[〈《「『｢（(\[【〔〚〖〘❮❬❪❨<{❲❰｛❴]/
+TOKEN BracketClose /[〉》」』｣)）\]】〕〗〙〛}>❩❫❭❯❱❳❵｝]/
+
+# ────────── Markdown structural markers (so we can ignore them in content) ──────────
+TOKEN MdHeading /^(?:#{1,6})(?=\s)/
+TOKEN MdListMarker /^[ \t]*[-*+](?=\s)/
+
+# ────────── Numbers (Latin digits + CJK numerals via Han block, see below) ──────────
+TOKEN Number /[0-9０-９]+/
+
+# ────────── Japanese ──────────
+# Joshi (particles) before Hiragana so they are not absorbed by the catch-all.
+TOKEN JpJoshi /(でなければ|について|かしら|くらい|けれど|なのか|ばかり|ながら|ことよ|こそ|こと|さえ|しか|した|たり|だけ|だに|だの|つつ|ても|てよ|でも|とも|から|など|なり|ので|のに|ほど|まで|もの|やら|より|って|で|と|な|に|ね|の|も|は|ば|へ|や|わ|を|か|が|さ|し|ぞ|て)/
+TOKEN JpKatakana /[ァ-ヴー]+/
+TOKEN JpKanji /[一-鿿々〆ヵヶゝ]+/
+TOKEN JpHiragana /[ぁ-んゝ]+/
+
+# ────────── Chinese (after Japanese; Hanzi shares Han block with Kanji) ──────────
+# Chinese function words use Han characters so must precede the Hanzi
+# catch-all. They will only fire on documents whose Han runs contain these
+# specific tokens; mixed-language Han runs naturally fall to JpKanji above.
+TOKEN CnParticle /(的|地|得|着|了|过|吗|呢|吧|啊|呀|哦|哈|嘛|啦|哪|呗|咯|噢|喔|嘿|哎|唉|诶)/
+TOKEN CnPronoun /(我|你|您|他|她|它|我们|你们|他们|她们|它们|自己|大家|这|那|这个|那个|这些|那些|哪|哪个|哪些|什么|谁|怎么|怎样|多少|几)/
+TOKEN CnConjunction /(和|与|或|或者|而|但|但是|可是|然而|因为|所以|如果|虽然|虽|即使|既然|不但|而且|不仅|无论|不管|只要|只有|除非|否则|因此|于是|然后|接着|并且)/
+TOKEN CnAdverb /(很|非常|太|最|更|还|也|都|就|才|只|刚|正|已|已经|曾|曾经|将|将要|会|能|可以|应该|必须|不|没|没有|别|不要|一定|大概|可能|也许|似乎|几乎|完全|根本|简直|究竟|到底|终于|居然|竟然|果然|当然|仍然|依然|忽然|突然)/
+TOKEN CnHanzi /[一-鿿]+/
+
+# ────────── Korean ──────────
+TOKEN KrParticle /(은|는|이|가|을|를|의|에|에서|에게|한테|께|로|으로|와|과|하고|이랑|랑|도|만|까지|부터|마다|보다|처럼|같이|대로)/
+TOKEN KrPronoun /(나|저|너|당신|그|그녀|우리|저희|너희|그들|이것|저것|그것|여기|저기|거기|어디|누구|무엇|뭐|언제|어떻게|왜)/
+TOKEN KrEnding /(다|요|니다|습니다|까|나요|세요|ㄹ게요|을게요|겠|었|았|ㄴ|은|ㄹ|을|는|던|ㄴ다|는다|냐|니|나|자|군|구나|네)/
+TOKEN KrHangul /[가-힯]+/
+
+# ────────── English (Latin script; word-bounded so safe after CJK) ──────────
+TOKEN EnUrl /https?:\/\/[^\s<>"']+/
+TOKEN EnEmail /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+# English function-word lists need to match both capitalised forms (sentence-
+# initial: "You", "And", "The") and lowercase forms. The KGF regex engine
+# does not honour `(?i)`, so we write the case alternatives explicitly with
+# bracket-class first letters: `[Yy]ou`, `[Tt]he`, etc. Without this,
+# sentence-initial occurrences slip past the function-word kinds and land on
+# EnProperNoun (`\b[A-Z][a-z]+\b`), polluting divergence reports.
+TOKEN EnContraction /\b([Ii]'m|[Yy]ou're|[Hh]e's|[Ss]he's|[Ii]t's|[Ww]e're|[Tt]hey're|[Ii]'ve|[Yy]ou've|[Ww]e've|[Tt]hey've|[Ii]'ll|[Yy]ou'll|[Hh]e'll|[Ss]he'll|[Ww]e'll|[Tt]hey'll|[Ii]'d|[Yy]ou'd|[Hh]e'd|[Ss]he'd|[Ww]e'd|[Tt]hey'd|[Ii]sn't|[Aa]ren't|[Ww]asn't|[Ww]eren't|[Hh]aven't|[Hh]asn't|[Hh]adn't|[Ww]on't|[Ww]ouldn't|[Dd]on't|[Dd]oesn't|[Dd]idn't|[Cc]an't|[Cc]ouldn't|[Ss]houldn't|[Mm]ightn't|[Mm]ustn't|[Ll]et's|[Tt]hat's|[Ww]ho's|[Ww]hat's|[Ww]here's|[Tt]here's|[Hh]ere's)\b/
+TOKEN EnArticle /\b([Aa]|[Aa]n|[Tt]he)\b/
+TOKEN EnPronoun /\b(I|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself|[Yy]ou|[Yy]our|[Yy]ours|[Yy]ourself|[Yy]ourselves|[Hh]e|[Hh]im|[Hh]is|[Hh]imself|[Ss]he|[Hh]er|[Hh]ers|[Hh]erself|[Ii]t|[Ii]ts|[Ii]tself|[Ww]e|[Uu]s|[Oo]ur|[Oo]urs|[Oo]urselves|[Tt]hey|[Tt]hem|[Tt]heir|[Tt]heirs|[Tt]hemselves|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ww]ho|[Ww]hom|[Ww]hose|[Ww]hich|[Ww]hat)\b/
+TOKEN EnPreposition /\b([Ii]n|[Oo]n|[Aa]t|[Bb]y|[Ff]or|[Ww]ith|[Tt]o|[Ff]rom|[Oo]f|[Aa]bout|[Ii]nto|[Tt]hrough|[Dd]uring|[Bb]efore|[Aa]fter|[Aa]bove|[Bb]elow|[Bb]etween|[Uu]nder|[Oo]ver|[Aa]gainst|[Aa]mong|[Ww]ithin|[Ww]ithout|[Aa]long|[Aa]round|[Bb]ehind|[Bb]eside|[Bb]eyond|[Ii]nside|[Oo]utside|[Tt]oward|[Tt]owards|[Uu]pon|[Aa]cross|[Oo]nto)\b/
+TOKEN EnConjunction /\b([Aa]nd|[Oo]r|[Bb]ut|[Nn]or|[Ss]o|[Yy]et|[Bb]ecause|[Aa]lthough|[Tt]hough|[Ww]hile|[Ww]hereas|[Ii]f|[Uu]nless|[Uu]ntil|[Ss]ince|[Ww]hen|[Ww]here|[Ww]hether|[Hh]owever|[Tt]herefore|[Mm]oreover|[Ff]urthermore|[Nn]evertheless|[Nn]onetheless|[Mm]eanwhile|[Oo]therwise)\b/
+TOKEN EnAuxiliary /\b([Bb]e|[Bb]een|[Bb]eing|[Aa]m|[Ii]s|[Aa]re|[Ww]as|[Ww]ere|[Hh]ave|[Hh]as|[Hh]ad|[Hh]aving|[Dd]o|[Dd]oes|[Dd]id|[Dd]oing|[Ww]ill|[Ww]ould|[Ss]hall|[Ss]hould|[Cc]an|[Cc]ould|[Mm]ay|[Mm]ight|[Mm]ust|[Oo]ught|[Nn]eed|[Dd]are)\b/
+TOKEN EnQuestion /\b([Ww]hat|[Ww]ho|[Ww]hom|[Ww]hose|[Ww]hich|[Ww]here|[Ww]hen|[Ww]hy|[Hh]ow)\b/
+TOKEN EnNegation /\b([Nn]ot|[Nn]o|[Nn]ever|[Nn]either|[Nn]one|[Nn]othing|[Nn]obody|[Nn]owhere|[Hh]ardly|[Bb]arely|[Ss]carcely)\b/
+TOKEN EnAdverb /\b([Vv]ery|[Rr]eally|[Qq]uite|[Jj]ust|[Oo]nly|[Aa]lso|[Tt]oo|[Aa]lways|[Oo]ften|[Uu]sually|[Ss]ometimes|[Nn]ever|[Aa]lready|[Ss]till|[Yy]et|[Hh]ere|[Tt]here|[Nn]ow|[Tt]hen|[Tt]oday|[Tt]omorrow|[Yy]esterday|[Ss]oon|[Ll]ater|[Ee]ver)\b/
+# Common abbreviated titles that pattern as ProperNoun but carry no
+# narrative meaning. Treated as a function-word kind so they are filtered
+# out alongside pronouns.
+TOKEN EnTitle /\b([Mm]r|[Mm]rs|[Mm]s|[Dd]r|[Pp]rof)\b/
+TOKEN EnProperNoun /\b[A-Z][a-z]+(?:'s)?\b/
+TOKEN EnWord /\b[a-zA-Z]+(?:'s)?\b/
+
+# ────────── Catch-all ──────────
+TOKEN Other /[^\s]+/
+
+=== grammar
+Doc -> Token*
+Token -> JpJoshi / JpKatakana / JpKanji / JpHiragana
+       / CnParticle / CnPronoun / CnConjunction / CnAdverb / CnHanzi
+       / KrParticle / KrPronoun / KrEnding / KrHangul
+       / EnUrl / EnEmail / EnContraction / EnArticle / EnPronoun
+       / EnPreposition / EnConjunction / EnAuxiliary / EnQuestion
+       / EnNegation / EnAdverb / EnTitle / EnProperNoun / EnWord
+       / MdHeading / MdListMarker
+       / Number / Punct / Quote / BracketOpen / BracketClose
+       / Other
+
+=== attrs
+
+=== features
+content_type: document
+# Mark this spec as an overlay so it does NOT steal `.md` / `.txt` from
+# the general-purpose markdown / plaintext specs in the global registry.
+# story commands resolve their own kgfs/story/ directory directly (see
+# load_story_registry in src/story/divergence.mbt), so registering as
+# overlay keeps the rest of indexion (spec-draft, wiki, reconcile, etc.)
+# operating against their usual specs even when this file is present.
+detection_scope: overlay
+# Lexical content kinds across all four languages. These are also the
+# identifier kinds: KGF emits "Kind:text" features only for identifier
+# kinds, so for vocabulary divergence to discriminate by literal token
+# text (the actual word "Dorian", "金花", "翡翠"), each content kind must
+# be declared an identifier kind. Function-word kinds (EnPronoun,
+# EnAuxiliary, JpJoshi, CnParticle, KrParticle, etc.), punctuation,
+# brackets, quotes, and markdown markers are intentionally excluded so
+# that vocabulary divergence reflects narrative content rather than
+# register or formatting.
+identifier_kinds: EnWord, EnProperNoun, JpKanji, JpKatakana, JpHiragana, CnHanzi, KrHangul
+vocabulary_token_kinds: EnWord, EnProperNoun, JpKanji, JpKatakana, JpHiragana, CnHanzi, KrHangul
+
+=== semantics
+
+=== resolver
+relative_prefixes: ./, ../
+exts: .md, .markdown, .text, .txt
+indexes:
+bare_prefix:
+module_path_style: slash
