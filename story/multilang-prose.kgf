@@ -31,7 +31,7 @@ SKIP /[ \t　]+/
 TOKEN NL /\r?\n+/
 
 # ────────── Common punctuation (cross-language; emitted as same kind) ──────────
-TOKEN Punct /[\.\,。、！\!？\?：；:;]+/
+TOKEN Punct /[\.\,。、！\!？\?：；:;・〜～—–]+/
 TOKEN Quote /["'""''「」『』【】]+/
 TOKEN BracketOpen /[〈《「『｢（(\[【〔〚〖〘❮❬❪❨<{❲❰｛❴]/
 TOKEN BracketClose /[〉》」』｣)）\]】〕〗〙〛}>❩❫❭❯❱❳❵｝]/
@@ -141,6 +141,22 @@ detection_scope: overlay
 # register or formatting.
 identifier_kinds: EnWord, EnProperNoun, JpKanji, JpKatakana, JpHiragana, CnHanzi, KrHangul
 vocabulary_token_kinds: EnWord, EnProperNoun, JpKanji, JpKatakana, JpHiragana, CnHanzi, KrHangul
+# Section / heading detection
+# --------------------------
+# `section_token` tells `@document_structure.extract_headings` which token
+# kind opens a section. `MdHeading` matches the `#`/`##`/`###` markdown
+# prefix.
+#
+# `heading_text_tokens` lists every kind that may appear *inside* a
+# heading line. The engine joins these tokens (separated by spaces) to
+# reconstruct the title text, stopping at the next `NL`. We include
+# every content-bearing and function-word kind because heading titles
+# (e.g. "Act 1 — The Studio in Summer") legitimately contain articles,
+# prepositions, and proper nouns; only structural markers
+# (Punct, BracketOpen, BracketClose, Quote, MdListMarker, MdHeading)
+# are excluded so they don't clutter the rendered title.
+section_token: MdHeading
+heading_text_tokens: EnWord, EnProperNoun, EnArticle, EnPronoun, EnPreposition, EnConjunction, EnAuxiliary, EnQuestion, EnNegation, EnAdverb, EnQuantifier, EnComparison, EnTitle, EnDialogueTag, EnContraction, EnUrl, EnEmail, JpKanji, JpKatakana, JpHiragana, JpJoshi, CnHanzi, CnParticle, CnPronoun, CnConjunction, CnAdverb, KrHangul, KrParticle, KrPronoun, KrEnding, Number, Other
 
 === semantics
 
