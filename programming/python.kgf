@@ -3,8 +3,11 @@ language: python
 sources: .py, .pyi
 
 === lex
-SKIP /[ \t]+/
+# Indentation handling: NL_INDENT for indented lines, NL for unindented/blank
+# This allows distinguishing top-level from class body content
+TOKEN NL_INDENT /\r?\n[ \t]+/
 TOKEN NL /\r?\n/
+SKIP /[ \t]+/
 
 # Docstrings (triple-quoted strings at statement position)
 TOKEN Docstring /"""[\s\S]*?"""|'''[\s\S]*?'''/
@@ -74,19 +77,23 @@ QN -> Ident ( DOT Ident )*
 
 # Decorated definitions
 # DecoratorWithArgs handles @name(args) syntax (e.g. @dataclass(frozen=True))
-DecoratorLine -> Decorator DecoratorArgs? NL*
+DecoratorLine -> Decorator DecoratorArgs? ( NL_INDENT / NL )*
 DecoratorArgs -> LPAREN DecoratorArgContent* RPAREN
 DecoratorArgContent -> Ident / Number / String / Docstring / EQ / COMMA / STAR / STARSTAR / DOT / COLON / LPAREN DecoratorArgContent* RPAREN
 
 FunctionDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
 ClassDef -> decorators:DecoratorLine* KW_class id:Ident Bases? COLON body:ClassSuite
 
-# Suite (body) — without INDENT tokens, consume content until next top-level construct
-Suite -> NL doc:Docstring? SuiteContent* / SimpleStmt
-ClassSuite -> NL doc:Docstring? ClassMember*
+# Suite (body) — NL_INDENT starts indented line, content follows
+Suite -> ( NL_INDENT / NL ) SuiteContent* / SimpleStmt
+ClassSuite -> ( NL_INDENT / NL ) ClassBody
 
-SuiteContent -> NL / Comment / Statement
-ClassMember -> NL / Comment / MethodDef / PropertyDef / TypedField / Assignment
+# Class body: continues while we see NL_INDENT (indented lines)
+# Stops when we see NL (unindented line or blank line before unindented)
+ClassBody -> IndentedMember*
+IndentedMember -> doc:Docstring? NL_INDENT / Comment NL_INDENT / MethodDef NL_INDENT / PropertyDef NL_INDENT / TypedField NL_INDENT / Assignment NL_INDENT / MethodDef / PropertyDef / TypedField / Assignment / Comment / Docstring
+
+SuiteContent -> NL_INDENT / NL / Comment / Statement
 
 # Dataclass-style typed field declaration (PEP 557 / @dataclass).
 # `name: Type` without an initializer; common in modern Python data
