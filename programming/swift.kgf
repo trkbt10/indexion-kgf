@@ -133,7 +133,14 @@ StructMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / 
 EnumDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? EnumBody
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> EnumCase / FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
-EnumCase -> case_doc:DocBlock? Attribute* KW_case case_id:Ident AssociatedValues? RawValue? ( COMMA case_id:Ident AssociatedValues? RawValue? )*
+EnumCase -> case_doc:DocBlock? Attribute* KW_case case_id:CaseName AssociatedValues? RawValue? ( COMMA case_id:CaseName AssociatedValues? RawValue? )*
+
+# Enum case names: lower-camel by Swift convention but PascalCase is legal,
+# and case bodies may need to escape keywords with backticks. Accept the
+# union of identifier classes; backtick-escaped forms are tokenized
+# separately by `BacktickIdent` if the lexer supports it, else they remain
+# a syntactic gap to fix per-target.
+CaseName -> Ident / TypeIdent
 AssociatedValues -> LPAREN ParamList? RPAREN
 RawValue -> Operator Expr
 

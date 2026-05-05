@@ -52,7 +52,7 @@ TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 
 # Operators
 TOKEN ARROW   /->/
-TOKEN Operator /[+\-*\/%&|^~!<>=?:]+|&&|\|\||<<|>>|\.\.\./
+TOKEN Operator /[+\-\/%&|^~!<>=?:]+|&&|\|\||<<|>>|\.\.\./
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -90,7 +90,7 @@ DocBlock -> DocComment ( NL DocComment )*
 Name -> Ident / TypeIdent
 StructDecl -> doc:DocBlock? NL? KW_typedef? KW_struct id:Name? StructBody? id:Name? SEMI
 StructBody -> LBRACE StructMember* RBRACE
-StructMember -> field_doc:DocBlock? Type field_id:Ident ArrayDims? SEMI / NL / LineComment / BlockComment
+StructMember -> field_doc:DocBlock? Type STAR* field_id:Ident ArrayDims? SEMI / NL / LineComment / BlockComment
 
 # Union declaration
 UnionDecl -> doc:DocBlock? NL? KW_typedef? KW_union id:Name? UnionBody? id:Name? SEMI
@@ -100,7 +100,7 @@ UnionMember -> field_doc:DocBlock? Type field_id:Ident ArrayDims? SEMI / NL / Li
 # Enum declaration
 EnumDecl -> doc:DocBlock? NL? KW_typedef? KW_enum id:Name? EnumBody? id:Name? SEMI
 EnumBody -> LBRACE EnumValue* RBRACE
-EnumValue -> value_doc:DocBlock? value_id:Ident ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
+EnumValue -> value_doc:DocBlock? value_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
 # Typedef declaration
 TypedefDecl -> doc:DocBlock? NL? KW_typedef Type id:Name ArrayDims? SEMI

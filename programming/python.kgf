@@ -48,6 +48,7 @@ TOKEN EQ       /=/
 TOKEN ARROW    /->/
 TOKEN STAR     /\*/
 TOKEN STARSTAR /\*\*/
+TOKEN PIPE     /\|/
 
 === grammar
 Module -> ModuleDoc? Item*
@@ -85,7 +86,12 @@ Suite -> NL doc:Docstring? SuiteContent* / SimpleStmt
 ClassSuite -> NL doc:Docstring? ClassMember*
 
 SuiteContent -> NL / Comment / Statement
-ClassMember -> NL / Comment / MethodDef / PropertyDef / Assignment
+ClassMember -> NL / Comment / MethodDef / PropertyDef / TypedField / Assignment
+
+# Dataclass-style typed field declaration (PEP 557 / @dataclass).
+# `name: Type` without an initializer; common in modern Python data
+# classes and required for transpiled output to round-trip.
+TypedField -> field_id:Ident COLON Type ( EQ Expr )?
 
 MethodDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
 PropertyDef -> DecoratorLine KW_def id:Ident LPAREN ParamList? RPAREN TypeHint? COLON suite:Suite
@@ -95,7 +101,8 @@ ParamList -> Param ( COMMA Param )*
 Param -> STARSTAR? STAR? id:Ident TypeHint? Default?
 Default -> EQ Expr
 TypeHint -> COLON Type / ARROW Type
-Type -> Ident ( LBRACKET TypeArgs RBRACKET )? / LBRACKET Type RBRACKET
+Type -> TypeAtom ( PIPE TypeAtom )*
+TypeAtom -> Ident ( LBRACKET TypeArgs RBRACKET )? / LBRACKET Type RBRACKET
 TypeArgs -> Type ( COMMA Type )*
 
 # Class bases

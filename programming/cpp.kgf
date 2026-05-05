@@ -94,7 +94,7 @@ TOKEN STAR     /\*/
 TOKEN AMP      /&/
 
 # Operators (after punctuation)
-TOKEN Operator /[+\-*\/%&|^~!<>=?]+|&&|\|\||<<|>>|\.\.\.|<=>|\*\*|##/
+TOKEN Operator /[+\-\/%&|^~!<>=?]+|&&|\|\||<<|>>|\.\.\.|<=>|##/
 
 === grammar
 Module -> Item*
@@ -196,7 +196,7 @@ ArraySize -> ( Ident / TypeIdent / Number / Operator / STAR )+
 Type -> TypeQual* TypeAtom STAR* AMP*
 TypeQual -> KW_const
 TypeAtom -> QualifiedName TemplateArgs? / KeywordType
-QualifiedName -> ( SCOPE )? Ident ( SCOPE Ident )*
+QualifiedName -> ( SCOPE )? Name ( SCOPE Name )*
 TemplateArgs -> LT Type ( COMMA Type )* GT
 
 # Body (simplified - balance braces)

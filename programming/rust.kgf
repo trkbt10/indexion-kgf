@@ -77,7 +77,7 @@ TOKEN ARROW   /->/
 TOKEN FATARROW /=>/
 TOKEN DCOLON  /::/
 TOKEN DOTDOT  /\.\./
-TOKEN Operator /\?\.|[+\-*\/%&|^!<>=]=?|<<|>>/
+TOKEN Operator /\?\.|<<=|>>=|<<|>>|<=|>=|==|!=|\|\||&&|\+=|-=|\*=|\/=|%=|\+|-|\*|\/|%|&|\||\^|!|=|<|>/
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -205,9 +205,13 @@ WhereClause -> KW_where WherePredicate ( COMMA WherePredicate )* COMMA?
 WherePredicate -> Type COLON TypeBound
 
 Type -> TypeAtom ( Operator TypeAtom )*
-TypeAtom -> AMP Lifetime? KW_mut? Type / STAR KW_const? KW_mut? Type / LBRACKET Type ( SEMI Expr )? RBRACKET / LPAREN TypeList? RPAREN / KW_dyn Type / KW_impl Type / QualifiedPath / TypePath
+TypeAtom -> AMP Lifetime? KW_mut? Type / STAR KW_const? KW_mut? Type / LBRACKET Type ( SEMI Expr )? RBRACKET / LPAREN TypeList? RPAREN / KW_dyn Type / KW_impl Type / FnType / QualifiedPath / TypePath
+
+# Function-pointer type, e.g. `fn(Todo) -> bool`. Without this, transpiled
+# closures-as-parameters can't appear in type position.
+FnType -> KW_fn LPAREN TypeList? RPAREN ReturnType?
 QualifiedPath -> Operator TypePath KW_as TypePath Operator DCOLON Ident GenericArgs?
-TypePath -> ( KW_crate / KW_self / KW_super / KeywordType / Ident ) ( DCOLON Ident GenericArgs? )*
+TypePath -> ( KW_crate / KW_self / KW_super / KeywordType / Ident ) GenericArgs? ( DCOLON Ident GenericArgs? )*
 GenericArgs -> Operator Type ( COMMA Type )* Operator
 TypeList -> Type ( COMMA Type )* COMMA?
 
