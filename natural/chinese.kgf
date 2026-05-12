@@ -62,6 +62,13 @@ Token -> Particle / Pronoun / Preposition / Conjunction / Adverb / Verb
 
 === features
 detection_scope: overlay
+# Kinds whose text becomes a vocab term when this spec is invoked from
+# `sub_tokenize_vocab_via_kgfs`. Native-script only — Latin/ASCII (Alnum)
+# is handled by english.kgf. `Verb` is omitted because the kind only
+# matches a small auxiliary-like set (是/有/做/…); content-bearing verbs
+# come through Hanzi. Particle/Pronoun/Preposition/Conjunction/Adverb/
+# Punct/Quote/Bracket*/Unit/Url/Other are dropped by kind.
+content_token_kinds: Hanzi, Number
 
 === semantics
 

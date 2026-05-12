@@ -62,6 +62,12 @@ Token -> Particle / Pronoun / Conjunction / Adverb / Ending
 
 === features
 detection_scope: overlay
+# Kinds whose text becomes a vocab term when this spec is invoked from
+# `sub_tokenize_vocab_via_kgfs`. Native-script only — Latin/ASCII (Alnum)
+# is handled by english.kgf. Jamo (bare jamo, typically malformed input)
+# is omitted as non-content. Particle/Pronoun/Conjunction/Adverb/Ending/
+# Punct/Quote/Bracket*/Unit/Url/Other are dropped by kind.
+content_token_kinds: Hangul, Number
 
 === semantics
 

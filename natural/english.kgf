@@ -68,6 +68,11 @@ Token -> Contraction / Article / Pronoun / Preposition / Conjunction
 
 === features
 detection_scope: overlay
+# Kinds whose text becomes a vocab term when this spec is invoked from
+# `sub_tokenize_vocab_via_kgfs`. Anything not listed (Article, Pronoun,
+# Preposition, Conjunction, Auxiliary, Question, Negation, Adverb,
+# Contraction, Punct, Quote, Bracket*, Other) is dropped by kind.
+content_token_kinds: Word, ProperNoun, Number, Url, Email
 
 === semantics
 

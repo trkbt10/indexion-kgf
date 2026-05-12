@@ -64,6 +64,12 @@ on Segment: def id=n kind=Number
 
 === features
 detection_scope: overlay
+# Kinds whose text becomes a vocab term when this spec is invoked from
+# `sub_tokenize_vocab_via_kgfs`. Native-script kinds only — Latin/ASCII
+# (Alnum) is handled by english.kgf, so listing Alnum here would
+# double-count on mixed-language docs. Joshi/Punct/Bracket*/Unit/Nbsp/Other
+# are dropped by kind.
+content_token_kinds: Kanji, Hiragana, Katakana, Number
 
 === semantics
 on Segment when $scope("value", "last_word") {
