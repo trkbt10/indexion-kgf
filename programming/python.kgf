@@ -146,6 +146,9 @@ identifier_kinds: Ident
 self_keyword: KW_self
 qualifier_separators: DOT
 vocabulary_token_kinds: Docstring, String
+# NL is insignificant by default; Python additionally emits NL_INDENT for
+# indented newlines, which grep should also skip when matching patterns.
+insignificant_token_kinds: NL_INDENT
 
 === semantics
 # Import dependency edge
