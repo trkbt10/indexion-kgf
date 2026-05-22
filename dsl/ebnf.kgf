@@ -1,0 +1,43 @@
+kgf 0.6
+language: ebnf
+sources: .ebnf
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+
+TOKEN Comment /#[^\r\n]*/
+TOKEN RuleNumber /\[[0-9]+\]/
+TOKEN Define /::=/
+TOKEN Literal /'([^'\\\r\n]|\\.)*'|"([^"\\\r\n]|\\.)*"/
+TOKEN RegexClass /\[[^\]\r\n]+\]/
+TOKEN Ident /[A-Za-z_][A-Za-z0-9_-]*/
+TOKEN LPAREN /\(/
+TOKEN RPAREN /\)/
+TOKEN PIPE /\|/
+TOKEN STAR /\*/
+TOKEN PLUS /\+/
+TOKEN QMARK /\?/
+TOKEN DOT /\./
+TOKEN COMMA /,/
+TOKEN COLON /:/
+TOKEN SLASH /\//
+TOKEN LT /</
+TOKEN GT />/
+TOKEN EQ /=/
+TOKEN MINUS /-/
+TOKEN Other /[^\s]/
+
+=== grammar
+File -> Token*
+
+Token -> NL / Comment / RuleNumber / Define / Literal / RegexClass / Ident
+       / LPAREN / RPAREN / PIPE / STAR / PLUS / QMARK / DOT / COMMA
+       / COLON / SLASH / LT / GT / EQ / MINUS / Other
+
+=== features
+content_type: document
+identifier_kinds: Ident
+coverage_token_kinds: Ident, Literal
+vocabulary_token_kinds: Comment, Literal
+insignificant_token_kinds: Comment

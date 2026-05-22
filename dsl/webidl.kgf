@@ -1,0 +1,79 @@
+kgf 0.6
+language: webidl
+sources: .idl, .webidl
+
+=== lex
+SKIP /[ \t]+/
+TOKEN NL /\r?\n+/
+
+TOKEN LineComment /\/\/[^\r\n]*/
+TOKEN BlockComment /\/\*[\s\S]*?\*\//
+TOKEN StringLit /"([^"\\\r\n]|\\.)*"/
+TOKEN NumberLit /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
+
+KEYWORD KW_partial /partial\b/
+KEYWORD KW_callback /callback\b/
+KEYWORD KW_interface /interface\b/
+KEYWORD KW_mixin /mixin\b/
+KEYWORD KW_dictionary /dictionary\b/
+KEYWORD KW_enum /enum\b/
+KEYWORD KW_typedef /typedef\b/
+KEYWORD KW_includes /includes\b/
+KEYWORD KW_const /const\b/
+KEYWORD KW_attribute /attribute\b/
+KEYWORD KW_readonly /readonly\b/
+KEYWORD KW_static /static\b/
+KEYWORD KW_getter /getter\b/
+KEYWORD KW_setter /setter\b/
+KEYWORD KW_deleter /deleter\b/
+KEYWORD KW_stringifier /stringifier\b/
+KEYWORD KW_constructor /constructor\b/
+KEYWORD KW_iterable /iterable\b/
+KEYWORD KW_async /async\b/
+KEYWORD KW_optional /optional\b/
+KEYWORD KW_required /required\b/
+KEYWORD KW_or /or\b/
+KEYWORD KW_true /true\b/
+KEYWORD KW_false /false\b/
+KEYWORD KW_null /null\b/
+
+TOKEN Ident /_?[A-Za-z][A-Za-z0-9_]*/
+TOKEN Ellipsis /\.\.\./
+TOKEN LBRACE /\{/
+TOKEN RBRACE /\}/
+TOKEN LPAREN /\(/
+TOKEN RPAREN /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN LT /</
+TOKEN GT />/
+TOKEN COLON /:/
+TOKEN SEMI /;/
+TOKEN COMMA /,/
+TOKEN DOT /\./
+TOKEN EQ /=/
+TOKEN QMARK /\?/
+TOKEN PIPE /\|/
+TOKEN MINUS /-/
+TOKEN Other /[^\s]/
+
+=== grammar
+File -> Token*
+
+Token -> NL / LineComment / BlockComment / StringLit / NumberLit
+       / KW_partial / KW_callback / KW_interface / KW_mixin
+       / KW_dictionary / KW_enum / KW_typedef / KW_includes
+       / KW_const / KW_attribute / KW_readonly / KW_static
+       / KW_getter / KW_setter / KW_deleter / KW_stringifier
+       / KW_constructor / KW_iterable / KW_async / KW_optional / KW_required
+       / KW_or / KW_true / KW_false / KW_null
+       / Ident / Ellipsis / LBRACE / RBRACE / LPAREN / RPAREN
+       / LBRACKET / RBRACKET / LT / GT / COLON / SEMI / COMMA
+       / DOT / EQ / QMARK / PIPE / MINUS / Other
+
+=== features
+content_type: document
+identifier_kinds: Ident
+coverage_token_kinds: Ident
+vocabulary_token_kinds: LineComment, BlockComment, StringLit
+insignificant_token_kinds: LineComment, BlockComment
