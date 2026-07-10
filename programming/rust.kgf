@@ -63,8 +63,16 @@ KEYWORD KW_as       /as\b/
 KEYWORD KW_ref      /ref\b/
 KEYWORD KW_move     /move\b/
 
-# Built-in types
-TOKEN KeywordType /\b(?:Self|bool|char|str|i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|Box|Vec|String|Option|Result|Some|None|Ok|Err)\b/
+# NOTE: there is intentionally NO dedicated token for built-in/prelude type
+# names (`Self`, `u8`, `Vec`, `Option`, `Result`, `String`, `Box`, …). None of
+# them are reserved words in Rust: every one is a legal identifier and is used
+# as one in real code — an enum variant `None`, a struct field `Box`, the near
+# universal per-module alias `pub type Result<T> = …`. The lexer is
+# first-match-in-order, so a `KeywordType` token would tokenize those names
+# ahead of `Ident` and make the declaration unmatchable, silently dropping it
+# (and, when it has a brace body, everything after it). These words need no
+# special token anyway: `TypePath` and `Atom` already accept `Ident`, so they
+# parse correctly in type and value position as plain identifiers.
 
 # Macros
 TOKEN Macro /[a-zA-Z_][a-zA-Z0-9_]*!/
@@ -73,11 +81,27 @@ TOKEN Macro /[a-zA-Z_][a-zA-Z0-9_]*!/
 TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Operators
+#
+# `Operator` deliberately omits the bare single characters `&`, `*`, and `=`.
+# The lexer matches token rules in definition order (first match wins, not
+# longest match), so any single char left in this alternation would shadow the
+# dedicated `AMP`, `STAR`, and `EQ` tokens defined below — and the grammar
+# relies on those to recognize reference types (`&str`, `&self`), raw pointers
+# (`*const T`), and declaration bodies (`const X = ...`, `type A = ...`). The
+# multi-char forms `&&`, `*=`, and `==` stay here and still win because they
+# match a longer span at the same position before AMP/STAR/EQ are tried.
+#
+# The shift operators `<<`, `>>`, `<<=`, `>>=` are also omitted so that `<` and
+# `>` are always lexed as single characters. Rust reuses angle brackets for
+# generics, and nested generics close with adjacent `>`s (`Vec<Option<f32>>`);
+# a `>>` right-shift token would swallow both closers and abort the type parse.
+# Shifts only occur inside function bodies, which are matched as opaque atoms,
+# so splitting `>>` into two `>` operators there is harmless.
 TOKEN ARROW   /->/
 TOKEN FATARROW /=>/
 TOKEN DCOLON  /::/
 TOKEN DOTDOT  /\.\./
-TOKEN Operator /\?\.|<<=|>>=|<<|>>|<=|>=|==|!=|\|\||&&|\+=|-=|\*=|\/=|%=|\+|-|\*|\/|%|&|\||\^|!|=|<|>/
+TOKEN Operator /\?\.|<=|>=|==|!=|\|\||&&|\+=|-=|\*=|\/=|%=|\+|-|\/|%|\||\^|!|<|>/
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -152,7 +176,16 @@ ExternUse -> crate_name:Ident UsePathContinuation?
 UsePathContinuation -> DCOLON UsePathTail
 UsePathTail -> UsePathSegment ( DCOLON UsePathSegment )*
 UsePathSegment -> Ident / STAR / LBRACE UseList RBRACE
-UseList -> UsePath ( COMMA UsePath )* COMMA?
+# Grouped imports are routinely written across several lines with one entry per
+# line and a trailing comma:
+#   use crate::foo::{
+#       a::{X, Y},
+#       b::Z,
+#   };
+# The `NL*` slots absorb the newline right after `{`, the newlines between
+# entries, and the newline before `}`; without them a multi-line `self::`/
+# `crate::` group fails to parse and its dependency edge is lost.
+UseList -> NL* UsePath ( NL* COMMA NL* UsePath )* NL* COMMA? NL*
 UsePath -> ( KW_crate / KW_self / KW_super / Ident ) ( DCOLON UsePathSegment )*
 
 # Module declaration
@@ -165,20 +198,30 @@ FnDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const? KW_async? KW_unsafe
 StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
 StructBody -> LBRACE StructField* RBRACE
 TupleBody -> LPAREN TupleField* RPAREN
-StructField -> field_doc:DocBlock? Attribute* KW_pub? field_id:Ident COLON Type COMMA? / NL / LineComment
-TupleField -> field_doc:DocBlock? Attribute* KW_pub? Type COMMA? / NL / LineComment
+# Member items (`StructField`, `EnumVariant`, `TraitItem`, …) carry the same
+# outer metadata as top-level declarations: doc comments and attributes, each
+# on its own line and in any order. Real code writes the doc first
+# (`/// …` then `#[serde(default)]`), but the reverse also occurs
+# (`#[default]` then `/// …`). A `( Attribute / NL )*` group sits on BOTH sides
+# of the optional doc block so attributes and the newlines around them are
+# absorbed wherever they fall; the doc capture still binds because a doc comment
+# is neither an `Attribute` nor an `NL`, so the greedy groups never swallow it.
+# Without this a documented-and-attributed member fails to match and takes its
+# whole struct/enum/trait down with it.
+StructField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? field_id:Ident COLON Type COMMA? / NL / LineComment
+TupleField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? Type COMMA? / NL / LineComment
 
 # Enum declaration
 EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
 EnumBody -> LBRACE EnumVariant* RBRACE
-EnumVariant -> variant_doc:DocBlock? Attribute* variant_id:Ident VariantPayload? COMMA? / NL / LineComment
+EnumVariant -> ( Attribute / NL )* variant_doc:DocBlock? ( Attribute / NL )* variant_id:Ident VariantPayload? COMMA? / NL / LineComment
 VariantPayload -> TupleBody / StructBody / EQ Expr
 
 # Trait declaration
 TraitDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
 SuperTraits -> COLON TypeBound ( Operator TypeBound )*
 TraitBody -> LBRACE TraitItem* RBRACE
-TraitItem -> method_doc:DocBlock? Attribute* KW_fn method_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? ( Body / SEMI ) / NL / LineComment
+TraitItem -> ( Attribute / NL )* method_doc:DocBlock? ( Attribute / NL )* KW_fn method_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? ( Body / SEMI ) / NL / LineComment
 
 # Impl block
 ImplDecl -> doc:DocBlock? NL? Attribute* KW_unsafe? KW_impl GenericParams? ( KW_dyn? Type KW_for )? Type WhereClause? ImplBody
@@ -211,8 +254,14 @@ TypeAtom -> AMP Lifetime? KW_mut? Type / STAR KW_const? KW_mut? Type / LBRACKET 
 # closures-as-parameters can't appear in type position.
 FnType -> KW_fn LPAREN TypeList? RPAREN ReturnType?
 QualifiedPath -> Operator TypePath KW_as TypePath Operator DCOLON Ident GenericArgs?
-TypePath -> ( KW_crate / KW_self / KW_super / KeywordType / Ident ) GenericArgs? ( DCOLON Ident GenericArgs? )*
-GenericArgs -> Operator Type ( COMMA Type )* Operator
+TypePath -> ( KW_crate / KW_self / KW_super / Ident ) GenericArgs? ( DCOLON Ident GenericArgs? )*
+# A generic argument list, e.g. `<'a, T, Item = u8>`. Each argument can be a
+# lifetime (`'a`, `'_`), an associated-type binding (`Item = u8`), or a type.
+# Lifetimes and bindings are tried before the bare-type alternative because a
+# type also begins with an identifier; the binding form relies on the parser
+# backtracking the identifier when no `=` follows.
+GenericArgs -> Operator GenericArg ( COMMA GenericArg )* COMMA? Operator
+GenericArg -> Lifetime / Ident EQ Type / Type
 TypeList -> Type ( COMMA Type )* COMMA?
 
 # Body (simplified - balance braces)
@@ -221,9 +270,9 @@ BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKE
 
 # Expressions
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
-ExprAtom -> Ident / Number / String / RawString / Char / Lifetime / LPAREN / RPAREN / DOT / DOTDOT / COMMA / COLON / DCOLON / ARROW / FATARROW / Operator / STAR / AMP / QMARK / Macro / Attribute
+ExprAtom -> Ident / Number / String / RawString / Char / Lifetime / LPAREN / RPAREN / DOT / DOTDOT / COMMA / COLON / DCOLON / ARROW / FATARROW / Operator / STAR / AMP / EQ / QMARK / Macro / Attribute
 
-Atom -> ExprAtom / NL / DocComment / DocInnerComment / LineComment / BlockComment / KW_fn / KW_pub / KW_struct / KW_enum / KW_trait / KW_impl / KW_type / KW_mod / KW_use / KW_let / KW_mut / KW_const / KW_static / KW_crate / KW_self / KW_super / KW_extern / KW_async / KW_await / KW_dyn / KW_where / KW_if / KW_else / KW_match / KW_loop / KW_while / KW_for / KW_in / KW_return / KW_unsafe / KW_as / KW_ref / KW_move / KeywordType / SEMI / POUND
+Atom -> ExprAtom / NL / DocComment / DocInnerComment / LineComment / BlockComment / KW_fn / KW_pub / KW_struct / KW_enum / KW_trait / KW_impl / KW_type / KW_mod / KW_use / KW_let / KW_mut / KW_const / KW_static / KW_crate / KW_self / KW_super / KW_extern / KW_async / KW_await / KW_dyn / KW_where / KW_if / KW_else / KW_match / KW_loop / KW_while / KW_for / KW_in / KW_return / KW_unsafe / KW_as / KW_ref / KW_move / SEMI / POUND
 
 Other -> Atom
 
