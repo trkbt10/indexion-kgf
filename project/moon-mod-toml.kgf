@@ -1,0 +1,167 @@
+kgf 0.6
+language: moon-mod-toml
+sources: moon.mod
+
+# KGF spec for MoonBit module manifest files in the current TOML format (`moon.mod`).
+#
+# MoonBit migrated the module manifest from JSON (`moon.mod.json`, see
+# moon-mod.kgf) to a TOML dialect (`moon.mod`). This spec parses that dialect.
+# It is deliberately tolerant of blank lines and formatting so real-world
+# manifests parse regardless of layout.
+#
+# Top-level shape:
+#   name        = "org/pkg"
+#   version     = "0.1.0"
+#   description = "..."
+#   license     = "Apache-2.0"
+#   repository  = "https://..."
+#   readme      = "README.mbt.md"
+#   source      = "src"                # optional; source-package sub-directory
+#   keywords    = [ "a", "b", ... ]
+#   import { "org/dep@1.2.3", ... }    # brace-delimited dependency list
+#
+# Extracts the same project-metadata edges as every other manifest spec
+# (projectName / projectVersion / ... / dependsOn) so downstream consumers
+# (resolver identity canonicalization, `plan documentation` metadata) work
+# identically for both manifest formats.
+
+=== lex
+SKIP        /[ \t]+/
+TOKEN NL            /\r?\n/
+TOKEN Comment       /#[^\r\n]*/
+
+# Field-name keywords (must precede the generic Ident token so they win).
+KEYWORD KW_name        /name\b/
+KEYWORD KW_version     /version\b/
+KEYWORD KW_description /description\b/
+KEYWORD KW_license     /license\b/
+KEYWORD KW_repository  /repository\b/
+KEYWORD KW_keywords    /keywords\b/
+KEYWORD KW_readme      /readme\b/
+KEYWORD KW_source      /source\b/
+KEYWORD KW_import      /import\b/
+
+# Values
+TOKEN StringLit     /"([^"\\]|\\.)*"/
+TOKEN NumberLit     /-?[0-9]+(\.[0-9]+)?/
+KEYWORD KW_true       /true\b/
+KEYWORD KW_false      /false\b/
+
+# Punctuation
+TOKEN EQUALS        /=/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
+TOKEN COMMA         /,/
+
+# Generic identifiers (unknown keys, e.g. `bin-deps`, `warn-list`).
+TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_-]*/
+
+=== grammar
+ModMod          -> Item*
+Item            -> Field / NL / Comment
+
+Field           -> NameField / VersionField / DescriptionField / LicenseField
+                 / RepositoryField / ReadmeField / SourceField
+                 / KeywordsField / ImportField
+                 / GenericArrayField / GenericTableField
+                 / GenericStringField / GenericOtherField
+
+# Named string fields
+NameField        -> KW_name EQUALS value:StringLit
+VersionField     -> KW_version EQUALS value:StringLit
+DescriptionField -> KW_description EQUALS value:StringLit
+LicenseField     -> KW_license EQUALS value:StringLit
+RepositoryField  -> KW_repository EQUALS value:StringLit
+ReadmeField      -> KW_readme EQUALS value:StringLit
+SourceField      -> KW_source EQUALS value:StringLit
+
+# keywords = [ ... ] — separators (COMMA / NL / Comment) may appear in any
+# order around the string items, so treat the bracket body as a bag of
+# elements and pick out the string literals.
+KeywordsField    -> KW_keywords EQUALS LBRACKET KwElem* RBRACKET
+KwElem           -> KeywordItem / COMMA / NL / Comment
+KeywordItem      -> value:StringLit
+
+# import { "org/dep@ver", ... } — same tolerant element-bag treatment.
+ImportField      -> KW_import LBRACE ImpElem* RBRACE
+ImpElem          -> ImportItem / COMMA / NL / Comment
+ImportItem       -> value:StringLit
+
+# Generic fallbacks so unknown fields never abort the parse.
+GenericStringField -> key:Ident EQUALS value:StringLit
+GenericOtherField  -> key:Ident EQUALS OtherValue
+OtherValue         -> NumberLit / KW_true / KW_false
+GenericArrayField  -> key:Ident EQUALS LBRACKET GBElem* RBRACKET
+GenericTableField  -> key:Ident EQUALS? LBRACE GBElem* RBRACE
+GBElem             -> StringLit / NumberLit / KW_true / KW_false / Ident
+                    / EQUALS / COMMA / NL / Comment
+
+=== attrs
+on NameField:        note fieldKey payload="name"
+on VersionField:     note fieldKey payload="version"
+on DescriptionField: note fieldKey payload="description"
+on LicenseField:     note fieldKey payload="license"
+on RepositoryField:  note fieldKey payload="repository"
+on KeywordsField:    note fieldKey payload="keywords"
+on ReadmeField:      note fieldKey payload="readme"
+on SourceField:      note fieldKey payload="source"
+on ImportField:      note fieldKey payload="import"
+
+=== semantics
+on NameField {
+  let name = stripQuotes($value)
+  edge projectName from $file to name attrs obj("raw", $value)
+}
+on VersionField {
+  let version = stripQuotes($value)
+  edge projectVersion from $file to version attrs obj("raw", $value)
+}
+on DescriptionField {
+  let desc = stripQuotes($value)
+  edge projectDescription from $file to desc
+}
+on LicenseField {
+  let license = stripQuotes($value)
+  edge projectLicense from $file to license
+}
+on RepositoryField {
+  let repo = stripQuotes($value)
+  edge projectRepository from $file to repo
+}
+on KeywordItem {
+  let kw = stripQuotes($value)
+  edge projectKeyword from $file to kw
+}
+# The `source` field declares the sub-directory (relative to this manifest)
+# holding the project's source packages. Mirrors moon-mod.kgf so the resolver
+# resolves `<project_name>/<rel>` back to `<root>/<source>/<rel>`.
+on SourceField {
+  let src = stripQuotes($value)
+  edge projectSourceDir from $file to src
+}
+# `import` entries look like "org/pkg@version"; drop the version pin so the
+# dependency identity matches the `pkg:org/pkg` form other specs emit.
+on ImportItem {
+  let dep = beforeFirst(stripQuotes($value), "@")
+  edge dependsOn from $file to concat("pkg:", dep)
+}
+
+=== features
+content_type: config
+# This manifest represents an umbrella project (may contain multiple packages).
+manifest_role: project
+# Edge kind whose `to` is the project's canonical identity (e.g. "trkbt10/indexion").
+identity_edge: projectName
+# Edge kind whose `to` is a relative directory under the project root where
+# source packages live. Default is the MoonBit convention "src" when absent.
+source_dir_edge: projectSourceDir
+source_dir_default: src
+
+=== resolver
+relative_prefixes:
+exts: .mod
+indexes:
+bare_prefix: pkg:
+module_path_style: slash
