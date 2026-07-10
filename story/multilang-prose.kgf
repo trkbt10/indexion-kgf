@@ -27,7 +27,6 @@ sources: .md, .markdown, .text, .txt
 # (function words like `Joshi` come before the `Kanji`/`Hiragana` catch-all).
 
 === lex
-SKIP /[ \t　]+/
 TOKEN NL /\r?\n+/
 
 # ────────── Common punctuation (cross-language; emitted as same kind) ──────────
@@ -39,6 +38,7 @@ TOKEN BracketClose /[〉》」』｣)）\]】〕〗〙〛}>❩❫❭❯❱❳❵
 # ────────── Markdown structural markers (so we can ignore them in content) ──────────
 TOKEN MdHeading /^(?:#{1,6})(?=\s)/
 TOKEN MdListMarker /^[ \t]*[-*+](?=\s)/
+TOKEN Space /[ \t　]+/
 
 # ────────── Numbers (Latin digits + CJK numerals via Han block, see below) ──────────
 TOKEN Number /[0-9０-９]+/
@@ -107,17 +107,32 @@ TOKEN EnWord /\b[a-zA-Z]+(?:'s)?\b/
 TOKEN Other /[^\s]+/
 
 === grammar
-Doc -> Token*
-Token -> JpJoshi / JpKatakana / JpKanji / JpHiragana
-       / CnParticle / CnPronoun / CnConjunction / CnAdverb / CnHanzi
-       / KrParticle / KrPronoun / KrEnding / KrHangul
-       / EnUrl / EnEmail / EnContraction / EnArticle / EnPronoun
-       / EnPreposition / EnConjunction / EnAuxiliary / EnQuestion
-       / EnNegation / EnAdverb / EnQuantifier / EnComparison
-       / EnTitle / EnDialogueTag / EnProperNoun / EnWord
-       / MdHeading / MdListMarker
-       / Number / Punct / Quote / BracketOpen / BracketClose
-       / Other
+Doc -> Block*
+Block -> Heading / Paragraph / NL
+
+Heading -> h:MdHeading title:HeadingToken* NL?
+HeadingToken -> JpJoshi / JpKatakana / JpKanji / JpHiragana
+              / CnParticle / CnPronoun / CnConjunction / CnAdverb / CnHanzi
+              / KrParticle / KrPronoun / KrEnding / KrHangul
+              / EnUrl / EnEmail / EnContraction / EnArticle / EnPronoun
+              / EnPreposition / EnConjunction / EnAuxiliary / EnQuestion
+              / EnNegation / EnAdverb / EnQuantifier / EnComparison
+              / EnTitle / EnDialogueTag / EnProperNoun / EnWord
+              / MdListMarker / Space
+              / Number / Punct / Quote / BracketOpen / BracketClose
+              / Other
+
+Paragraph -> p:ParagraphToken+ NL?
+ParagraphToken -> JpJoshi / JpKatakana / JpKanji / JpHiragana
+                / CnParticle / CnPronoun / CnConjunction / CnAdverb / CnHanzi
+                / KrParticle / KrPronoun / KrEnding / KrHangul
+                / EnUrl / EnEmail / EnContraction / EnArticle / EnPronoun
+                / EnPreposition / EnConjunction / EnAuxiliary / EnQuestion
+                / EnNegation / EnAdverb / EnQuantifier / EnComparison
+                / EnTitle / EnDialogueTag / EnProperNoun / EnWord
+                / MdListMarker / Space
+                / Number / Punct / Quote / BracketOpen / BracketClose
+                / Other
 
 === attrs
 
@@ -156,9 +171,31 @@ vocabulary_token_kinds: EnWord, EnProperNoun, JpKanji, JpKatakana, JpHiragana, C
 # (Punct, BracketOpen, BracketClose, Quote, MdListMarker, MdHeading)
 # are excluded so they don't clutter the rendered title.
 section_token: MdHeading
-heading_text_tokens: EnWord, EnProperNoun, EnArticle, EnPronoun, EnPreposition, EnConjunction, EnAuxiliary, EnQuestion, EnNegation, EnAdverb, EnQuantifier, EnComparison, EnTitle, EnDialogueTag, EnContraction, EnUrl, EnEmail, JpKanji, JpKatakana, JpHiragana, JpJoshi, CnHanzi, CnParticle, CnPronoun, CnConjunction, CnAdverb, KrHangul, KrParticle, KrPronoun, KrEnding, Number, Other
+heading_text_tokens: EnWord, EnProperNoun, EnArticle, EnPronoun, EnPreposition, EnConjunction, EnAuxiliary, EnQuestion, EnNegation, EnAdverb, EnQuantifier, EnComparison, EnTitle, EnDialogueTag, EnContraction, EnUrl, EnEmail, JpKanji, JpKatakana, JpHiragana, JpJoshi, CnHanzi, CnParticle, CnPronoun, CnConjunction, CnAdverb, KrHangul, KrParticle, KrPronoun, KrEnding, Number, Other, Space
 
 === semantics
+on Heading when $scope("value", "last_story_block") {
+  let cur = concat($file, "::heading@", $h_pos)
+  edge nextBlock from $scope("value", "last_story_block") to cur attrs obj("rel", "story-block->story-block")
+}
+on Heading {
+  let title = trim($title_text)
+  let cur = concat($file, "::heading@", $h_pos)
+  edge declares from $file to cur attrs obj("name", title, "kind", "Heading")
+  edge contains from $file to cur attrs obj("rel", "file->heading")
+  bind ns "value" name "last_story_block" to cur
+}
+on Paragraph when $scope("value", "last_story_block") {
+  let cur = concat($file, "::paragraph@", $p_pos)
+  edge nextBlock from $scope("value", "last_story_block") to cur attrs obj("rel", "story-block->story-block")
+}
+on Paragraph {
+  let text = trim($p_text)
+  let cur = concat($file, "::paragraph@", $p_pos)
+  edge declares from $file to cur attrs obj("name", slice(text, 0, 96), "kind", "Paragraph")
+  edge contains from $file to cur attrs obj("rel", "file->paragraph")
+  bind ns "value" name "last_story_block" to cur
+}
 
 === resolver
 relative_prefixes: ./, ../
