@@ -363,6 +363,22 @@ on InterfaceHeader {
   bind ns "value" name "child_decl_kind" to "Interface"
   bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  bind ns "value" name "current_interface" to sym_id
+}
+
+# Interface members are part of the interface's public surface: declare
+# them under the interface the header published (MethodSig/PropertySig only
+# occur inside an InterfaceBody, which fires after its header).
+on MethodSig when $scope("value", "current_interface") {
+  let parent = $scope("value", "current_interface")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Method", "doc", $doc)
+}
+
+on PropertySig when $scope("value", "current_interface") {
+  let parent = $scope("value", "current_interface")
+  let sym_id = concat(parent, ".", $id)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", $doc)
 }
 
 on TypeDecl {

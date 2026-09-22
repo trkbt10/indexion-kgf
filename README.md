@@ -110,27 +110,84 @@ Values are comma-separated. For example, `indexion plan reconcile` uses `referen
 
 #### `=== semantics` - Semantic Actions
 
-Defines actions to build semantic graphs:
+Defines how matched grammar rules become graph nodes and edges. Each `on`
+block runs when the named rule has matched; blocks fire **bottom-up** (a rule's
+block runs after every block of its children).
 
 ```
-<RuleName> {
-  <action>
+on <RuleName> [when <expr>] {
+  <statement>*
+} [else { <statement>* }]
+```
+
+Statements:
+- `edge <kind> from <expr> to <expr> [attrs <expr>]` - add an edge (`declares`, `moduleDependsOn`, ...)
+- `let <name> = <expr>` - local value for the rest of the block
+- `bind ns <expr> name <expr> to <expr>` - bind a name in the innermost scope frame
+- `scope push` / `scope pop` - open / close a scope frame (see below)
+- `note <type> [payload <expr>]` - attach a note (`module_doc`, ...)
+- `module <expr> [file <expr>]` - register a module node
+- `for <name> in <expr> { ... }` - iterate an array value
+
+Values:
+- `$label` - the value of a label bound in this rule's grammar expression
+  (`id:Ident`). For a label bound to a multi-token sub-rule this is the LAST
+  token's value; use `$label_text` for the accumulated text.
+- `$file`, `$root`, `$language` - built-in context variables (they shadow
+  locals of the same name; `kgf check` warns about such a `let`).
+- `$scope(ns, name)` - look a binding up, innermost frame first.
+- `$resolve(path)`, `$resolveFrom(base, path)`, `$findAncestor(marker)` - module resolution.
+- Pure functions: `concat`, `obj`, `cond`, `eq`, `not`, `coalesce`, `trim`,
+  `toLower`, `toUpper`, `startsWith`, `containsStr`, `beforeFirst`,
+  `afterFirst`, `slice`, `countOccurrences`, `digits`, `add`, `sub`, `mul`,
+  `div`, `floor`, `first`, `last`, `stripQuotes`, `regexCaptures`,
+  `regexPairs`, `collectLinesAfterPrefixes`, `children`.
+  `obj` drops null values, so an unbound label leaves its attribute out.
+
+Example (declarations with their doc, members attached to their type):
+```
+on FnDecl when $vis {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc_text))
 }
 ```
 
-Actions:
-- `emit(<type>, <fields>)` - Create a node
-- `link(<relation>, <target>)` - Create an edge
-- `scope(<name>)` - Enter a scope
-- `end_scope` - Exit scope
+##### Lexical scoping: `scope push` / `scope pop`
 
-Example:
+`bind` writes into the innermost scope frame and `$scope(ns, name)` searches
+frames innermost-first. Without explicit frames every `bind` in a spec shares
+one flat frame, so a nested declaration permanently clobbers its parent's
+binding: after `class Outer { class Inner { ... } fn m() }`, `current_class`
+still points at `Inner` when `m` fires. `scope push` and `scope pop` bracket a
+declaration's members in their own frame; `scope pop` on the root frame is a
+no-op, so an unbalanced spec degrades to the flat behaviour.
+
+Because blocks fire bottom-up, the frame is opened by a sub-rule that
+completes *before* the body (the declaration header) and closed by the
+enclosing declaration rule, which fires last:
+
 ```
-FnDecl {
-  emit(Function, name: $2.text, params: $4)
-  scope($2.text)
+on ClassHeader {
+  let sym_id = concat($file, "::", $id)
+  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class")
+  scope push
+  bind ns "value" name "current_class" to sym_id
+}
+
+on MethodDecl when $scope("value", "current_class") {
+  let parent = $scope("value", "current_class")
+  edge declares from parent to concat(parent, ".", $id) attrs obj("name", $id, "kind", "Method")
+}
+
+on ClassDecl {
+  scope pop
 }
 ```
+
+Bindings that must outlive the declaration (a `child_decl_sym` read by a later
+sibling rule) go *before* the `scope push`. Symbols registered by `attrs def`
+also land in the innermost frame: the name binding is lexically scoped, the
+symbol node in the graph is permanent. `indexion kgf check` warns when a spec
+uses `scope push` but never `scope pop`, or vice versa.
 
 #### `=== resolver` - Module Resolution
 
