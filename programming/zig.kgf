@@ -46,6 +46,8 @@ KEYWORD KW_try      /try\b/
 KEYWORD KW_catch    /catch\b/
 KEYWORD KW_orelse   /orelse\b/
 KEYWORD KW_anytype  /anytype\b/
+KEYWORD KW_volatile /volatile\b/
+KEYWORD KW_align    /align\b/
 
 # Built-in types
 TOKEN KeywordType /\b(?:void|bool|noreturn|type|anyerror|anytype|anyframe|anyopaque|null|undefined|true|false)\b/
@@ -55,8 +57,11 @@ TOKEN PrimitiveType /\b(?:i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f1
 TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
 TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 
-# Operators
+# Operators.
+# EQ is defined before Operator so a lone `=` is EQ; Operator would
+# otherwise win (first match) and no declaration rule could see an `=`.
 TOKEN ARROW   /=>/
+TOKEN EQ      /=(?![=>])/
 TOKEN Operator /[+\-*\/%&|^~!<>=]+|\+\+|--|\.\.\.|\.\.|\.?\*|\+%|-%-|-%|\*%|<<%|>>%/
 
 # Punctuation
@@ -70,59 +75,67 @@ TOKEN SEMI     /;/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
 TOKEN COLON    /:/
-TOKEN EQ       /=/
 
 === grammar
 Module -> Item*
 
 Item -> NL
-     / ConstDecl
-     / VarDecl
-     / FnDecl
      / StructDecl
      / EnumDecl
      / UnionDecl
+     / FnDecl
+     / ConstDecl
+     / VarDecl
      / TestDecl
      / DocComment
      / Other
+
+# A declared name: Zig has no case rule, so both identifier tokens qualify.
+Name -> Ident / TypeIdent
 
 # Doc block
 DocBlock -> DocComment ( NL DocComment )*
 
 # Const declaration
-ConstDecl -> doc:DocBlock? NL? vis:KW_pub? KW_comptime? KW_const id:Ident ( COLON Type )? EQ Expr SEMI
+ConstDecl -> doc:DocBlock? NL? vis:KW_pub? KW_comptime? KW_const id:Name ( COLON Type )? EQ Expr SEMI
 
 # Var declaration
-VarDecl -> doc:DocBlock? NL? vis:KW_pub? KW_var id:Ident ( COLON Type )? EQ Expr SEMI
+VarDecl -> doc:DocBlock? NL? vis:KW_pub? KW_var id:Name ( COLON Type )? EQ Expr SEMI
 
 # Function declaration
-FnDecl -> doc:DocBlock? NL? vis:KW_pub? KW_export? KW_extern? KW_inline? KW_fn id:Ident LPAREN ParamList? RPAREN ( Type )? Body?
+FnDecl -> doc:DocBlock? NL? vis:KW_pub? KW_export? KW_extern? KW_inline? KW_fn id:Name LPAREN ParamList? RPAREN ( Type )? Body?
 ParamList -> Param ( COMMA Param )*
-Param -> KW_comptime? param_id:Ident COLON ( KW_anytype / Type )
+Param -> KW_comptime? param_id:Name COLON ( KW_anytype / Type )
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_extern? KW_packed? KW_struct StructBody
+StructDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_packed? KW_struct StructBody SEMI?
 StructBody -> LBRACE StructMember* RBRACE
-StructMember -> FieldDecl / FnDecl / NL / LineComment
-FieldDecl -> field_doc:DocBlock? field_id:Ident COLON Type ( EQ Expr )? COMMA?
+StructMember -> StructDecl / EnumDecl / UnionDecl / FnDecl / ConstDecl / VarDecl / FieldDecl / NL / LineComment / DocComment
+FieldDecl -> field_doc:DocBlock? field_id:Name COLON Type ( EQ Expr )? COMMA?
 # KW_packed is defined in lex section
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_enum EnumBody
+EnumDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_enum EnumBody SEMI?
 EnumBody -> LBRACE EnumMember* RBRACE
-EnumMember -> value_doc:DocBlock? value_id:Ident ( EQ Expr )? COMMA? / NL / LineComment
+EnumMember -> value_doc:DocBlock? value_id:Name ( EQ Expr )? COMMA? / NL / LineComment
 
 # Union declaration
-UnionDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Ident EQ KW_extern? KW_union UnionBody
+UnionDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_union UnionBody SEMI?
 UnionBody -> LBRACE UnionMember* RBRACE
-UnionMember -> field_doc:DocBlock? field_id:Ident COLON Type COMMA? / NL / LineComment
+UnionMember -> field_doc:DocBlock? field_id:Name COLON Type COMMA? / NL / LineComment
 
 # Test declaration
 TestDecl -> KW_test String Body
 
 # Types
 Type -> TypeAtom ( Operator TypeAtom )*
-TypeAtom -> PrimitiveType / KeywordType / TypeIdent / Ident / LBRACKET Expr? RBRACKET Type / Operator Type
+# A pointer/slice/array prefix may carry qualifiers: `[]const u8`, `[]u8`,
+# `[N]T`, `*const T`, `?*T`. The qualifiers are keywords, not expressions,
+# so they need their own rule rather than being squeezed into Expr.
+TypeAtom -> PrimitiveType / KeywordType / TypeIdent / Ident
+         / LBRACKET Expr? RBRACKET TypeQual* Type
+         / Operator TypeQual* Type
+TypeQual -> KW_const / KW_volatile / KW_align
 
 # Body (simplified - balance braces)
 Body -> LBRACE BodyContent* RBRACE
@@ -132,9 +145,14 @@ BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKE
 Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
 ExprAtom -> Ident / TypeIdent / Number / String / Char / PrimitiveType / KeywordType / Builtin / LPAREN / RPAREN / DOT / COMMA / COLON / EQ / ARROW / Operator
 
-Atom -> ExprAtom / NL / DocComment / LineComment / KW_const / KW_var / KW_fn / KW_pub / KW_extern / KW_export / KW_inline / KW_comptime / KW_test / KW_struct / KW_enum / KW_union / KW_error / KW_if / KW_else / KW_switch / KW_while / KW_for / KW_return / KW_defer / KW_try / KW_catch / KW_orelse / SEMI
+Atom -> ExprAtom / NL / DocComment / LineComment / KW_volatile / KW_align / KW_anytype / KW_const / KW_var / KW_fn / KW_pub / KW_extern / KW_export / KW_inline / KW_comptime / KW_test / KW_struct / KW_enum / KW_union / KW_error / KW_if / KW_else / KW_switch / KW_while / KW_for / KW_return / KW_defer / KW_try / KW_catch / KW_orelse / SEMI
 
-Other -> Atom
+# Module-level fallback: a balanced bracket group taken as one opaque unit,
+# then any single token including a bracket whose partner is missing, so no
+# construct can stop the module parse and silently drop later declarations.
+Other -> Atom / OpaqueGroup / LBRACE / RBRACE / LBRACKET / RBRACKET / LPAREN / RPAREN
+OpaqueGroup -> LBRACE OpaqueInner* RBRACE / LBRACKET OpaqueInner* RBRACKET / LPAREN OpaqueInner* RPAREN
+OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN !LBRACE !RBRACE !LBRACKET !RBRACKET Atom
 
 === attrs
 on FnDecl:      def id kind=Function doc=doc

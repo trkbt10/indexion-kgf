@@ -2,145 +2,328 @@ kgf 0.6
 language: kgf
 sources: .kgf
 
+# Self-hosting spec: lets indexion index `.kgf` specs themselves.
+#
+# The authority for KGF syntax is the hand-written parser in src/kgf/parser/
+# (parse_kgf, parse_lex, parse_rules, parse_attrs, parse_semantics,
+# parse_resolver, ...). That parser is *line-oriented*: it splits the file on
+# `=== name` at line starts, then walks each section body one trimmed line at
+# a time. This spec models the same shape.
+#
+# Design consequence: a section body is a sequence of LINES. A line is matched
+# structurally when it has one of the known shapes, and otherwise consumed by
+# a generic catch-all line. The section name does not pick the line grammar —
+# free-form sections (ignore, preprocess, preprocess_fst, classify) hold JSON,
+# globs and `term=weight` pairs that no fixed rule could cover, and modelling
+# the body per-section would need a lookahead the PEG cannot express over a
+# header token already consumed. Recognising shapes rather than sections keeps
+# every one of the specs under kgfs/ fully parseable while still extracting
+# structure from the lines that have it.
+
 === lex
 SKIP /[ \t]+/
+
 TOKEN NL /\r?\n/
 
-# Comment
+# Comments run to end of line. Placed before every other rule so a `#` line
+# never has its body lexed as code (regex bodies and prose share characters).
 TOKEN Comment /#[^\r\n]*/
 
-# Section header: triple-equals lex, triple-equals grammar, etc.
-# Cannot use literal triple-equals (KGF parser treats it as section delimiter)
-TOKEN TripleEq /[=]{3}/
+# Section delimiter. Three-or-more `=` only at a line start is what the real
+# parser looks for; the `[=]{3,}` spelling avoids writing a bare `===` here,
+# which the KGF section splitter would read as a delimiter inside this file.
+TOKEN SectionMark /[=]{3,}/
 
-# Header fields
-KEYWORD KW_kgf /kgf\b/
-KEYWORD KW_language /language:/
-KEYWORD KW_sources /sources:/
+# Header keywords.
+KEYWORD KW_kgf /kgf(?![a-zA-Z0-9_])/
+KEYWORD KW_language /language(?=[ \t]*:)/
+KEYWORD KW_sources /sources(?=[ \t]*:)/
 
-# Lex section keywords
-KEYWORD KW_TOKEN /TOKEN\b/
-KEYWORD KW_KEYWORD /KEYWORD\b/
-KEYWORD KW_SKIP /SKIP\b/
-KEYWORD KW_skip_value /skip_value\b/
+# Lex-section rule introducers.
+KEYWORD KW_TOKEN /TOKEN(?![a-zA-Z0-9_])/
+KEYWORD KW_KEYWORD /KEYWORD(?![a-zA-Z0-9_])/
+KEYWORD KW_SKIP /SKIP(?![a-zA-Z0-9_])/
+KEYWORD KW_skip_value /skip_value(?![a-zA-Z0-9_])/
 
-# Attrs / semantics keywords
-KEYWORD KW_on /on\b/
-KEYWORD KW_when /when\b/
-KEYWORD KW_edge /edge\b/
-KEYWORD KW_note /note\b/
-KEYWORD KW_let /let\b/
-KEYWORD KW_from /from\b/
-KEYWORD KW_to /to\b/
-KEYWORD KW_attrs /attrs\b/
-KEYWORD KW_payload /payload\b/
+# Statement keywords of `=== attrs` and `=== semantics`.
+KEYWORD KW_on /on(?![a-zA-Z0-9_])/
+KEYWORD KW_when /when(?![a-zA-Z0-9_])/
+KEYWORD KW_else /else(?![a-zA-Z0-9_])/
+KEYWORD KW_edge /edge(?![a-zA-Z0-9_])/
+KEYWORD KW_bind /bind(?![a-zA-Z0-9_])/
+KEYWORD KW_note /note(?![a-zA-Z0-9_])/
+KEYWORD KW_let /let(?![a-zA-Z0-9_])/
+KEYWORD KW_for /for(?![a-zA-Z0-9_])/
+KEYWORD KW_in /in(?![a-zA-Z0-9_])/
+KEYWORD KW_module /module(?![a-zA-Z0-9_])/
+KEYWORD KW_from /from(?![a-zA-Z0-9_])/
+KEYWORD KW_to /to(?![a-zA-Z0-9_])/
+KEYWORD KW_attrs /attrs(?![a-zA-Z0-9_])/
+KEYWORD KW_payload /payload(?![a-zA-Z0-9_])/
+KEYWORD KW_ns /ns(?![a-zA-Z0-9_])/
+KEYWORD KW_name /name(?![a-zA-Z0-9_])/
+KEYWORD KW_file /file(?![a-zA-Z0-9_])/
 
-# Builtin functions (obj, concat, trim, stripQuotes)
-TOKEN BuiltinFunc /(obj|concat|trim|stripQuotes)(?=[ \t]*\()/
+# A `/…/` pattern body, matched as ONE token.
+#
+# This mirrors parse_lex.find_closing_slash exactly: scan forward, a backslash
+# escapes the next character, the first unescaped `/` closes the pattern. It
+# must come before Slash (and before any catch-all) so that a pattern such as
+# `/[^\/ \t]+/` is a single token instead of a slash-delimited soup. Patterns
+# never span lines, hence the explicit exclusion of CR/LF.
+#
+# The body is wrapped in the ONE capture group, and the alternation inside it
+# is non-capturing. The lexer takes a token's value from the first capture
+# group that participated, so this makes the value the pattern without its
+# delimiters — which is what `parse_lex` stores and what a `pattern` attribute
+# should carry. Leaving the inner alternation capturing would instead yield
+# whichever single character the last repetition matched.
+TOKEN Regex /\/((?:\\[^\r\n]|[^\/\\\r\n])*)\//
 
-# Variable reference
+# String literal, escape-aware.
+TOKEN StringLit /"(\\[^\r\n]|[^"\\\r\n])*"/
+
+# `$name` variable reference in semantics expressions.
 TOKEN Variable /\$[a-zA-Z_][a-zA-Z0-9_]*/
 
-# Regex pattern delimiter and content
-# Full regex /…/ cannot be a single token because the KGF pattern
-# delimiter itself is /…/ and escaped slashes inside would conflict.
-# Instead, Slash is a standalone token and regex innards are caught
-# by other tokens (Ident, character classes in RegexBody, etc.)
-TOKEN RegexBody /[^\/ \t\r\n][^\/ \t\r\n]*/
-TOKEN Slash /\//
-
-# String literal
-TOKEN StringLit /"([^"\\]|\\.)*"/
-
-# Grammar operators
+# Grammar rule arrow. Before Dash so `->` never lexes as `-` followed by `>`.
 TOKEN Arrow /->/
-TOKEN Pipe /\|/
 
-# Punctuation
+# Numbers: version `0.6`, weights `-0.693`, counts. Before Dot/Dash so that a
+# decimal literal stays whole.
+TOKEN Number /-?[0-9]+(\.[0-9]+)*/
+
+# Identifiers. Rule names, token names, labels, feature keys, edge kinds.
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+
+# Punctuation carrying structure in the shapes this spec recognises.
+TOKEN Colon /:/
+TOKEN Comma /,/
+TOKEN Eq /=/
 TOKEN LParen /\(/
 TOKEN RParen /\)/
 TOKEN LBrace /\{/
 TOKEN RBrace /\}/
-TOKEN LBracket /\[/
-TOKEN RBracket /\]/
-TOKEN Star /[*]/
-TOKEN QMark /[?]/
-TOKEN Bang /!/
-TOKEN Colon /:/
-TOKEN Comma /,/
-TOKEN Eq /[=]/
-TOKEN Tilde /~/
-TOKEN At /@/
-
-# Path-like values (resolver section)
-TOKEN PathLit /\.\/[^ \t\r\n,]*/
-
-# File extensions
-TOKEN ExtLit /\.[a-zA-Z0-9]+/
-
-# Dot (after ExtLit so .ext wins)
+TOKEN Slash /\//
+TOKEN Dash /-/
 TOKEN Dot /\./
 
-# List item dash (resolver section)
-TOKEN Dash /-/
-
-# Identifiers
-TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
-
-# Version / numbers
-TOKEN Number /[0-9]+(\.[0-9]+)*/
+# Catch-all for everything a structural line does not need to name: glob
+# metacharacters, JSON punctuation, grammar operators, box drawing, CJK
+# punctuation, prose. One token per run of such characters.
+#
+# Without this the lexer would report "unrecognized input" on the free-form
+# sections, and a spec is only fully parseable when no input is unlexable.
+# `\s` is excluded so a run never swallows the newline that ends a line.
+#
+# `$` is in the excluded set only as the start of a Variable; a `$` that is
+# not followed by an identifier (a regex end anchor `^\d+$`, a replacement
+# backreference `law:$1`) reaches here instead, hence the trailing `|\$`.
+TOKEN Other /[^ \t\r\n#a-zA-Z0-9_$"\/:,=(){}.\-]+|\$/
 
 === grammar
-Spec -> Header Section*
+# A spec is a header followed by sections. Leading blank lines are allowed:
+# ten of the specs under kgfs/ begin with one, and the real parser never
+# requires `kgf` to be the very first byte.
+Spec -> NL* Header Section*
 
-Header -> KW_kgf Number NL
-          KW_language Ident NL
-          KW_sources ExtList NL
+# Header fields are optional and order-independent, matching extract_language
+# / extract_sources, which scan the pre-section text for a prefix rather than
+# reading fixed positions. `sources:` may also be absent entirely (toy/reltext
+# has no sources line) or present with an empty value.
+Header -> KW_kgf version:Number NL HeaderLine*
 
-ExtList -> ExtLit ( Comma ExtLit )*
+HeaderLine -> LanguageLine / SourcesLine / CommentLine / BlankLine
 
-Section -> TripleEq Ident NL SectionBody
+# The language name is free-form text, not an identifier: `go-mod`,
+# `typescript-jsx`, `moon-mod-toml` and `sdd-requirement` all contain dashes,
+# and extract_language simply takes the rest of the line. `lang` therefore
+# captures a run of atoms, and `$lang_text` carries the joined name.
+LanguageLine -> KW_language Colon lang:LangAtom+ NL
 
-SectionBody -> LexRule* / GrammarRule* / AttrRule* / SemanticBlock*
-             / FeatureEntry* / ResolverEntry* / IgnoreEntry*
+# A language name can equal one of this lexer's own keywords: `language: kgf`
+# in this very file lexes its name as KW_kgf, and a future `language: on` or
+# `language: name` would land on those keywords the same way.
+LangAtom -> Ident / Number / Dash / Dot / Slash / AnyKeyword
 
-# Lex rules
-LexRule -> ( KW_TOKEN / KW_KEYWORD / KW_SKIP ) Ident? Slash RegexContent Slash KW_skip_value? NL
-         / Comment NL / NL
-RegexContent -> RegexBody*
+SourcesLine -> KW_sources Colon SourceList? NL
 
-# Grammar rules
-GrammarRule -> rule_id:Ident Arrow Alternative NL
-             / Comment NL / NL
-Alternative -> GrammarAtom+
+SourceList -> SourceItem ( Comma SourceItem )*
 
-GrammarAtom -> Ident Colon Ident / Ident Star? QMark?
-             / LParen Alternative ( Slash Alternative )* RParen Star? QMark?
-             / Bang Ident / StringLit / Slash
+# `.ts`, `.d.ts`, `go.mod`, `build.gradle.kts`, `moon.pkg` — an extension or a
+# whole filename, i.e. dot-separated identifier-ish parts in any arrangement.
+# A part may collide with a keyword the same way a language name can
+# (`sources: .kgf` in this file), so AnyKeyword is admitted here too.
+SourceItem -> ( Dot / Ident / Number / Dash / AnyKeyword )+
 
-# Attr rules
-AttrRule -> KW_on Ident Colon Ident+ NL / Comment NL / NL
+Section -> SectionMark name:SectionName NL SectionBody
 
-# Semantic blocks
-SemanticBlock -> KW_on Ident KW_when? Variable? LBrace SemanticStmt* RBrace NL?
-              / Comment NL / NL
-SemanticStmt -> KW_edge Ident KW_from Variable KW_to Expr KW_attrs? Expr? NL
-             / KW_note Ident KW_payload Expr NL
-             / KW_let Ident Eq Expr NL
-             / Comment NL / NL
-Expr -> BuiltinFunc LParen ExprList RParen / Variable / StringLit / Ident
-ExprList -> Expr ( Comma Expr )*
+# A section name is an identifier, but several of the real names collide with
+# keywords this lexer defines for statement bodies: `=== attrs` lexes its name
+# as KW_attrs, `=== lex`/`=== semantics` as Ident. Accept both so the section
+# header is recognised regardless of which token the name fell into.
+SectionName -> Ident / AnyKeyword
 
-# Feature entries
-FeatureEntry -> Ident Colon Ident ( Comma Ident )* NL / Comment NL / NL
+# The body of every section: a flat sequence of lines. Structural shapes are
+# tried first; SectionLine's last alternative guarantees that any remaining
+# line still gets consumed, so no section can stop the parse.
+SectionBody -> SectionLine*
 
-# Resolver entries
-ResolverEntry -> Ident Colon ResolverValue? NL / Dash ResolverValue NL / Comment NL / NL
-ResolverValue -> Ident+ / PathLit / ExtLit / StringLit / Number
+SectionLine -> CommentLine
+             / BlankLine
+             / TokenLine
+             / SkipLine
+             / GrammarRuleLine
+             / AttrLine
+             / SemanticsOpenLine
+             / SemanticsCloseLine
+             / KeyValueLine
+             / ListItemLine
+             / OtherLine
 
-# Ignore entries
-IgnoreEntry -> Ident NL / Comment NL / NL
+CommentLine -> Comment NL
+
+BlankLine -> NL
+
+# === lex ———————————————————————————————————————————————————————————————
+# TOKEN Name /pattern/ flags? skip_value?
+# KEYWORD Name /pattern/ flags? skip_value?
+TokenLine -> kind:TokenIntro name:Ident pattern:Regex TokenOption* NL
+
+TokenIntro -> KW_TOKEN / KW_KEYWORD
+
+# SKIP /pattern/ — no name, the real parser hardcodes the name "SKIP".
+SkipLine -> KW_SKIP pattern:Regex TokenOption* NL
+
+# Trailing regex flags (`i`) and the `skip_value` marker.
+TokenOption -> KW_skip_value / Ident
+
+# === grammar ————————————————————————————————————————————————————————————
+# Name -> expression, with the expression continued on following indented
+# lines. A continuation is any line that is not itself a new rule header and
+# not a section mark; parse_rules decides this by indentation, but since SKIP
+# discards indentation the equivalent test here is "does not start a rule".
+GrammarRuleLine -> rule:Ident Arrow ExprAtom* NL ContinuationLine*
+
+ContinuationLine -> !SectionMark !RuleHeadStart ExprAtom+ NL
+
+# Two tokens of lookahead: a continuation line must not begin a new rule.
+RuleHeadStart -> Ident Arrow
+
+# An expression atom is any token that can appear inside a PEG expression.
+# Spelled as "anything except a line break" rather than as a real PEG grammar:
+# what matters here is delimiting the line, and the expression text is
+# recovered from the rule's `$_text` when anything needs to read it.
+ExprAtom -> LineAtom
+
+# === attrs ——————————————————————————————————————————————————————————————
+# on RuleName: action param=value; action ...
+AttrLine -> KW_on rule:Ident Colon LineAtom* NL
+
+# === semantics ——————————————————————————————————————————————————————————
+# on RuleName { ... }  /  on RuleName when cond { ... } else { ... }
+#
+# The block body is consumed as lines, so nested braces inside an `obj(...)`
+# argument or a regex literal cannot unbalance it. A statement keeps its own
+# shape only as far as its first token; the rest of the statement is text.
+SemanticsOpenLine -> KW_on rule:Ident WhenClause? LBrace LineAtom* NL
+
+# The condition runs up to the opening brace. `LineAtom` includes LBrace (an
+# `obj(...)` argument or a regex may contain one), so the condition atoms must
+# exclude the brace that opens the block — otherwise the repetition swallows
+# it and the whole `on ... when ... {` line degrades to an unstructured line.
+# A condition is an expression, and no expression in any spec under kgfs/
+# contains a brace, so excluding it outright is exact rather than approximate.
+WhenClause -> KW_when CondAtom+
+
+CondAtom -> !LBrace LineAtom
+
+# `}` and `} else {` close a block. Both are their own line in every spec
+# under kgfs/, and both are matched here so the closing line is structural.
+SemanticsCloseLine -> RBrace ( KW_else LBrace )? LineAtom* NL
+
+# === features / resolver ————————————————————————————————————————————————
+# key: value, value        (features, and the scalar keys of resolver)
+KeyValueLine -> key:Ident Colon LineAtom* NL
+
+# `- step: args` and `-` on its own line (resolver resolve/aliases chains).
+ListItemLine -> Dash LineAtom* NL
+
+# === ignore / preprocess / preprocess_fst / classify ————————————————————
+# and anything else: a non-empty line of arbitrary tokens.
+#
+# Comment and NL are excluded from LineAtom, so OtherLine ends exactly at the
+# end of its line and a trailing `# ...` comment is left for CommentLine.
+OtherLine -> LineAtom+ ( Comment )? NL
+
+# Every token kind that may appear inside a line, except the line terminators
+# (NL, Comment) and SectionMark, which must stay available to terminate a line
+# and to start a section.
+LineAtom -> Ident / Number / StringLit / Regex / Variable
+          / Colon / Comma / Eq / Dot / Dash / Slash / Arrow
+          / LParen / RParen / LBrace / RBrace
+          / AnyKeyword / Other
+
+# Single source of truth for "some keyword token, whichever one".
+#
+# Every KEYWORD above exists to give a statement its shape (`edge ... from`,
+# `on Rule {`). Outside that shape the same word is ordinary text: a section
+# is named `attrs`, a language is named `kgf`, a feature value is named
+# `file`. Each such context therefore admits the whole keyword set, and
+# listing it once here keeps the three consumers (SectionName, LangAtom,
+# LineAtom) from drifting apart as keywords are added.
+AnyKeyword -> KW_kgf / KW_language / KW_sources
+            / KW_TOKEN / KW_KEYWORD / KW_SKIP / KW_skip_value
+            / KW_on / KW_when / KW_else / KW_edge / KW_bind / KW_note
+            / KW_let / KW_for / KW_in / KW_module
+            / KW_from / KW_to / KW_attrs / KW_payload
+            / KW_ns / KW_name / KW_file
 
 === features
 identifier_kinds: Ident
-vocabulary_token_kinds: Comment, StringLit
+vocabulary_token_kinds: Comment, StringLit, Ident
+document_symbol_kinds: Rule, Token, Semantics
+reference_token_kinds: Ident
+
+=== semantics
+# Structure worth indexing: the grammar rules a spec defines, the tokens its
+# lexer emits, and the rules its semantics react to. Each becomes a `declares`
+# edge so `indexion search` / `indexion grep` over kgfs/ finds a spec by the
+# rule, token or edge-producing block it contains.
+
+# `Name -> ...` defines a grammar rule.
+on GrammarRuleLine {
+  let sym_id = concat($file, "::rule::", $rule)
+  edge declares from $file to sym_id attrs obj("name", $rule, "kind", "Rule")
+}
+
+# `TOKEN Name /…/` and `KEYWORD Name /…/` define a token kind. The pattern is
+# carried on the edge so a search can reach a token through what it matches.
+on TokenLine {
+  let sym_id = concat($file, "::token::", $name)
+  edge declares from $file to sym_id attrs obj("name", $name, "kind", "Token", "pattern", $pattern)
+}
+
+# `on Rule {` attaches semantic actions to a grammar rule.
+on SemanticsOpenLine {
+  let sym_id = concat($file, "::semantics::", $rule)
+  edge declares from $file to sym_id attrs obj("name", $rule, "kind", "Semantics")
+}
+
+# `on Rule: ...` attaches attribute actions to a grammar rule.
+on AttrLine {
+  let sym_id = concat($file, "::attrs::", $rule)
+  edge declares from $file to sym_id attrs obj("name", $rule, "kind", "Attrs")
+}
+
+# The `language:` line names the spec; record it as the spec's own symbol.
+on LanguageLine {
+  let name = trim($lang_text)
+  let sym_id = concat($file, "::language::", name)
+  edge declares from $file to sym_id attrs obj("name", name, "kind", "Language")
+}
+
+=== resolver
+sources: .kgf
+exts: .kgf
+module_path_style: slash

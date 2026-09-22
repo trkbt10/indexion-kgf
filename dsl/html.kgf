@@ -5,17 +5,36 @@ sources: .html, .htm
 
 === lex
 SKIP          /(\s+|<!--[\s\S]*?-->)+/
+# A doctype or processing instruction is one token: its internal quoted
+# strings must not be mistaken for tag attributes.
+TOKEN DOCTYPE    /<![A-Za-z][^>]*>|<\?[^>]*>/
 TOKEN TAG_OPEN   /<\/?[A-Za-z][A-Za-z0-9:-]*/
 TOKEN TAG_CLOSE  /\/?>/
-TOKEN ATTR_NAME  /\b[A-Za-z_:][A-Za-z0-9_:-]*(?=\s*=)/
+TOKEN ATTR_NAME  /\b[A-Za-z_:][A-Za-z0-9_:.-]*(?=\s*=)/
 TOKEN EQ         /=/
 TOKEN ATTR_VALUE /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+# Everything between tags: the document's text. It is defined last so a tag
+# always wins at a `<`, and it stops at the next `<` so it never swallows
+# one. Without it the lexer dropped every run of text as unrecognized input,
+# which on a prose-heavy page meant thousands of silently discarded
+# characters; `>` is excluded so a stray `>` still lexes as TAG_CLOSE.
+TOKEN TEXT       /[^<>]+/
+# A bare `<` or `>` that starts no tag (`a < b` in text).
+TOKEN LT         /</
+TOKEN GT         />/
 
 === grammar
-Doc        -> ( Tag / Attr / Other )*
-Tag        -> TAG_OPEN Attr* TAG_CLOSE
+# Every token kind is reachable from Doc, so a whole document is consumed:
+# the parse must not stop at the first construct the tag rules do not cover,
+# or every link after it is lost.
+Doc        -> ( Tag / DOCTYPE / Other )*
+Tag        -> TAG_OPEN TagPart* TAG_CLOSE
+# Inside a tag: name="value" pairs, plus the valueless attributes and stray
+# tokens a real page contains (`<input disabled>`, `<td nowrap>`).
+TagPart    -> Attr / ATTR_NAME / TEXT / EQ / ATTR_VALUE / LT
 Attr       -> ATTR_NAME EQ ATTR_VALUE
-Other      -> TAG_CLOSE
+# Any single token that is not part of a tag.
+Other      -> TAG_CLOSE / TEXT / ATTR_NAME / ATTR_VALUE / EQ / LT / GT
 
 === attrs
 on Attr:      import module=_last

@@ -9,6 +9,9 @@ TOKEN Comment /;[^\r\n]*/
 TOKEN String /"([^"\\]|\\.)*"/
 TOKEN Regex /#"([^"\\]|\\.)*"/
 TOKEN Number /[+-]?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?[MN]?|[+-]?0x[0-9a-fA-F]+|[+-]?0[0-7]+|[+-]?[0-9]+r[0-9a-zA-Z]+|[0-9]+\/[0-9]+/
+KEYWORD KW_require_kw /:require\b/
+KEYWORD KW_use_kw     /:use\b/
+KEYWORD KW_import_kw  /:import\b/
 TOKEN Keyword /:[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-.:]*/
 KEYWORD KW_ns /ns\b/
 KEYWORD KW_def /def\b/
@@ -22,8 +25,13 @@ KEYWORD KW_deftype /deftype\b/
 KEYWORD KW_require /require\b/
 KEYWORD KW_use /use\b/
 KEYWORD KW_import /import\b/
-TOKEN NamespacedSymbol /[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*\/[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-]*/
-TOKEN Symbol /[a-zA-Z_*+!?\-][a-zA-Z0-9_*+!?\-.]*/
+# A Clojure symbol may be built entirely from operator characters (`=`, `<`,
+# `+`, `->`), may carry a namespace (`str/join`, `java.util.UUID/randomUUID`)
+# and `&` is itself the rest-argument symbol. The previous classes covered
+# only alphanumeric-ish names, so every operator symbol was dropped by the
+# lexer and the form around it could not parse.
+TOKEN NamespacedSymbol /[a-zA-Z0-9_*+!?<>=&%$.|-]+\/[a-zA-Z0-9_*+!?<>=&%$.|-]+/
+TOKEN Symbol /[a-zA-Z_*+!?<>=&%$|-][a-zA-Z0-9_*+!?<>=&%$.:|-]*/
 TOKEN LPAREN /\(/
 TOKEN RPAREN /\)/
 TOKEN LBRACKET /\[/
@@ -34,45 +42,71 @@ TOKEN HASH /#/
 TOKEN QUOTE /'/
 TOKEN BACKTICK /`/
 TOKEN TILDE /~/
+# A bare `/` is the division symbol; `%`/`%1` are the anonymous-function
+# arguments of `#(...)`. Both are ordinary source, not stray characters.
+TOKEN SLASH /\//
 TOKEN CARET /\^/
 TOKEN AT /@/
 
 === grammar
 Module -> Form*
-Form -> NsForm / DefnDecl / DefMacroDecl / DefMultiDecl / DefMethodDecl / DefProtocolDecl / DefRecordDecl / DefTypeDecl / DefDecl / Expr / NL
+Form -> Ws
+     / NsForm
+     / DefnDecl / DefMacroDecl / DefMultiDecl / DefMethodDecl
+     / DefProtocolDecl / DefRecordDecl / DefTypeDecl / DefDecl
+     / Expr
+     / Token
 
-NsForm -> LPAREN KW_ns ns:Symbol NsBody RPAREN
-NsBody -> ( RequireForm / UseForm / ImportForm )*
-RequireForm -> LPAREN KW_require RequireSpecs RPAREN
-UseForm -> LPAREN KW_use UseSpecs RPAREN
-ImportForm -> LPAREN KW_import ImportSpecs RPAREN
-RequireSpecs -> ( Symbol / RequireSpec )*
-RequireSpec -> LBRACKET mod:Symbol RequireOpts RBRACKET
-RequireOpts -> ( Keyword ( Symbol / LBRACKET Symbol* RBRACKET ) )*
-UseSpecs -> ( Symbol / UseSpec )*
-UseSpec -> LBRACKET mod:Symbol UseOpts RBRACKET
-UseOpts -> ( Keyword ( Symbol / LBRACKET Symbol* RBRACKET ) )*
-ImportSpecs -> ( Symbol / ImportSpec )*
-ImportSpec -> LPAREN mod:Symbol Symbol* RPAREN
+# A namespace form spans lines and carries an optional docstring, metadata
+# and any number of reference clauses. Without newline handling the whole
+# `(ns ...)` form failed, and with it the file's very first form.
+NsForm -> LPAREN Ws* KW_ns Ws* ns:Symbol Ws* doc:String? NsBody RPAREN
+NsBody -> ( Ws / Meta / RequireForm / UseForm / ImportForm / NsOther )*
+# A reference clause this spec does not model (`:gen-class`, `:refer-clojure`)
+# is skipped as a balanced form rather than stopping the namespace parse.
+NsOther -> LPAREN NsOtherInner* RPAREN / Keyword
+NsOtherInner -> NsOther / !LPAREN !RPAREN Token
+RequireForm -> LPAREN Ws* ( KW_require_kw / KW_require ) RequireSpecs RPAREN
+UseForm -> LPAREN Ws* ( KW_use_kw / KW_use ) UseSpecs RPAREN
+ImportForm -> LPAREN Ws* ( KW_import_kw / KW_import ) ImportSpecs RPAREN
+RequireSpecs -> ( Ws / RequireSpec / Symbol / Keyword )*
+RequireSpec -> LBRACKET Ws* mod:Symbol RequireOpts RBRACKET
+RequireOpts -> ( Ws / Keyword / Symbol / LBRACKET ( Ws / Symbol )* RBRACKET )*
+UseSpecs -> ( Ws / UseSpec / Symbol / Keyword )*
+UseSpec -> LBRACKET Ws* mod:Symbol UseOpts RBRACKET
+UseOpts -> ( Ws / Keyword / Symbol / LBRACKET ( Ws / Symbol )* RBRACKET )*
+ImportSpecs -> ( Ws / ImportSpec / Symbol )*
+ImportSpec -> LPAREN Ws* mod:Symbol ( Ws / Symbol )* RPAREN
 
-DefDecl -> LPAREN KW_def id:Symbol DefBody RPAREN
-DefnDecl -> LPAREN KW_defn id:Symbol DefBody RPAREN
-DefMacroDecl -> LPAREN KW_defmacro id:Symbol DefBody RPAREN
-DefMultiDecl -> LPAREN KW_defmulti id:Symbol DefBody RPAREN
-DefMethodDecl -> LPAREN KW_defmethod id:Symbol DefBody RPAREN
-DefProtocolDecl -> LPAREN KW_defprotocol id:Symbol DefBody RPAREN
-DefRecordDecl -> LPAREN KW_defrecord id:Symbol DefBody RPAREN
-DefTypeDecl -> LPAREN KW_deftype id:Symbol DefBody RPAREN
-DefBody -> doc:String? Meta? ParamVec? Form*
-Meta -> CARET Map
-ParamVec -> LBRACKET Symbol* RBRACKET
+DefDecl -> LPAREN Ws* KW_def Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefnDecl -> LPAREN Ws* KW_defn Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefMacroDecl -> LPAREN Ws* KW_defmacro Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefMultiDecl -> LPAREN Ws* KW_defmulti Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefMethodDecl -> LPAREN Ws* KW_defmethod Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefProtocolDecl -> LPAREN Ws* KW_defprotocol Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefRecordDecl -> LPAREN Ws* KW_defrecord Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+DefTypeDecl -> LPAREN Ws* KW_deftype Ws* id:Symbol Ws* doc:String? DefBody RPAREN
+# What follows the (already captured) docstring: optional metadata, an
+# optional parameter vector, then the body forms.
+DefBody -> Ws* Meta? Ws* ParamVec? InnerForm*
+# A form's contents, stopping before the form's own closing delimiter.
+InnerForm -> !RPAREN !RBRACKET !RBRACE Form
+Meta -> CARET Ws* ( Map / Keyword / Symbol )
+ParamVec -> LBRACKET ( Ws / Symbol / Keyword / Vector / Map / SLASH )* RBRACKET
+# Whitespace and comments may separate any two elements of a form.
+Ws -> NL / Comment
 
-Expr -> Literal / Symbol / NamespacedSymbol / List / Vector / Map / Set / Quote / SyntaxQuote / Unquote / Deref / Meta
+Expr -> Literal / NamespacedSymbol / Symbol / List / Vector / Map / Set / AnonFn / Quote / SyntaxQuote / Unquote / Deref / Meta
+# `#(...)` is an anonymous function literal, distinct from `#{...}` (a set).
+AnonFn -> HASH LPAREN InnerForm* RPAREN
+# Module-level catch-all: one token of any kind, including a delimiter whose
+# partner is missing, so unmodelled or malformed source cannot stop the parse.
+Token -> Literal / NamespacedSymbol / Symbol / Keyword / KW_require_kw / KW_use_kw / KW_import_kw / Comment / NL / HASH / QUOTE / BACKTICK / TILDE / CARET / AT / SLASH / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE
 Literal -> Number / String / Keyword / Regex
-List -> LPAREN Form* RPAREN
-Vector -> LBRACKET Form* RBRACKET
-Map -> LBRACE ( Form Form )* RBRACE
-Set -> HASH LBRACE Form* RBRACE
+List -> LPAREN InnerForm* RPAREN
+Vector -> LBRACKET InnerForm* RBRACKET
+Map -> LBRACE InnerForm* RBRACE
+Set -> HASH LBRACE InnerForm* RBRACE
 Quote -> QUOTE Form
 SyntaxQuote -> BACKTICK Form
 Unquote -> TILDE Form

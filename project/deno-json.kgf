@@ -7,8 +7,15 @@ sources: deno.json, deno.jsonc
 
 === lex
 SKIP        /\s+/
-TOKEN LineComment   /\/\/[^\r\n]*/
-TOKEN BlockComment  /\/\*[\s\S]*?\*\//
+# deno.json is JSONC: comments are legal, and `deno.jsonc` is an explicit
+# source of this spec. They are SKIP rules, not TOKENs: a comment carries no
+# structure, so skipping it in the lexer means no grammar rule has to mention
+# it. As TOKENs (which they were) nothing consumed them, so the FIRST comment
+# in a config file stopped the parse and everything after it was dropped.
+#
+# Both must precede any token that could match a leading `/`.
+SKIP        /\/\/[^\r\n]*/
+SKIP        /\/\*[\s\S]*?\*\//
 
 TOKEN LBRACE        /\{/
 TOKEN RBRACE        /\}/

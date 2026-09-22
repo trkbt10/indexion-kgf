@@ -21,36 +21,52 @@ TOKEN Number /0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
 TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Keywords
+#
+# Dart draws a sharp line between RESERVED words (`class`, `enum`, `final`,
+# `const`, `var`, `extends`, `implements`, `with`, `if`, `return`, `super`, …),
+# which can never be identifiers, and BUILT-IN identifiers (`get`, `set`, `on`,
+# `base`, `interface`, `sealed`, `abstract`, `static`, `late`, `external`,
+# `factory`, `operator`, `mixin`, `extension`, `typedef`, `show`, `hide`,
+# `deferred`, `async`, `await`, `dynamic`, `Function`), which are perfectly
+# legal names for a field, method, parameter or variable — `int get = 1;` and
+# `void f(int on)` are valid Dart.
+#
+# Only the reserved words get `KEYWORD` tokens here. The lexer matches token
+# rules in definition order (first match wins), so a token for a built-in
+# identifier shadows `Ident` everywhere in the file and makes every declaration
+# that uses the name unmatchable — silently dropping the symbol and, when it
+# has a brace body, everything after it. The built-in identifiers are
+# recognized POSITIONALLY instead, through `ContextualKw` / `ContextualModifier`
+# below, which accept a bare identifier only where a declaration actually
+# follows.
+#
+# `import`, `export`, `library` and `part` keep tokens: they are also built-in
+# identifiers, but each only ever starts a top-level directive, and the
+# directive rules would be unwritable without them.
 KEYWORD KW_import   /import\b/
 KEYWORD KW_export   /export\b/
 KEYWORD KW_library  /library\b/
 KEYWORD KW_part     /part\b/
-KEYWORD KW_show     /show\b/
-KEYWORD KW_hide     /hide\b/
 KEYWORD KW_as       /as\b/
-KEYWORD KW_deferred /deferred\b/
 KEYWORD KW_class    /class\b/
+# `mixin`, `extension` and `typedef` are built-in identifiers too, but they
+# still get tokens: `mixin M on Base { }`, `extension E on Base { }` and
+# `typedef T = …;` are otherwise indistinguishable from each other and from an
+# ordinary `Ident TypeIdent` pair, and a PEG cannot compare an identifier's
+# text. Each only ever introduces a top-level declaration, so the cost of the
+# shadowing is limited to a member literally NAMED `mixin` / `extension` /
+# `typedef` — far rarer than the `get`, `set`, `on` and `base` that must stay
+# ordinary identifiers.
 KEYWORD KW_mixin    /mixin\b/
 KEYWORD KW_extension /extension\b/
-KEYWORD KW_enum     /enum\b/
 KEYWORD KW_typedef  /typedef\b/
-KEYWORD KW_abstract /abstract\b/
-KEYWORD KW_sealed   /sealed\b/
-KEYWORD KW_base     /base\b/
-KEYWORD KW_interface /interface\b/
+KEYWORD KW_enum     /enum\b/
 KEYWORD KW_final    /final\b/
 KEYWORD KW_const    /const\b/
 KEYWORD KW_var      /var\b/
-KEYWORD KW_late     /late\b/
-KEYWORD KW_static   /static\b/
-KEYWORD KW_external /external\b/
-KEYWORD KW_factory  /factory\b/
 KEYWORD KW_extends  /extends\b/
 KEYWORD KW_implements /implements\b/
 KEYWORD KW_with     /with\b/
-KEYWORD KW_get      /get\b/
-KEYWORD KW_set      /set\b/
-KEYWORD KW_operator /operator\b/
 KEYWORD KW_if       /if\b/
 KEYWORD KW_else     /else\b/
 KEYWORD KW_switch   /switch\b/
@@ -59,13 +75,14 @@ KEYWORD KW_for      /for\b/
 KEYWORD KW_in       /in\b/
 KEYWORD KW_while    /while\b/
 KEYWORD KW_return   /return\b/
-KEYWORD KW_async    /async\b/
-KEYWORD KW_await    /await\b/
-KEYWORD KW_on       /on\b/
 KEYWORD KW_super    /super\b/
 
-# Built-in types and values
-TOKEN KeywordType /\b(?:void|dynamic|Function|Never|Object)\b/
+# Built-in types and values. Only `void` is a reserved word; `dynamic`,
+# `Function`, `Never` and `Object` are ordinary identifiers (`Object` and
+# `Never` are just classes in dart:core) and must not shadow `Ident` /
+# `TypeIdent` — a field named `Function` or a local `dynamic` is legal Dart.
+# They parse fine as identifiers, which `TypeAtom` already accepts.
+TOKEN KeywordType /\bvoid\b/
 TOKEN BoolLit /\b(?:true|false)\b/
 TOKEN NullLit /\bnull\b/
 TOKEN ThisLit /\bthis\b/
@@ -101,184 +118,421 @@ TOKEN AT       /@/
 === grammar
 Module -> Item*
 
+# Every top-level construct is one of these. `Other` is the catch-all and
+# accepts ANY single token, including a lone bracket, so a declaration the
+# rules only partially match can never stop the module parse: the leftovers are
+# skipped one token at a time and the next declaration is picked up again.
+#
+# Declarations come before the bare `DocBlock` alternative because PEG ordered
+# choice takes the first match — a leading `DocBlock` alternative would swallow
+# the doc that belongs to the declaration below it.
 Item -> NL
      / LibraryDecl
      / ImportDecl
      / ExportDecl
      / PartDecl
-     / ClassDecl
-     / MixinDecl
-     / ExtensionDecl
-     / EnumDecl
-     / TypedefDecl
+     / TypeDecl
      / FunctionDecl
      / VarDecl
-     / DocComment
+     / DocBlock
      / Other
+
+TypeDecl -> ClassDecl / EnumDecl / TypedefDecl / ExtensionDecl / MixinDecl
 
 # Doc block (consecutive /// comments)
 DocBlock -> DocComment ( NL DocComment )*
 
-# Library declaration
-LibraryDecl -> KW_library QualifiedName SEMI
-QualifiedName -> Ident ( DOT Ident )*
+# `get`, `set`, `on`, `base`, `sealed`, `abstract`, `static`, `late`,
+# `external`, `factory`, `operator`, `mixin`, `extension`, `typedef`, `show`,
+# `hide` and `async` are BUILT-IN identifiers with no lexer token of their own
+# (see the lex note). Where one of them acts as a keyword the grammar spells it
+# as a bare `Ident` and pins it down with the shape around it.
+ContextualKw -> Ident
 
-# Import/export declaration
-ImportDecl -> KW_import path:String ( KW_deferred )? ( KW_as Ident )? Combinators? SEMI
-ExportDecl -> KW_export path:String Combinators? SEMI
-Combinators -> ( KW_show / KW_hide ) Ident ( COMMA Ident )*
-PartDecl -> KW_part String SEMI
+# Library / part directives
+LibraryDecl -> KW_library QualifiedName? SEMI
+QualifiedName -> Name ( DOT Name )*
+# The lexer splits identifiers by first-letter case, so a name in declaration
+# position may be either kind.
+Name -> Ident / TypeIdent
 
-# Class declaration
-ClassDecl -> doc:DocBlock? NL? Annotation* Modifier* KW_class id:TypeIdent TypeParams? ExtendsClause? ImplementsClause? WithClause? ClassBody
+# Import/export declaration. `deferred`, `show` and `hide` are built-in
+# identifiers with no token, so the directive tail is simply everything up to
+# the `;` — modelling it as `deferred? (as name)? (show names)*` made the
+# `deferred` slot eat the `show` of `import '…' show Future, Stream;`, after
+# which `Future` was left dangling and got parsed as a MIXIN declaration whose
+# body swallowed the rest of the file.
+ImportDecl -> KW_import path:String DirectiveTail* SEMI
+ExportDecl -> KW_export path:String DirectiveTail* SEMI
+DirectiveTail -> KW_as / Name / COMMA / NL
+PartDecl -> KW_part DirectiveTail* String? SEMI
+
+# ---------------------------------------------------------------------------
+# Declaration metadata
+# ---------------------------------------------------------------------------
+# Every declaration carries the same outer metadata: a doc block, annotations
+# and modifiers, each typically on its own line. A `( Annotation / Modifier /
+# NL )*` group on BOTH sides of the doc absorbs them wherever they fall; the
+# doc capture still binds because a DocBlock is none of those, so the greedy
+# groups never swallow it.
+#
+# The metadata is spelled out in each rule rather than factored into a shared
+# prefix rule because a label binds only inside the rule that writes it: behind
+# an indirection `$doc` would be invisible to the declaration's own semantics.
+DeclMeta -> Annotation / Modifier / NL
+
+# Each type's header is a rule of its own so that it fires BEFORE the body (PEG
+# matches it to completion first, so its event — and the `bind` in its
+# semantics — precedes every member event). That binding is what attaches each
+# method, field and getter to the type it belongs to; without it Dart declared
+# no members at all, because `current_class` was read but never written.
+ClassDecl -> ClassHeader ClassBody
+ClassHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_class id:TypeIdent TypeParams? ExtendsClause? WithClause? ImplementsClause? NL*
 ExtendsClause -> KW_extends Type
 ImplementsClause -> KW_implements TypeList
 WithClause -> KW_with TypeList
 ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> ConstructorDecl / MethodDecl / FieldDecl / GetterDecl / SetterDecl / OperatorDecl / ClassDecl / EnumDecl / NL / LineComment / BlockComment
+# The `!RBRACE` guard is essential. The member list ends at the body's closing
+# brace, and the trailing catch-all — which must accept any token so a member
+# the rules cannot match does not abort the type — would otherwise consume that
+# `}` and run to end of file. `ClassBody`'s own `RBRACE` would then never
+# match, the type would be dropped, and `Item*` would re-parse the whole body
+# at top level: every member declared twice and detached from its type.
+#
+# Order matters: a getter/setter and a constructor must both be tried before
+# the general method rule, which would otherwise match their shape first.
+ClassMember -> !RBRACE ( NL / LineComment / BlockComment
+            / TypeDecl / GetterDecl / SetterDecl / OperatorDecl
+            / ConstructorDecl / MethodDecl / FieldDecl
+            / SEMI / MemberOther )
+# Inside a body the catch-all must not swallow a brace either: an unbalanced
+# one would run past the body's end exactly like `RBRACE` above.
+MemberOther -> Atom / LPAREN / RPAREN / LBRACKET / RBRACKET / Body
 
-# Mixin declaration
-MixinDecl -> doc:DocBlock? NL? Annotation* KW_mixin id:TypeIdent TypeParams? ( KW_on TypeList )? ImplementsClause? MixinBody
-MixinBody -> LBRACE MixinMember* RBRACE
-MixinMember -> MethodDecl / FieldDecl / GetterDecl / SetterDecl / NL / LineComment / BlockComment
-
-# Extension declaration
-ExtensionDecl -> doc:DocBlock? NL? Annotation* KW_extension id:TypeIdent? TypeParams? KW_on Type ExtensionBody
-ExtensionBody -> LBRACE ExtensionMember* RBRACE
-ExtensionMember -> MethodDecl / GetterDecl / SetterDecl / OperatorDecl / NL / LineComment / BlockComment
+# Mixin / extension declarations. `on` stays a built-in identifier with no
+# token (a method named `on` is ordinary Dart), so the `on <type>` clause is
+# matched as `ContextualKw Type`.
+MixinDecl -> MixinHeader ClassBody
+MixinHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_mixin id:TypeIdent TypeParams? ( ContextualKw TypeList )? ImplementsClause? NL*
+# A mixin's header ends in `on …`, `implements …` or directly in its body.
+ExtensionDecl -> ExtensionHeader ClassBody
+# An extension always has an `on <type>` clause before its body, which is what
+# distinguishes it.
+ExtensionHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_extension id:TypeIdent? TypeParams? ContextualKw Type NL*
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Annotation* KW_enum id:TypeIdent ImplementsClause? WithClause? EnumBody
-EnumBody -> LBRACE EnumValue* ( SEMI ClassMember* )? RBRACE
-EnumValue -> value_doc:DocBlock? Annotation* value_id:Ident ( LPAREN ( Expr ( COMMA Expr )* )? RPAREN )? COMMA?
+EnumDecl -> EnumHeader EnumBody
+EnumHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_enum id:TypeIdent TypeParams? WithClause? ImplementsClause? NL*
+EnumBody -> LBRACE NL* EnumValueList? ( SEMI ClassMember* )? NL* RBRACE
+EnumValueList -> EnumValue ( NL* COMMA NL* EnumValue )* ( NL* COMMA )? NL*
+EnumValue -> NL* value_pre:DeclMeta* value_doc:DocBlock? DeclMeta* value_id:Name ( TypeArgs? LPAREN BodyContent* RPAREN )?
 
-# Typedef declaration
-TypedefDecl -> doc:DocBlock? NL? KW_typedef id:TypeIdent TypeParams? Operator Type SEMI
+# Typedef declaration.
+TypedefDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_typedef id:TypeIdent TypeParams? ( Operator Type / LPAREN NL* ParamList? NL* RPAREN ) SEMI
 
-# Constructor declaration
-ConstructorDecl -> doc:DocBlock? NL? Annotation* Modifier* TypeIdent ( DOT id:Ident )? LPAREN ParamList? RPAREN ( COLON InitializerList )? ( Body / ARROW Expr SEMI / SEMI )
-InitializerList -> Initializer ( COMMA Initializer )*
-Initializer -> ( KW_super / ThisLit ) ( DOT Ident )? LPAREN ( Expr ( COMMA Expr )* )? RPAREN / Ident Operator Expr
+# Constructor declaration — the class name, optionally `.named`, directly
+# followed by a parameter list. `factory` and `const` may precede it.
+ConstructorDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* TypeIdent ( DOT id:Name )? LPAREN NL* ParamList? NL* RPAREN ( COLON NL* InitializerList )? NL* ( Body / ARROW NL* Expr SEMI / SEMI )
+InitializerList -> Initializer ( NL* COMMA NL* Initializer )*
+Initializer -> ( KW_super / ThisLit ) ( DOT Name )? LPAREN BodyContent* RPAREN / ThisLit DOT Name Operator DefaultExpr / Name Operator DefaultExpr
 
-# Method declaration
-MethodDecl -> doc:DocBlock? NL? Annotation* Modifier* Type? method_id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_async )? ( Body / ARROW Expr SEMI / SEMI )
+# Method declaration. The return type is optional (Dart allows it to be
+# omitted), which is why a getter and a constructor must be tried first.
+MethodDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? method_id:Name TypeParams? LPAREN NL* ParamList? NL* RPAREN AsyncMarker? NL* ( Body / ARROW NL* Expr SEMI / SEMI )
+# `async`, `async*`, `sync*` — a built-in identifier, optionally starred, that
+# sits between the parameter list and the body.
+AsyncMarker -> ContextualKw &( Operator? ( LBRACE / ARROW ) ) Operator?
 
-# Field declaration
-FieldDecl -> doc:DocBlock? NL? Annotation* Modifier* Type field_id:Ident ( Operator Expr )? SEMI
+# Field declaration. Several fields may share one type and initializer list.
+FieldDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? field_id:Name ( Operator Expr )? ( COMMA Name ( Operator Expr )? )* SEMI
 
-# Getter/Setter declaration
-GetterDecl -> doc:DocBlock? NL? Annotation* Modifier* Type? KW_get getter_id:Ident ( Body / ARROW Expr SEMI / SEMI )
-SetterDecl -> doc:DocBlock? NL? Annotation* Modifier* KW_set setter_id:Ident LPAREN Param RPAREN ( Body / ARROW Expr SEMI / SEMI )
+# Getter / setter. `get` and `set` are built-in identifiers, recognized here by
+# the name that follows: `Type get name`, `set name(v)`.
+GetterDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? ContextualKw &Name getter_id:Name AsyncMarker? NL* ( Body / ARROW NL* Expr SEMI / SEMI )
+SetterDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? ContextualKw &( Name LPAREN ) setter_id:Name LPAREN NL* ParamList? NL* RPAREN AsyncMarker? NL* ( Body / ARROW NL* Expr SEMI / SEMI )
 
-# Operator declaration
-OperatorDecl -> doc:DocBlock? NL? Annotation* Modifier* Type KW_operator Operator LPAREN ParamList? RPAREN ( Body / ARROW Expr SEMI )
+# Operator declaration — `operator` is a built-in identifier followed by the
+# operator symbol and a parameter list.
+OperatorDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? ContextualKw &OperatorSymbol op:OperatorSymbol LPAREN NL* ParamList? NL* RPAREN NL* ( Body / ARROW NL* Expr SEMI )
+OperatorSymbol -> LBRACKET RBRACKET Operator? / Operator / LT / GT
 
-# Top-level function declaration
-FunctionDecl -> doc:DocBlock? NL? Annotation* Type? func_id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_async )? ( Body / ARROW Expr SEMI / SEMI )
+# Top-level function / variable
+FunctionDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type? func_id:Name TypeParams? LPAREN NL* ParamList? NL* RPAREN AsyncMarker? NL* ( Body / ARROW NL* Expr SEMI / SEMI )
+# A top-level variable needs a type or a `final`/`const`/`var` modifier, plus
+# the closing `;` — otherwise a stray identifier anywhere in the file would
+# be declared as one.
+VarDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* Type var_id:Name ( Operator Expr )? ( COMMA Name ( Operator Expr )? )* SEMI
 
-# Top-level variable declaration
-VarDecl -> doc:DocBlock? NL? Annotation* Modifier* Type var_id:Ident ( Operator Expr )? SEMI
+# Modifiers. Dart's declaration modifiers other than `final`, `const` and
+# `var` (`abstract`, `base`, `interface`, `sealed`, `static`, `late`,
+# `external`, `factory`, `covariant`, `required`) are BUILT-IN identifiers with
+# no token, so a bare identifier counts as a modifier only where another
+# modifier or a declaration keyword actually follows it. A field NAMED `base`
+# is therefore left alone for the declaration rules, which a plain `Ident`
+# alternative would not do.
+Modifier -> KW_final / KW_const / KW_var / ContextualModifier
+ContextualModifier -> Ident &( ( Ident / Annotation / NL / KW_final / KW_const / KW_var )* ( KW_class / KW_mixin / KW_extension / KW_typedef / KW_enum / MemberStart ) )
+MemberStart -> Type Name ( LPAREN / LBRACE / SEMI / Operator / ARROW / LT )
 
-# Modifiers
-Modifier -> KW_abstract / KW_sealed / KW_base / KW_interface / KW_final / KW_const / KW_var / KW_late / KW_static / KW_external / KW_factory
-
-# Parameters
-ParamList -> Param ( COMMA Param )* / OptionalParams / NamedParams
-Param -> NL* Annotation* ( Ident ( ThisLit DOT / SuperLit DOT ) param_id:Ident / ( KW_final / KW_var / KW_const )? Type? ( ThisLit DOT / SuperLit DOT )? param_id:Ident ) ( Operator Expr )?
-OptionalParams -> LBRACKET Param ( COMMA Param )* RBRACKET
-NamedParams -> LBRACE Param ( COMMA Param )* COMMA? NL* RBRACE
+# Parameters. Dart has three flavours: positional required, positional optional
+# (`[a, b]`) and named (`{a, b}`), and a constructor parameter may forward to a
+# field with `this.x` / `super.x`.
+ParamList -> PositionalParams ( NL* COMMA NL* ( OptionalParams / NamedParams ) )? ( NL* COMMA )? NL*
+           / OptionalParams / NamedParams
+PositionalParams -> Param ( NL* COMMA NL* Param )*
+OptionalParams -> LBRACKET NL* Param ( NL* COMMA NL* Param )* ( NL* COMMA )? NL* RBRACKET
+NamedParams -> LBRACE NL* Param ( NL* COMMA NL* Param )* ( NL* COMMA )? NL* RBRACE
+# `required` and `covariant` are built-in identifiers that only ever precede a
+# parameter, so a bare identifier counts as one of them only when a WHOLE
+# parameter still follows it — a type AND a name, or a `this.` / `super.`
+# field-forwarding form. Requiring just "another identifier" was not enough:
+# in `bool complete(int id)` the modifier rule then swallowed the type `int`,
+# leaving `id` to serve as both type and name, and the parameter list — with
+# the entire method — failed to parse.
+Param -> NL* Annotation* NL* ParamModifier* ParamCore ParamTail? ( Operator DefaultExpr )?
+ParamCore -> ( ThisLit / SuperLit ) DOT param_id:Name / Type param_id:Name / param_id:Name
+ParamModifier -> KW_final / KW_const / KW_var / Ident &ParamCore
+# A function-typed parameter: `void Function(int) cb` is handled by `Type`, but
+# the old-style `void cb(int x)` form carries its own parameter list.
+ParamTail -> LPAREN NL* ParamList? NL* RPAREN
 
 # Types
-TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
-TypeParam -> TypeIdent ( KW_extends Type )?
-TypeList -> Type ( COMMA Type )*
-Type -> TypeAtom ( Operator TypeAtom )* QMARK?
-TypeAtom -> TypeIdent TypeArgs? / Ident / KeywordType / LPAREN Type RPAREN / LPAREN TypeList RPAREN ARROW Type
-TypeArgs -> LT Type ( COMMA Type )* GT
-# Body (simplified - balance braces)
+TypeParams -> LT NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* GT
+TypeParam -> Annotation* TypeIdent ( KW_extends Type )?
+TypeList -> Type ( NL* COMMA NL* Type )*
+# A function type is `R Function(args)?` — `Function` is a built-in identifier,
+# so it is matched as a bare `Ident` directly followed by `(`. The suffix is
+# guarded by an and-predicate requiring a NAME after the closing paren: without
+# it the suffix greedily ate the declaration's own `f()` in `void f() {}`, the
+# method rule found no name left, and NO method in any file was ever declared.
+Type -> TypeAtom QMARK? FunctionTypeSuffix*
+# The trailing and-predicate is what keeps the suffix from eating the
+# declaration's OWN `name()` — in `void f() {}` it must not swallow `f()` and
+# leave the method rule with no name. A real function type is always followed
+# by the declared name, an `=`, a `,`/`)` (type argument or parameter
+# position) or the `;` of a typedef.
+# `Function` is capitalized, so it lexes as `TypeIdent`, not `Ident`; `Name`
+# accepts either.
+FunctionTypeSuffix -> Name &( LPAREN ) LPAREN NL* TypeList? NL* RPAREN QMARK? &( Name / Operator / SEMI / COMMA / RPAREN / GT )
+TypeAtom -> KeywordType / Name TypeArgs? ( DOT Name TypeArgs? )? / LPAREN NL* TypeList? NL* RPAREN ARROW Type / LPAREN NL* Type NL* RPAREN
+TypeArgs -> LT NL* TypeArgList? NL* GT
+TypeArgList -> Type ( NL* COMMA NL* Type )*
+
+# Body — an opaque balanced-bracket group. Nothing inside a function body is
+# part of a type's public surface, so its contents only need to be consumed
+# safely, with every bracket pair matched so the body ends at the right `}`.
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
-# Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NullLit / ThisLit / SuperLit / KeywordType / KW_const / KW_as / KW_await / LPAREN / RPAREN / DOT / CASCADE / ARROW / NULLCOND / NULLCOAL / LT / GT / Operator / Annotation
+# Expressions — an initializer or an `=>` body. Dart puts collection literals,
+# closures and cascades there, so an expression is a run of atoms and balanced
+# bracket groups, exactly like a body. Modelling it any more precisely only
+# creates new ways to stop the parse.
+Expr -> ExprItem+
+# `NL` is an expression item, not a terminator: an `=>` body routinely wraps
+# across lines (`List<Task> get pending =>` then the expression on the next
+# line), and the expression only ends at its `;`. Unlike Kotlin or Go, Dart has
+# no newline-sensitive statement termination, so this is safe.
+ExprItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / ExprAtom / NL
+ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NullLit / ThisLit / SuperLit / KeywordType / KW_const / KW_as / KW_if / KW_else / KW_switch / KW_case / KW_in / KW_super / DOT / COMMA / COLON / CASCADE / ARROW / NULLCOND / NULLCOAL / QMARK / LT / GT / Operator / Annotation
+# A default value ends at the comma or bracket that ends its parameter, so
+# unlike `Expr` it must NOT accept a bare `,`; a comma inside it is nested in a
+# bracket group, which `DefaultItem` consumes whole. Without this the default
+# of the first parameter swallowed every parameter after it.
+DefaultExpr -> DefaultItem+
+DefaultItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / DefaultAtom
+DefaultAtom -> Ident / TypeIdent / Number / String / BoolLit / NullLit / ThisLit / SuperLit / KeywordType / KW_const / KW_as / DOT / COLON / CASCADE / ARROW / NULLCOND / NULLCOAL / QMARK / LT / GT / Operator / Annotation
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_import / KW_export / KW_library / KW_part / KW_show / KW_hide / KW_as / KW_deferred / KW_class / KW_mixin / KW_extension / KW_enum / KW_typedef / KW_abstract / KW_sealed / KW_base / KW_interface / KW_final / KW_const / KW_var / KW_late / KW_static / KW_external / KW_factory / KW_extends / KW_implements / KW_with / KW_get / KW_set / KW_operator / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_async / KW_await / KW_on / KW_super / SEMI / COMMA / COLON / QMARK / AT
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_import / KW_export / KW_library / KW_part / KW_class / KW_mixin / KW_extension / KW_typedef / KW_enum / KW_final / KW_var / KW_extends / KW_implements / KW_with / KW_for / KW_while / KW_return / SEMI / AT
 
-Other -> Atom
+# Catch-all: one token of any kind, including a bracket whose partner the
+# declaration rules never reached (an `Atom` only accepts balanced groups).
+Other -> Atom / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === attrs
-on ClassDecl:     def id kind=Class doc=doc
-on MixinDecl:     def id kind=Mixin doc=doc
-on ExtensionDecl: def id kind=Extension doc=doc
-on EnumDecl:      def id kind=Enum doc=doc
-on TypedefDecl:   def id kind=Typedef doc=doc
-on FunctionDecl:  def func_id kind=Function doc=doc
-on MethodDecl:    def method_id kind=Method doc=doc
-on FieldDecl:     def field_id kind=Field doc=doc
-on GetterDecl:    def getter_id kind=Getter doc=doc
-on SetterDecl:    def setter_id kind=Setter doc=doc
-on VarDecl:       def var_id kind=Variable doc=doc
-on EnumValue:     def value_id kind=EnumValue doc=value_doc
-on Param:         def param_id kind=Param
-
-on ImportDecl:    import module=path
+on ClassHeader:     def id kind=Class doc=doc
+on MixinHeader:     def id kind=Mixin doc=doc
+on ExtensionHeader: def id kind=Extension doc=doc
+on EnumHeader:      def id kind=Enum doc=doc
+on TypedefDecl:     def id kind=Typedef doc=doc
+on FunctionDecl:    def func_id kind=Function doc=doc
+on MethodDecl:      def method_id kind=Method doc=doc
+on FieldDecl:       def field_id kind=Field doc=doc
+on GetterDecl:      def getter_id kind=Getter doc=doc
+on SetterDecl:      def setter_id kind=Setter doc=doc
+on ConstructorDecl: def id kind=Constructor doc=doc
+on VarDecl:         def var_id kind=Variable doc=doc
+on EnumValue:       def value_id kind=EnumValue doc=value_doc
+on ParamCore:       def param_id kind=Param
 
 === features
-function_kinds: Function
+function_kinds: Function, Method, Getter, Setter, Constructor
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependency
+# Import dependency. Note there is deliberately no `on ImportDecl: import ...`
+# line in the `=== attrs` section: an attrs `import` directive emits its own
+# moduleDependsOn edge, so having both produced two identical edges per import.
 on ImportDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
-
-# Dart top-level declarations
-# In Dart, names starting with _ are library-private.
-on ClassDecl when not(eq(slice($id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
-}
-on MixinDecl when not(eq(slice($id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Mixin", "doc", $doc)
-}
-on ExtensionDecl when not(eq(slice($id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Extension", "doc", $doc)
-}
-on EnumDecl when not(eq(slice($id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
-}
-on TypedefDecl when not(eq(slice($id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
-}
-on FunctionDecl when not(eq(slice($func_id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
-}
-on VarDecl when not(eq(slice($var_id, 0, 1), "_")) {
-  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+on ExportDecl {
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Method in class
-on MethodDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+# ---------------------------------------------------------------------------
+# Enclosing-type stack
+# ---------------------------------------------------------------------------
+# A type nested in another type's body belongs to that type, and a declaration
+# written AFTER that body belongs to whatever enclosed it — so the enclosing
+# type has to behave like a stack, while `bind`/`$scope` is a FLAT map with no
+# save/restore of its own.
+#
+# The stack is kept explicitly, as a `|`-joined string in `type_stack` whose
+# FIRST entry is the innermost type. A header pushes by PREPENDING its own
+# symbol; the declaration rule (which fires after its whole body, events being
+# bottom-up) pops by dropping everything up to the first separator. Prepending
+# is what makes both ends reachable with the string builtins available:
+# `beforeFirst` reads the top, `afterFirst` drops it.
+#
+# `current_type` mirrors the top of the stack so the member rules can read it
+# with a single lookup; an empty string means file level. Before this the spec
+# read `current_class` / `current_enum` that nothing ever bound, so no method,
+# field or enum value was ever declared.
+on ClassHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+on MixinHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+on ExtensionHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+on EnumHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
 
-# Field in class
-on FieldDecl when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc)
+on ClassDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on MixinDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on ExtensionDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on EnumDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
 }
 
-# Enum value
-on EnumValue when $scope("value", "current_enum") {
-  let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $value_id)
-  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+# Dart has no visibility keywords: a name is library-private exactly when it
+# starts with `_`, and public otherwise. That applies to members as much as to
+# top-level declarations.
+#
+# A header has already pushed itself when its edge fires, so the type it is
+# nested in is the SECOND stack entry.
+on ClassHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on MixinHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Mixin", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on ExtensionHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Extension", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on EnumHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on TypedefDecl when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", trim($doc_text))
+}
+
+on FunctionDecl when cond($func_id, not(eq(slice($func_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on VarDecl when cond($var_id, not(eq(slice($var_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on MethodDecl when cond($method_id, not(eq(slice($method_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on FieldDecl when cond($field_id, not(eq(slice($field_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $field_id) attrs obj("name", $field_id, "kind", "Field", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on GetterDecl when cond($getter_id, not(eq(slice($getter_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $getter_id) attrs obj("name", $getter_id, "kind", "Getter", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on SetterDecl when cond($setter_id, not(eq(slice($setter_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $setter_id) attrs obj("name", $setter_id, "kind", "Setter", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A named constructor (`Task.fromJson(...)`) declares its own member; the
+# unnamed one carries no `id` and adds nothing beyond the class itself.
+on ConstructorDecl when cond($id, not(eq(slice($id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", "Constructor", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# An enum value is a public constant of its enum. The header pushed the enum
+# before the body was parsed.
+on EnumValue when cond($scope("value", "current_type"), not(eq(slice($value_id, 0, 1), "_"))) {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $value_id) attrs obj("name", $value_id, "kind", "EnumValue", "doc", trim($value_doc_text))
 }
 
 === resolver

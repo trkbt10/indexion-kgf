@@ -28,7 +28,17 @@ KEYWORD KW_import     /import\b/
 KEYWORD KW_class      /class\b/
 KEYWORD KW_interface  /interface\b/
 KEYWORD KW_enum       /enum\b/
+# `record`, `sealed` and `permits` are CONTEXTUAL keywords: legal identifiers
+# elsewhere. They still get tokens, unlike `var`, because a PEG cannot compare
+# an identifier's text and the record declaration is otherwise indistinguishable
+# from a method — `record User(int id) { }` and `String user(int id) { }` have
+# exactly the same token shape, so without a token one of the two is always
+# parsed as the other. They are RESTRICTED identifiers in modern Java (they
+# cannot name a type), which bounds the cost of the shadowing to a local
+# variable or method spelled `record` / `sealed` / `permits`.
 KEYWORD KW_record     /record\b/
+KEYWORD KW_sealed     /sealed\b/
+KEYWORD KW_permits    /permits\b/
 KEYWORD KW_extends    /extends\b/
 KEYWORD KW_implements /implements\b/
 KEYWORD KW_public     /public\b/
@@ -37,8 +47,6 @@ KEYWORD KW_protected  /protected\b/
 KEYWORD KW_static     /static\b/
 KEYWORD KW_final      /final\b/
 KEYWORD KW_abstract   /abstract\b/
-KEYWORD KW_sealed     /sealed\b/
-KEYWORD KW_permits    /permits\b/
 KEYWORD KW_default    /default\b/
 KEYWORD KW_void       /void\b/
 KEYWORD KW_new        /new\b/
@@ -60,8 +68,14 @@ KEYWORD KW_do         /do\b/
 KEYWORD KW_break      /break\b/
 KEYWORD KW_continue   /continue\b/
 
-# Built-in types
-TOKEN KeywordType /\b(?:int|byte|short|long|float|double|boolean|char|var)\b/
+# Built-in primitive types. These eight ARE reserved words in Java, so giving
+# them tokens is safe. `var` is NOT among them: it is a reserved TYPE NAME
+# only, and stays a perfectly legal name for a field, parameter, method or
+# package — `int var = 1;` compiles. The lexer matches token rules in
+# definition order, so listing `var` here shadowed `Ident` everywhere and made
+# every such declaration unmatchable. `var` is matched as an ordinary `Ident`
+# in type position, which `TypeAtom`'s `QualifiedName` alternative accepts.
+TOKEN KeywordType /\b(?:int|byte|short|long|float|double|boolean|char)\b/
 
 # Boolean literals
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -93,134 +107,400 @@ TOKEN AT       /@/
 === grammar
 Module -> Item*
 
+# Every top-level construct is one of these. `Other` is the catch-all and
+# accepts ANY single token, including a lone bracket, so a declaration the
+# rules only partially match can never stop the module parse: the leftovers are
+# skipped one token at a time and the next declaration is picked up again.
+#
+# Declarations come before the bare `DocComment` alternative because PEG
+# ordered choice takes the first match — a leading `DocComment` alternative
+# would swallow the doc that belongs to the declaration below it.
 Item -> NL
      / PackageDecl
      / ImportDecl
-     / ClassDecl
-     / InterfaceDecl
-     / EnumDecl
-     / RecordDecl
+     / TypeDecl
      / DocComment
      / Other
 
+TypeDecl -> ClassDecl / InterfaceDecl / EnumDecl / RecordDecl / AnnotationTypeDecl
+
 # Package declaration
-PackageDecl -> Annotation* KW_package QualifiedName SEMI
+PackageDecl -> Annotation* NL* KW_package QualifiedName SEMI
 
 # Import declaration
 ImportDecl -> KW_import KW_static? path:QualifiedName ( DOT Operator )? SEMI
 QualifiedName -> Ident ( DOT Ident )*
 
-# Class declaration
-ClassDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_class id:Ident TypeParams? ExtendsClause? ImplementsClause? PermitsClause? ClassBody
-ExtendsClause -> KW_extends Type
+# ---------------------------------------------------------------------------
+# Declaration metadata
+# ---------------------------------------------------------------------------
+# Every Java declaration carries the same outer metadata: a Javadoc block,
+# annotations and modifiers, each typically on its own line. Real code writes
+#
+#   @RestController
+#   public class UserController { … }
+#
+# which tokenizes as Annotation NL KW_public. A `( Annotation / Modifier / NL )*`
+# group on BOTH sides of the doc block absorbs annotations, modifiers and the
+# newlines around them wherever they fall; the doc capture still binds because
+# a DocComment is none of those, so the greedy groups never swallow it. Without
+# the newline in that group the NL after an annotation broke the rule, the
+# declaration fell through to `Other`, and the type — with its whole body —
+# was lost.
+#
+# The metadata is spelled out in each rule rather than factored into a shared
+# prefix rule because a label binds only inside the rule that writes it: behind
+# an indirection `$doc` and `$vis` would be invisible to the declaration's own
+# semantics.
+DeclMeta -> Annotation / Modifier / NL
+
+# Class declaration. The header is a rule of its own so that it fires BEFORE
+# the class body (PEG matches it to completion first, so its event — and the
+# `bind` in its semantics — precedes every member event of the body). That
+# binding is what attaches each method, field and nested type to the type it
+# belongs to instead of leaving it at file level.
+ClassDecl -> ClassHeader ClassBody
+ClassHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_class id:Ident TypeParams? ExtendsClause? ImplementsClause? PermitsClause?
+ExtendsClause -> KW_extends TypeList
 ImplementsClause -> KW_implements TypeList
 PermitsClause -> KW_permits TypeList
 ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> ConstructorDecl / MethodDecl / FieldDecl / ClassDecl / InterfaceDecl / EnumDecl / StaticBlock / NL / LineComment / BlockComment
+# The `!RBRACE` guard is essential. The member list ends at the body's closing
+# brace, and the trailing catch-all — which must accept any token so a member
+# the rules cannot match does not abort the type — would otherwise consume that
+# `}` and run to end of file. `ClassBody`'s own `RBRACE` would then never
+# match, the type would be dropped, and `Item*` would re-parse the whole body
+# at top level: every member declared twice and detached from its type.
+ClassMember -> !RBRACE ( NL / LineComment / BlockComment
+            / TypeDecl / StaticBlock / ConstructorDecl / MethodDecl / FieldDecl
+            / SEMI / MemberOther )
+# Inside a body the catch-all must not swallow a brace either: an unbalanced
+# one would run past the body's end exactly like `RBRACE` above.
+MemberOther -> Atom / LPAREN / RPAREN / LBRACKET / RBRACKET / Body
 
-# Interface declaration
-InterfaceDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_interface id:Ident TypeParams? ExtendsClause? PermitsClause? InterfaceBody
+# Interface declaration — same header/body split. Its body gets member rules of
+# its own (`InterfaceMember`, `InterfaceMethodDecl`, `InterfaceFieldDecl`)
+# purely so the semantics can tell it apart from a class body: every member of
+# an interface is implicitly public even with no modifier written, while a
+# class member with no modifier is package-private and must stay unpublished.
+InterfaceDecl -> InterfaceHeader InterfaceBody
+InterfaceHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_interface id:Ident TypeParams? ExtendsClause? PermitsClause?
 InterfaceBody -> LBRACE InterfaceMember* RBRACE
-InterfaceMember -> MethodDecl / FieldDecl / ClassDecl / InterfaceDecl / NL / LineComment / BlockComment
+InterfaceMember -> !RBRACE ( NL / LineComment / BlockComment
+            / TypeDecl / InterfaceMethodDecl / InterfaceFieldDecl
+            / SEMI / MemberOther )
+InterfaceMethodDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* TypeParams? Type method_id:Ident LPAREN NL* ParamList? NL* RPAREN ArrayDims? ThrowsClause? ( DefaultValue / Body / SEMI )
+InterfaceFieldDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* Type field_id:Ident ArrayDims? ( Operator Expr )? ( COMMA Ident ArrayDims? ( Operator Expr )? )* SEMI
+
+# Annotation type declaration (`public @interface Foo { … }`).
+AnnotationTypeDecl -> AnnotationTypeHeader InterfaceBody
+AnnotationTypeHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* AT KW_interface id:Ident
 
 # Enum declaration
-EnumDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_enum id:Ident ImplementsClause? EnumBody
-EnumBody -> LBRACE EnumConstant* ( SEMI ClassMember* )? RBRACE
-EnumConstant -> const_doc:DocComment? Annotation* const_id:Ident Arguments? ClassBody? COMMA? / NL / LineComment
+EnumDecl -> EnumHeader EnumBody
+EnumHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_enum id:Ident ImplementsClause?
+EnumBody -> LBRACE NL* EnumConstantList? ( SEMI ClassMember* )? NL* RBRACE
+EnumConstantList -> EnumConstant ( NL* COMMA NL* EnumConstant )* ( NL* COMMA )? NL*
+EnumConstant -> NL* const_meta:DeclMeta* const_doc:DocComment? DeclMeta* const_id:Ident Arguments? ClassBody?
 
-# Record declaration
-RecordDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* KW_record id:Ident TypeParams? LPAREN RecordComponents? RPAREN ImplementsClause? RecordBody
-RecordComponents -> RecordComponent ( COMMA RecordComponent )*
-RecordComponent -> Annotation* Type comp_id:Ident
-RecordBody -> LBRACE ClassMember* RBRACE
+# Record declaration. The component list sits OUTSIDE the header on purpose:
+# a record component is a public accessor on the record, and an event fires
+# only once its rule has matched to completion — so components parsed inside
+# the header would emit their events BEFORE the header published the record,
+# and every component would be attributed to the previous type.
+RecordDecl -> RecordHeader LPAREN NL* RecordComponents? NL* RPAREN ImplementsClause? RecordBody
+RecordHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_record id:Ident TypeParams?
+RecordComponents -> RecordComponent ( NL* COMMA NL* RecordComponent )* ( NL* COMMA )?
+RecordComponent -> NL* Annotation* NL* Type comp_id:Ident
+# A record may be declared with no body at all: `public record User(int id);`
+RecordBody -> LBRACE ClassMember* RBRACE / SEMI
 
-# Constructor declaration
-ConstructorDecl -> doc:DocComment? NL? Annotation* Modifier* id:Ident LPAREN ParamList? RPAREN ThrowsClause? Body
+# Constructor declaration — a name with no return type, directly followed by a
+# parameter list and a body.
+ConstructorDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* id:Ident LPAREN NL* ParamList? NL* RPAREN ThrowsClause? Body
 
 # Method declaration
-MethodDecl -> doc:DocComment? NL? Annotation* vis:KW_public? Modifier* TypeParams? Type method_id:Ident LPAREN ParamList? RPAREN ThrowsClause? ( Body / SEMI )
+MethodDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* TypeParams? Type method_id:Ident LPAREN NL* ParamList? NL* RPAREN ArrayDims? ThrowsClause? ( DefaultValue / Body / SEMI )
+# The default of an annotation-type element: `String value() default "x";`
+DefaultValue -> KW_default Expr SEMI
 
-# Field declaration
-FieldDecl -> doc:DocComment? NL? Annotation* Modifier* Type field_id:Ident ( Operator Expr )? SEMI
+# Field declaration. Several fields may share one type and initializer list.
+FieldDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* Type field_id:Ident ArrayDims? ( Operator Expr )? ( COMMA Ident ArrayDims? ( Operator Expr )? )* SEMI
 
-# Static block
-StaticBlock -> KW_static Body
+# Static / instance initializer block
+StaticBlock -> DeclMeta* Body
 
-# Modifiers
-Modifier -> KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_sealed / KW_default
+# Modifiers. Java's other modifiers (`synchronized`, `native`, `transient`,
+# `volatile`, `strictfp`) are reserved words with no token here; they are
+# absorbed by `ContextualModifier`, which accepts a bare identifier only where
+# another modifier or a declaration keyword actually follows it. A field or
+# method NAMED like one of them is therefore left alone for the declaration
+# rules, which is why the and-predicate is needed rather than a plain `Ident`.
+Modifier -> KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_default / KW_sealed / ContextualModifier
+ContextualModifier -> Ident &( ( Ident / Annotation / NL / KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_sealed )* ( KW_class / KW_interface / KW_enum / KW_record ) )
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
-Param -> Annotation* KW_final? Type Operator? param_id:Ident
+ParamList -> Param ( NL* COMMA NL* Param )* ( NL* COMMA )?
+Param -> NL* Annotation* NL* KW_final? Annotation* Type Operator? param_id:Ident ArrayDims?
 ThrowsClause -> KW_throws TypeList
-Arguments -> LPAREN ( Expr ( COMMA Expr )* )? RPAREN
+Arguments -> LPAREN BodyContent* RPAREN
 
 # Types
-TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
+TypeParams -> LT NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* GT
 TypeParam -> Annotation* Ident ( KW_extends TypeBound )?
 TypeBound -> Type ( Operator Type )*
-TypeList -> Type ( COMMA Type )*
-Type -> TypeAtom ArrayDims?
-TypeAtom -> QualifiedName TypeArgs? / KeywordType / KW_void
-TypeArgs -> LT TypeArg ( COMMA TypeArg )* GT
-TypeArg -> Type / Operator ( KW_extends / KW_super ) Type / Operator
+TypeList -> Type ( NL* COMMA NL* Type )*
+Type -> Annotation* TypeAtom ArrayDims? Operator?
+TypeAtom -> KeywordType / KW_void / QualifiedName TypeArgs? ( DOT Ident TypeArgs? )*
+# A type argument may be a wildcard (`<?>`, `<? extends T>`) or the diamond's
+# empty list (`new HashMap<>()`).
+TypeArgs -> LT NL* TypeArgList? NL* GT
+TypeArgList -> TypeArg ( NL* COMMA NL* TypeArg )*
+TypeArg -> Operator ( KW_extends / KW_super ) Type / Operator / Type
 ArrayDims -> ( LBRACKET RBRACKET )+
 
-# Body (simplified - balance braces)
+# Body — an opaque balanced-bracket group. Nothing inside a method body is part
+# of a type's public surface, so its contents only need to be consumed safely,
+# with every bracket pair matched so the body ends at the right `}`.
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
-# Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / Number / String / TextBlock / Char / BoolLit / NullLit / KeywordType / KW_new / KW_this / KW_super / KW_void / KW_class / LPAREN / RPAREN / DOT / COMMA / COLON / DCOLON / ARROW / LT / GT / Operator / Annotation
+# Expressions — a field initializer or an annotation-element default. Java puts
+# array initializers, anonymous classes and lambdas there, so an expression is
+# a run of atoms and balanced bracket groups, exactly like a body. Modelling it
+# any more precisely only creates new ways to stop the parse. It must NOT
+# accept a bare `,` or `;`, which end the field declaration it belongs to.
+Expr -> ExprItem+
+ExprItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / ExprAtom
+ExprAtom -> Ident / Number / String / TextBlock / Char / BoolLit / NullLit / KeywordType / KW_new / KW_this / KW_super / KW_void / KW_class / KW_switch / KW_case / KW_if / KW_else / DOT / COLON / DCOLON / ARROW / LT / GT / Operator / Annotation
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_class / KW_interface / KW_enum / KW_record / KW_extends / KW_implements / KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_sealed / KW_permits / KW_default / KW_void / KW_new / KW_this / KW_super / KW_return / KW_throws / KW_throw / KW_try / KW_catch / KW_finally / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_do / KW_break / KW_continue / KeywordType / SEMI / AT
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_class / KW_interface / KW_enum / KW_record / KW_sealed / KW_permits / KW_extends / KW_implements / KW_public / KW_private / KW_protected / KW_static / KW_final / KW_abstract / KW_default / KW_return / KW_throws / KW_throw / KW_try / KW_catch / KW_finally / KW_for / KW_while / KW_do / KW_break / KW_continue / SEMI / COMMA / AT
 
-Other -> Atom
+# Catch-all: one token of any kind, including a bracket whose partner the
+# declaration rules never reached (an `Atom` only accepts balanced groups).
+Other -> Atom / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === attrs
-on ClassDecl:     def id kind=Class doc=doc
-on InterfaceDecl: def id kind=Interface doc=doc
-on EnumDecl:      def id kind=Enum doc=doc
-on RecordDecl:    def id kind=Record doc=doc
-on MethodDecl:    def method_id kind=Method doc=doc vis=vis
-on FieldDecl:     def field_id kind=Field doc=doc
-on ConstructorDecl: def id kind=Constructor doc=doc
-on EnumConstant:  def const_id kind=EnumConstant doc=const_doc
-on RecordComponent: def comp_id kind=RecordComponent
-on Param:         def param_id kind=Param
-
-on ImportDecl:    import module=path
+on ClassHeader:          def id kind=Class doc=doc
+on InterfaceHeader:      def id kind=Interface doc=doc
+on AnnotationTypeHeader: def id kind=Interface doc=doc
+on EnumHeader:           def id kind=Enum doc=doc
+on RecordHeader:         def id kind=Record doc=doc
+on MethodDecl:           def method_id kind=Method doc=doc
+on InterfaceMethodDecl:  def method_id kind=Method doc=doc
+on FieldDecl:            def field_id kind=Field doc=doc
+on InterfaceFieldDecl:   def field_id kind=Field doc=doc
+on ConstructorDecl:      def id kind=Constructor doc=doc
+on EnumConstant:         def const_id kind=EnumConstant doc=const_doc
+on RecordComponent:      def comp_id kind=RecordComponent
+on Param:                def param_id kind=Param
 
 === features
-function_kinds: Method
+function_kinds: Method, Constructor
 identifier_kinds: Ident
 qualifier_separators: DOT, DCOLON
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependency
+# Import dependency. Note there is deliberately no `on ImportDecl: import ...`
+# line in the `=== attrs` section: an attrs `import` directive emits its own
+# moduleDependsOn edge, so having both produced two identical edges per import.
+#
+# `$path` holds only the LAST token of the dotted name, so `$path_text` — the
+# whole accumulated `com.example.model.User` — is what has to be resolved.
+#
+# Resolution is anchored at the project's SOURCE ROOT, not at the importing
+# file's directory. A Java import names a package path from the root of the
+# source tree (`com.example.model.User` -> `com/example/model/User.java`), so
+# resolving it relative to the importer — which is what a plain `$resolve`
+# does — can never find a sibling package and every intra-project import fell
+# back to the `maven:` prefix, leaving the graph with no edge between two files
+# of the same project.
+#
+# The root is found by walking up for the build manifest, and the source root
+# is that directory plus the conventional layout both Maven and Gradle use.
+# `$resolveFrom` then runs the spec's own chain (`module_path_style: dot`
+# turns the dots into slashes, `ext: .java` adds the extension) against that
+# base. When nothing matches — `java.util.Optional`, `org.springframework.…` —
+# the chain's `fallback: maven:` still applies, so external imports keep their
+# prefixed form.
+#
+# Both manifests are tried because the same spec serves Maven and Gradle
+# projects; `$findAncestor` returns "" when a marker is absent, and an empty
+# root simply makes the probe miss and fall through to the next one. Nothing
+# here names a language or a fixture path: the markers and the layout come
+# from this spec, and the dot-to-slash conversion and extension from the
+# `=== resolver` section below.
 on ImportDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  # The project root is the directory holding the build manifest. The same
+  # spec serves both Maven and Gradle projects, so each manifest is tried in
+  # turn; `$findAncestor` returns "" when a marker is absent, and the final
+  # "." keeps the base project-relative — `concat("", "/src/main/java")` would
+  # start with a slash, which the resolver reads as a filesystem-ABSOLUTE
+  # path, sending the probe outside the project.
+  let proj = cond($findAncestor("pom.xml"), $findAncestor("pom.xml"), cond($findAncestor("build.gradle.kts"), $findAncestor("build.gradle.kts"), cond($findAncestor("build.gradle"), $findAncestor("build.gradle"), ".")))
+  edge moduleDependsOn from $file to $resolveFrom(concat(proj, "/src/main/java"), $path_text) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
-# Public declarations (vis:KW_public? in grammar)
-on ClassDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+# ---------------------------------------------------------------------------
+# Enclosing-type stack
+# ---------------------------------------------------------------------------
+# A type nested in another type's body belongs to that type, and a declaration
+# written AFTER that body belongs to whatever enclosed it — so the enclosing
+# type has to behave like a stack, while `bind`/`$scope` is a FLAT map with no
+# save/restore of its own.
+#
+# The stack is therefore kept explicitly, as a `|`-joined string in
+# `type_stack` whose FIRST entry is the innermost type. A header pushes by
+# PREPENDING its own symbol; the declaration rule (which fires after its whole
+# body, events being bottom-up) pops by dropping everything up to the first
+# separator. Prepending is what makes both ends reachable with the string
+# builtins available: `beforeFirst` reads the top, `afterFirst` drops it.
+#
+# `current_type` mirrors the top of the stack so the member rules can read it
+# with a single lookup; an empty string means file level.
+on ClassHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on InterfaceDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+on InterfaceHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on EnumDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+on AnnotationTypeHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on RecordDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Record", "doc", $doc)
+on EnumHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on MethodDecl when $vis {
-  edge declares from $file to concat($file, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+on RecordHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
 
+# A declaration rule fires after its own body, which is exactly where that body
+# ends, so it pops the stack: drop the top entry and re-expose the one beneath.
+on ClassDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on InterfaceDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on AnnotationTypeDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on EnumDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+on RecordDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+}
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+# Java's default (package-private) visibility is not part of a module's public
+# surface, and neither is `private`, so only `public` and `protected` members
+# are published. Visibility is read out of the declaration's accumulated
+# metadata text, because it may sit on either side of the Javadoc block.
+#
+# A header has already pushed itself when its edge fires, so the type it is
+# nested in is the SECOND stack entry.
+on ClassHeader when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on InterfaceHeader when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Interface", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on AnnotationTypeHeader when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Interface", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on EnumHeader when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on RecordHeader when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Record", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A class member is published only when it says `public` or `protected`: Java's
+# default is package-private, which is not part of the module's surface.
+on MethodDecl when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# An interface member is implicitly public with no modifier written at all, so
+# it is published unconditionally — except when it explicitly says `private`,
+# which Java 9+ allows for helper methods.
+on InterfaceMethodDecl when not(containsStr(concat($pre_text, $mods_text), "private")) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on InterfaceFieldDecl when not(containsStr(concat($pre_text, $mods_text), "private")) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $field_id) attrs obj("name", $field_id, "kind", "Field", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on ConstructorDecl when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", "Constructor", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on FieldDecl when cond(containsStr(concat($pre_text, $mods_text), "public"), 1, containsStr(concat($pre_text, $mods_text), "protected")) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $field_id) attrs obj("name", $field_id, "kind", "Field", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A record component is a public accessor on the record, and an enum constant a
+# public member of the enum: both are part of the type's surface with no
+# modifier of their own. The header pushed the type before the body was parsed.
+on RecordComponent when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $comp_id) attrs obj("name", $comp_id, "kind", "RecordComponent")
+}
+
+on EnumConstant when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $const_id) attrs obj("name", $const_id, "kind", "EnumConstant", "doc", trim($const_doc))
+}
 
 === resolver
 relative_prefixes: ./, ../

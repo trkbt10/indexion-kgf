@@ -2,47 +2,108 @@ kgf 0.6
 language: moonpkg
 sources: moon.pkg
 
-# KGF spec for MoonBit package manifest files (moon.pkg)
-# These files define package dependencies in MoonBit projects.
+# KGF spec for MoonBit package manifest files (moon.pkg).
+#
+# A moon.pkg declares a package's dependencies and build options. The real
+# surface is wider than `import { ... }`:
+#
+#   import { "org/pkg" @alias, ... }          # dependency block
+#   import { ... } for "wbtest"               # per-test-kind dependency block
+#   supported_targets = "native"              # key/value setting
+#   options(                                  # call-style settings block
+#     targets: { "a_wbtest.mbt": [ "native" ] },
+#   )
+#
+# The grammar below keeps `import` as the one structural rule that carries
+# semantics, and parses everything else generically: any `key = value`, any
+# `name( ... )` call, and — as a last resort — a catch-all `Other` that
+# accepts a single token of any kind. That catch-all is what stops an
+# unfamiliar future setting from truncating the file: without it, every
+# import block *after* the unknown construct would be silently dropped.
 
 === lex
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 TOKEN LineComment /\/\/[^\r\n]*/
 
-# Keywords
+# Keywords. Only `import` is a keyword: it is the one word the grammar needs
+# structurally. Settings names such as `supported_targets`, `targets` or
+# `options` are deliberately left as plain Idents — a keyword token for them
+# would make the generic key/value and call rules fail on every other key.
 KEYWORD KW_import /import\b/
+KEYWORD KW_for /for\b/
 
-# Strings (package paths)
+# Strings (package paths, target names, file names)
 TOKEN String /"([^"\\]|\\.)*"/
+
+# Numbers and booleans appear in option values.
+TOKEN Number /-?[0-9]+(\.[0-9]+)?/
+KEYWORD KW_true /true\b/
+KEYWORD KW_false /false\b/
 
 # Identifiers (aliases)
 TOKEN Alias /@[a-zA-Z_][a-zA-Z0-9_]*/
-TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_-]*/
 
-# Punctuation
+# Punctuation. LPAREN/RPAREN/LBRACKET/RBRACKET/EQUALS were missing before,
+# so `options(`, `)`, `[ "native" ]` and `supported_targets =` produced
+# "unrecognized input" lexer errors on almost every moon.pkg in a real
+# MoonBit project.
 TOKEN LBRACE /\{/
 TOKEN RBRACE /\}/
+TOKEN LPAREN /\(/
+TOKEN RPAREN /\)/
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
 TOKEN COMMA /,/
 TOKEN COLON /:/
+TOKEN EQUALS /=/
 
 === grammar
 Module -> Item*
 
 Item -> ImportBlock
+     / SettingCall
+     / Setting
      / NL
      / LineComment
      / Other
 
-# import { "path" @alias, ... }
-ImportBlock -> KW_import LBRACE NL? ImportList? RBRACE
+# import { "path" @alias, ... }  with an optional `for "wbtest"` suffix that
+# scopes the block to a build kind. The suffix is captured so the dependency
+# edges can record which build kind needs them.
+ImportBlock -> KW_import LBRACE Sep* ImportList? RBRACE ForClause?
+ForClause   -> KW_for kind:String
 
-ImportList -> ImportItem ( COMMA NL? ImportItem )* COMMA? NL?
+ImportList -> ImportItem ( COMMA Sep* ImportItem )* COMMA? Sep*
 
-ImportItem -> module:String alias:Alias? NL?
-           / NL
+ImportItem -> module:String alias:Alias? Sep*
 
-Other -> String / Ident / Alias / LBRACE / RBRACE / COMMA / COLON
+# `options( ... )` and any other call-style settings block. The argument list
+# is a free-form bag of balanced tokens, so an unknown option shape parses.
+SettingCall -> Ident LPAREN Bag* RPAREN
+
+# `supported_targets = "native"` and any other key/value setting.
+Setting -> key:Ident EQUALS value:SettingValue
+SettingValue -> String / Number / KW_true / KW_false / Table / List
+
+# Balanced containers. Their contents are a bag of anything, which is what
+# makes `targets: { "x_wbtest.mbt": [ "native" ] }` parse without the grammar
+# having to know what `targets` means.
+Table -> LBRACE Bag* RBRACE
+List  -> LBRACKET Bag* RBRACKET
+Bag   -> Table / List / SettingCall / String / Number / KW_true / KW_false
+       / Ident / Alias / COMMA / COLON / EQUALS / KW_for / KW_import / Sep
+
+Sep -> NL / LineComment
+
+# Catch-all: a single token of any kind, including an unbalanced bracket that
+# Bag (which only accepts balanced containers) would reject. Keeping this last
+# means the parse never stops early, so a malformed or unfamiliar line costs
+# only itself and every import block after it is still seen.
+Other -> String / Number / Ident / Alias / KW_true / KW_false / KW_for
+       / KW_import / COMMA / COLON / EQUALS
+       / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === semantics
 # The `alias` label, when present, is the raw `@name` token (including the `@`).

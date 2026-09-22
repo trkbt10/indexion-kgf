@@ -4,27 +4,72 @@ sources: .sh
 
 === lex
 SKIP /[ \t]+/
+# A backslash at end of line continues the command; it is whitespace here.
+SKIP /\\\r?\n/
 TOKEN NL /\r?\n/
 TOKEN Comment /#[^\r\n]*/
 KEYWORD KW_export /export\b/
 KEYWORD KW_if /if\b/
 KEYWORD KW_then /then\b/
+KEYWORD KW_else /else\b/
+KEYWORD KW_elif /elif\b/
 KEYWORD KW_fi /fi\b/
 KEYWORD KW_for /for\b/
+KEYWORD KW_while /while\b/
 KEYWORD KW_do /do\b/
 KEYWORD KW_done /done\b/
+KEYWORD KW_case /case\b/
+KEYWORD KW_esac /esac\b/
+KEYWORD KW_function /function\b/
+KEYWORD KW_return /return\b/
+KEYWORD KW_local /local\b/
 TOKEN Assign /=/
-TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+# A double-quoted string may span lines and contain escapes; a single-quoted
+# string takes everything literally up to the next quote.
+TOKEN StringLit /"([^"\\]|\\[\s\S])*"|'[^']*'/
 TOKEN Ident /[A-Za-z_][A-Za-z0-9_]*/
-TOKEN Word /[^\s#]+/
+# Any other run of non-blank characters: paths, flags, expansions, operators.
+# `#` is excluded so a trailing comment still lexes as Comment, and the
+# quote characters are excluded so an unterminated word cannot swallow a
+# following string.
+TOKEN Word /[^\s#'"]+/
+# A quote that begins no complete string (an unterminated literal); lexed so
+# the file still tokenizes rather than dropping characters.
+TOKEN Quote /['"]/
 
 === grammar
+# A script is a sequence of lines. `Other` accepts any single token kind so
+# a construct the line rules do not model still gets consumed and the parse
+# reaches the end of the file.
 Script -> Item*
-Item -> Assignment / KeywordLine / Comment / NL / WordLine
-Assignment -> name:Ident Assign value:ShellValue NL?
-KeywordLine -> ( KW_export / KW_if / KW_then / KW_fi / KW_for / KW_do / KW_done ) Word* NL?
-WordLine -> Word+ NL?
+Item -> Assignment / KeywordLine / Comment / NL / CommandLine / Other
+
+# `NAME=value` at the start of a line, and `export NAME=value`. The command
+# name is not an assignment, so the `=` must follow the name directly; the
+# lexer already guarantees that because whitespace is skipped, which is why
+# this is the first alternative and a plain command falls through to
+# CommandLine.
+Assignment -> KW_export? name:Ident Assign value:ShellValue? Trailer? NL?
+
+# Lines that open or close a block, or are otherwise keyword-led. The rest
+# of the line is consumed as a trailer.
+KeywordLine -> Keyword Trailer? NL?
+Keyword -> KW_export / KW_if / KW_then / KW_else / KW_elif / KW_fi
+         / KW_for / KW_while / KW_do / KW_done / KW_case / KW_esac
+         / KW_function / KW_return / KW_local
+
+# A command invocation: a name (which lexes as Ident when it is a bare word
+# such as `set` or `cd`, and as Word when it contains a path separator or a
+# sigil) followed by its arguments.
+CommandLine -> cmd:CommandName Trailer? NL?
+CommandName -> Ident / Word
+
 ShellValue -> StringLit / Ident / Word
+Trailer -> ( !NL LinePart )+
+LinePart -> Comment / StringLit / Ident / Word / Assign / Quote / Keyword
+
+# Any single token except NL, so the Item loop always makes progress.
+Other -> Comment / StringLit / Ident / Word / Assign / Quote / Keyword
 
 === features
 content_type: script

@@ -21,7 +21,31 @@ TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+
 # Attributes
 TOKEN Attribute /@[a-zA-Z_][a-zA-Z0-9_]*/
 
+# Closure shorthand arguments (`$0`, `$1`) and property wrapper projections
+# (`$binding`). Without this token the lexer hit the bare `$` and reported
+# "unrecognized input" for every closure that used shorthand arguments — two
+# such errors in the Swift fixtures alone.
+TOKEN DollarIdent /\$[a-zA-Z0-9_]+/
+
 # Keywords
+#
+# Swift distinguishes RESERVED words, which can never be identifiers, from
+# CONTEXTUAL keywords, which only act as keywords in one position and are
+# ordinary identifiers everywhere else: `actor`, `async`, `await`, `open`,
+# `final`, `static`, `override`, `mutating`, `get`, `set`, `some`, `any`,
+# `lazy`, `indirect`, `convenience`, `required`, `nonisolated`, `willSet`,
+# `didSet`. Only the reserved ones get `KEYWORD` tokens here.
+#
+# The lexer matches token rules in definition order (first match wins), so a
+# token for a contextual keyword shadows `Ident` everywhere in the file:
+# `let get = 1`, `func set(...)`, `var open: String` are all ordinary Swift and
+# became unmatchable, silently dropping the symbol and, when it had a brace
+# body, everything after it. The contextual keywords are matched POSITIONALLY
+# instead — see `ContextualModifier` and `Accessor` in the grammar.
+#
+# (`KW_get` / `KW_set` were in fact already dead: they were defined AFTER the
+# `Ident` token, which matches first, so no token of either kind was ever
+# produced and the accessor rule that referenced them could never fire.)
 KEYWORD KW_import     /import\b/
 KEYWORD KW_let        /let\b/
 KEYWORD KW_var        /var\b/
@@ -32,7 +56,6 @@ KEYWORD KW_enum       /enum\b/
 KEYWORD KW_protocol   /protocol\b/
 KEYWORD KW_extension  /extension\b/
 KEYWORD KW_typealias  /typealias\b/
-KEYWORD KW_actor      /actor\b/
 KEYWORD KW_init       /init\b/
 KEYWORD KW_deinit     /deinit\b/
 KEYWORD KW_subscript  /subscript\b/
@@ -40,13 +63,6 @@ KEYWORD KW_public     /public\b/
 KEYWORD KW_private    /private\b/
 KEYWORD KW_internal   /internal\b/
 KEYWORD KW_fileprivate /fileprivate\b/
-KEYWORD KW_open       /open\b/
-KEYWORD KW_final      /final\b/
-KEYWORD KW_static     /static\b/
-KEYWORD KW_override   /override\b/
-KEYWORD KW_mutating   /mutating\b/
-KEYWORD KW_async      /async\b/
-KEYWORD KW_await      /await\b/
 KEYWORD KW_throws     /throws\b/
 KEYWORD KW_if         /if\b/
 KEYWORD KW_else       /else\b/
@@ -89,142 +105,261 @@ TOKEN COLON    /:/
 TOKEN QMARK    /\?/
 TOKEN AT       /@/
 
-# Property accessors (referenced in grammar)
-KEYWORD KW_get    /get\b/
-KEYWORD KW_set    /set\b/
 
 === grammar
 Module -> Item*
 
+# Every top-level construct is one of these. `Other` is the catch-all and
+# accepts ANY single token, including a lone bracket, so a declaration the
+# rules only partially match can never stop the module parse: the leftovers are
+# skipped one token at a time and the next declaration is picked up again.
+#
+# Declarations come before the bare `DocBlock` alternative because PEG ordered
+# choice takes the first match — a leading `DocBlock` alternative would swallow
+# the doc that belongs to the declaration below it.
 Item -> NL
      / ImportDecl
-     / ClassDecl
-     / StructDecl
-     / EnumDecl
-     / ProtocolDecl
-     / ExtensionDecl
-     / ActorDecl
+     / TypeDecl
      / FuncDecl
+     / InitDecl
+     / SubscriptDecl
      / VarDecl
-     / TypeAliasDecl
-     / DocComment
-     / DocBlockComment
+     / DocBlock
      / Other
 
-# Doc block (consecutive /// comments)
+TypeDecl -> ClassDecl / StructDecl / EnumDecl / ProtocolDecl / ActorDecl / ExtensionDecl / TypeAliasDecl
+
+# Doc block (consecutive /// comments, or one /** … */ block)
 DocBlock -> DocComment ( NL DocComment )* / DocBlockComment
 
 # Import declaration
-ImportDecl -> KW_import path:QualifiedName
-QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
+ImportDecl -> KW_import ImportKind? path:QualifiedName
+# `import struct Foundation.Data` — a submodule-kind import.
+ImportKind -> KW_struct / KW_class / KW_enum / KW_protocol / KW_typealias / KW_func / KW_var / KW_let
+QualifiedName -> Name ( DOT Name )*
+# The lexer splits identifiers by first-letter case, so a name in declaration
+# position may be either kind: `let get`, `func Box()`, `case Pending`.
+Name -> Ident / TypeIdent
 
-# Class declaration
-ClassDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_class id:TypeIdent SimpleInheritance? LBRACE ClassMember* RBRACE
-InheritanceClause -> COLON TypeList
-ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> FuncDecl / VarDecl / InitDecl / DeinitDecl / SubscriptDecl / ClassDecl / StructDecl / EnumDecl / TypeAliasDecl / NL / LineComment / BlockComment
+# ---------------------------------------------------------------------------
+# Declaration metadata
+# ---------------------------------------------------------------------------
+# Every declaration carries the same outer metadata: a doc block, attributes
+# and modifiers, each typically on its own line. Real Swift writes
+#
+#   /// Adds a task.
+#   @MainActor
+#   public final func add(title: String) { … }
+#
+# A `( Attribute / Modifier / NL )*` group on BOTH sides of the doc absorbs
+# attributes, modifiers and the newlines around them wherever they fall; the
+# doc capture still binds because a DocBlock is none of those, so the greedy
+# groups never swallow it.
+#
+# The metadata is spelled out in each rule rather than factored into a shared
+# prefix rule because a label binds only inside the rule that writes it: behind
+# an indirection `$doc` and the visibility would be invisible to the
+# declaration's own semantics. That is exactly the bug `VarDecl` had — it never
+# bound `vis` at all, while its semantics said `when $vis`, so EVERY Swift
+# `let` / `var` declaration in every file was silently dropped.
+DeclMeta -> Attribute / Modifier / NL
 
-# Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_struct id:TypeIdent TypeParams? SimpleInheritance? LBRACE StructMember* RBRACE
-SimpleInheritance -> COLON TypeIdent COMMA TypeIdent COMMA TypeIdent / COLON TypeIdent COMMA TypeIdent / COLON TypeIdent
-StructMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
+# Each type's header is a rule of its own so that it fires BEFORE the body (PEG
+# matches it to completion first, so its event — and the `bind` in its
+# semantics — precedes every member event). That binding is what attaches each
+# method, property and nested type to the type it belongs to; before this the
+# spec attached nothing, so no Swift member appeared in the graph at all.
+ClassDecl -> ClassHeader TypeBody
+ClassHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_class id:TypeIdent TypeParams? InheritanceClause? WhereClause? NL*
+# An inheritance clause is a comma-separated type list of ANY length. It used
+# to be spelled out as one, two or three types (`SimpleInheritance`), so a
+# fourth conformance silently failed the whole declaration.
+InheritanceClause -> COLON NL* TypeList
+TypeBody -> LBRACE Member* RBRACE
+# The `!RBRACE` guard is essential. The member list ends at the body's closing
+# brace, and the trailing catch-all — which must accept any token so a member
+# the rules cannot match does not abort the type — would otherwise consume that
+# `}` and run to end of file. `TypeBody`'s own `RBRACE` would then never match,
+# the type would be dropped, and `Item*` would re-parse the whole body at top
+# level: every member declared twice and detached from its type.
+Member -> !RBRACE ( NL / LineComment / BlockComment
+       / TypeDecl / EnumCase / AssociatedType
+       / InitDecl / DeinitDecl / SubscriptDecl / FuncDecl / VarDecl
+       / SEMI / MemberOther )
+# Inside a body the catch-all must not swallow a brace either: an unbalanced
+# one would run past the body's end exactly like `RBRACE` above.
+MemberOther -> Atom / LPAREN / RPAREN / LBRACKET / RBRACKET / Body
 
-# Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? EnumBody
-EnumBody -> LBRACE EnumMember* RBRACE
-EnumMember -> EnumCase / FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / NL / LineComment / BlockComment
-EnumCase -> case_doc:DocBlock? Attribute* KW_case case_id:CaseName AssociatedValues? RawValue? ( COMMA case_id:CaseName AssociatedValues? RawValue? )*
+StructDecl -> StructHeader TypeBody
+StructHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_struct id:TypeIdent TypeParams? InheritanceClause? WhereClause? NL*
 
-# Enum case names: lower-camel by Swift convention but PascalCase is legal,
-# and case bodies may need to escape keywords with backticks. Accept the
-# union of identifier classes; backtick-escaped forms are tokenized
-# separately by `BacktickIdent` if the lexer supports it, else they remain
-# a syntactic gap to fix per-target.
-CaseName -> Ident / TypeIdent
-AssociatedValues -> LPAREN ParamList? RPAREN
-RawValue -> Operator Expr
+EnumDecl -> EnumHeader TypeBody
+EnumHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_enum id:TypeIdent TypeParams? InheritanceClause? WhereClause? NL*
+# `case a, b(Int), c = "x"` — one `case` keyword may introduce several cases.
+EnumCase -> case_pre:DeclMeta* case_doc:DocBlock? DeclMeta* KW_case case_id:CaseName AssociatedValues? RawValue? ExtraCase*
+ExtraCase -> COMMA NL* extra_id:CaseName AssociatedValues? RawValue?
+CaseName -> Name
+AssociatedValues -> LPAREN NL* ParamList? NL* RPAREN
+RawValue -> Operator DefaultExpr
 
-# Protocol declaration
-ProtocolDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_protocol id:TypeIdent InheritanceClause? WhereClause? ProtocolBody
+ProtocolDecl -> ProtocolHeader ProtocolBody
+ProtocolHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_protocol id:TypeIdent InheritanceClause? WhereClause? NL*
+# A protocol body gets member rules of its own purely so the semantics can tell
+# it apart from a class or struct body: every protocol requirement is part of
+# the protocol's surface with no modifier written at all, while a struct member
+# with no modifier is `internal` and must stay unpublished.
 ProtocolBody -> LBRACE ProtocolMember* RBRACE
-ProtocolMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / AssociatedType / NL / LineComment / BlockComment
-AssociatedType -> assoc_doc:DocBlock? Attribute* KW_typealias assoc_id:TypeIdent ( COLON Type )? WhereClause?
+ProtocolMember -> !RBRACE ( NL / LineComment / BlockComment
+               / AssociatedType / TypeDecl / InitReq / SubscriptDecl
+               / FuncReq / VarReq
+               / SEMI / MemberOther )
+FuncReq -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_func id:FuncName TypeParams? LPAREN NL* ParamList? NL* RPAREN EffectSpec* ( ARROW Type )? WhereClause? NL* Body?
+VarReq -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* ( KW_let / KW_var ) id:Name ( COLON Type )? NL* Accessors?
+InitReq -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_init ( QMARK / Operator )? TypeParams? LPAREN NL* ParamList? NL* RPAREN EffectSpec* WhereClause? NL* Body?
 
-# Extension declaration
-ExtensionDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_extension Type InheritanceClause? WhereClause? ExtensionBody
-ExtensionBody -> LBRACE ExtensionMember* RBRACE
-ExtensionMember -> FuncDecl / VarDecl / InitDecl / SubscriptDecl / TypeAliasDecl / ClassDecl / StructDecl / EnumDecl / NL / LineComment / BlockComment
+AssociatedType -> assoc_pre:DeclMeta* assoc_doc:DocBlock? DeclMeta* AssocKw assoc_id:TypeIdent ( COLON Type )? WhereClause? ( Operator Type )?
+# `associatedtype` is a contextual keyword: an identifier directly followed by
+# a type name inside a protocol body.
+AssocKw -> Ident &TypeIdent
 
-# Actor declaration
-ActorDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_actor id:TypeIdent TypeParams? InheritanceClause? WhereClause? ClassBody
+# `actor` is a contextual keyword — `let actor = …` is ordinary Swift — so it
+# is matched as a bare identifier pinned down by the `TypeIdent` and body that
+# must follow it.
+ActorDecl -> ActorHeader TypeBody
+ActorHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* ActorKw id:TypeIdent TypeParams? InheritanceClause? WhereClause? NL*
+ActorKw -> Ident &( TypeIdent TypeParams? ( COLON / LBRACE / KW_where ) )
 
-# Function declaration
-FuncDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_func id:Ident TypeParams? LPAREN ParamList? RPAREN ( KW_throws / KW_async KW_throws? )? ( ARROW Type )? WhereClause? Body?
+# An extension has no name of its own; it extends an existing type, and its
+# members belong to that type.
+ExtensionDecl -> ExtensionHeader TypeBody
+ExtensionHeader -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_extension ext_type:QualifiedName TypeArgs? InheritanceClause? WhereClause? NL*
 
-# Variable declaration
-VarDecl -> doc:DocBlock? NL? Attribute* Modifier* ( KW_let / KW_var ) id:Ident ( COLON Type )? ( Operator Expr )? Accessors?
-Accessors -> LBRACE Accessor+ RBRACE
-Accessor -> Attribute* Modifier* ( Ident / KW_get / KW_set ) Body?
+TypeAliasDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_typealias id:TypeIdent TypeParams? Operator Type
 
-# Init declaration
-InitDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_init ( Operator / LPAREN ParamList? RPAREN ) ( KW_throws )? Body?
+# Function declaration. A protocol requirement has no body at all, and an
+# operator function is named by a symbol rather than an identifier.
+FuncDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_func id:FuncName TypeParams? LPAREN NL* ParamList? NL* RPAREN EffectSpec* ( ARROW Type )? WhereClause? NL* Body?
+FuncName -> Name / Operator / LT / GT
+# `async`, `await`, `rethrows`, `throws(E)` — the effects between the parameter
+# list and the return arrow. `async` and `rethrows` are contextual keywords
+# with no token, so they are matched as a bare identifier in this position.
+EffectSpec -> KW_throws ( LPAREN NL* Type NL* RPAREN )? / Ident &( KW_throws / ARROW / LBRACE / NL / KW_where )
 
-# Deinit declaration
-DeinitDecl -> doc:DocBlock? NL? KW_deinit Body
+# Variable / constant declaration. `vis` used to be missing entirely here while
+# the semantics tested it, which dropped every one of these.
+VarDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* ( KW_let / KW_var ) id:Name ( COLON Type )? ( Operator Expr )? NL* Accessors?
+Accessors -> LBRACE NL* Accessor+ NL* RBRACE
+# `get`, `set`, `willSet`, `didSet` are contextual keywords with no token of
+# their own; an accessor is an identifier directly followed by a block, an
+# optional `(newValue)` name, or (for a read-only computed property) nothing.
+# The `!RBRACE` guard stops the list at the accessor block's own `}`.
+Accessor -> !RBRACE ( NL / DeclMeta* Ident ( LPAREN NL* Name NL* RPAREN )? EffectSpec* NL* Body? )
 
-# Subscript declaration
-SubscriptDecl -> doc:DocBlock? NL? Attribute* Modifier* KW_subscript TypeParams? LPAREN ParamList? RPAREN ARROW Type WhereClause? Accessors
+InitDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_init ( QMARK / Operator )? TypeParams? LPAREN NL* ParamList? NL* RPAREN EffectSpec* WhereClause? NL* Body?
+DeinitDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_deinit NL* Body
+SubscriptDecl -> pre:DeclMeta* doc:DocBlock? mods:DeclMeta* KW_subscript TypeParams? LPAREN NL* ParamList? NL* RPAREN ARROW Type WhereClause? NL* ( Accessors / Body )?
 
-# Type alias
-TypeAliasDecl -> doc:DocBlock? NL? Attribute* vis:Visibility? Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
+# Modifiers. Swift's declaration modifiers other than the access levels
+# (`final`, `static`, `class`, `override`, `mutating`, `nonmutating`, `lazy`,
+# `weak`, `unowned`, `required`, `convenience`, `indirect`, `dynamic`,
+# `optional`, `nonisolated`, `distributed`, `borrowing`, `consuming`) are
+# CONTEXTUAL keywords with no token — `var final: Bool` is ordinary Swift — so
+# a bare identifier counts as a modifier only where another modifier or a
+# declaration keyword actually follows it. A property NAMED `final` is
+# therefore left alone for the declaration rules.
+Modifier -> AccessLevel / ContextualModifier
+# `public`, `open`, `private(set)`, `package` … `open` and `package` are
+# contextual, so they are covered by `ContextualModifier`; the reserved ones
+# have tokens and may carry a `(set)` qualifier.
+AccessLevel -> ( KW_public / KW_private / KW_internal / KW_fileprivate ) ( LPAREN Ident RPAREN )?
+ContextualModifier -> Ident ( LPAREN Ident RPAREN )? &( ModifierRun DeclStart )
+ModifierRun -> ( Ident ( LPAREN Ident RPAREN )? / Attribute / NL / KW_public / KW_private / KW_internal / KW_fileprivate )*
+DeclStart -> KW_func / KW_var / KW_let / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_init / KW_deinit / KW_subscript / KW_case
 
-# Visibility (public or open = externally visible)
-Visibility -> KW_public LPAREN KW_set RPAREN / KW_open / KW_public
-# Modifiers
-Modifier -> Visibility / KW_private LPAREN KW_set RPAREN / KW_internal LPAREN KW_set RPAREN / KW_fileprivate LPAREN KW_set RPAREN / KW_private / KW_internal / KW_fileprivate / KW_final / KW_static / KW_override / KW_mutating / KW_async
-
-# Parameters
-ParamList -> Param ( COMMA Param )*
-Param -> Attribute* ( Ident param_id:Ident / param_id:Ident ) COLON Type ( Operator Expr )?
-WhereClause -> KW_where WhereConstraint ( COMMA WhereConstraint )*
+# Parameters. Swift parameters have an optional external label before the
+# internal name (`func greet(_ user: User)`), a variadic marker, and defaults.
+ParamList -> Param ( NL* COMMA NL* Param )* ( NL* COMMA )? NL*
+# A default value follows `=`. There used to be a stray `Operator?` between
+# the type and the default: `=` is lexed as `Operator`, so that slot ate the
+# `=` and the default expression never matched, dropping every initializer
+# and function that had a default argument. The variadic `...` — also an
+# `Operator` — is absorbed by `TypeSuffix` on the type itself instead.
+Param -> NL* Attribute* NL* ParamModifier* ( label:ParamLabel param_id:Name / param_id:Name ) COLON NL* Type ( Operator DefaultExpr )?
+# `_` and a named external label are both plain identifiers followed by the
+# internal name; the and-predicate distinguishes the two-name form from the
+# one-name form.
+ParamLabel -> Name &Name
+# `inout`, `borrowing`, `consuming`, `isolated` — contextual words before the
+# type, which must still be followed by a whole `name: Type`.
+ParamModifier -> Ident &( Name COLON )
+WhereClause -> KW_where WhereConstraint ( NL* COMMA NL* WhereConstraint )*
 WhereConstraint -> Type ( COLON / Operator ) Type
 
 # Types
-TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
+TypeParams -> LT NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* GT
 TypeParam -> TypeIdent ( COLON Type )?
-TypeList -> Type ( COMMA Type )*
-Type -> TypeAtom ( Operator TypeAtom )* QMARK?
-TypeAtom -> TypeIdent TypeArgs? / Ident / LBRACKET Type ( COLON Type )? RBRACKET / LPAREN TypeList? RPAREN ( ARROW Type )?
-TypeArgs -> LT Type ( COMMA Type )* GT
-# Body (simplified - balance braces)
+TypeList -> Type ( NL* COMMA NL* Type )*
+# `some P`, `any P`, `T?`, `T!`, `[T]`, `[K: V]`, `(A, B) -> C`, `T.Type`.
+Type -> TypeModifier* TypeAtom TypeSuffix* ( ARROW Type )?
+# `some` / `any` are contextual keywords, matched as a bare identifier that is
+# itself followed by a type.
+TypeModifier -> Ident &( TypeIdent / LBRACKET / LPAREN )
+# The `Operator` alternative covers the force-unwrap `!` and the variadic
+# `...`, both of which the lexer folds into the generic `Operator` token —
+# and so is `=`. It is therefore guarded: a suffix `Operator` only counts
+# when another TYPE or a terminator follows, never when a value does.
+# Unguarded it swallowed the `=` of every default argument, which dropped
+# every initializer and function that had one.
+TypeSuffix -> QMARK / Operator !( Ident / TypeIdent / Number / String / DollarIdent / KW_self / KW_Self / LBRACKET / LPAREN ) / DOT Name TypeArgs?
+TypeAtom -> QualifiedName TypeArgs?
+          / LBRACKET NL* Type ( COLON NL* Type )? NL* RBRACKET
+          / LPAREN NL* TypeList? NL* RPAREN
+TypeArgs -> LT NL* TypeArgList? NL* GT
+TypeArgList -> Type ( NL* COMMA NL* Type )*
+
+# Body — an opaque balanced-bracket group. Nothing inside a function body is
+# part of a type's public surface, so its contents only need to be consumed
+# safely, with every bracket pair matched so the body ends at the right `}`.
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
-# Expressions
-Expr -> ( ExprAtom / LBRACKET Expr? RBRACKET )+
-ExprAtom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / KW_self / KW_Self / LPAREN / RPAREN / DOT / COMMA / COLON / ARROW / LT / GT / Operator / Attribute
+# Expressions — a property initializer or an enum raw value. Swift puts
+# closures, array/dictionary literals and nested calls there, so an expression
+# is a run of atoms and balanced bracket groups, exactly like a body.
+# Modelling it any more precisely only creates new ways to stop the parse.
+Expr -> ExprItem+
+ExprItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / ExprAtom
+ExprAtom -> Ident / TypeIdent / DollarIdent / Number / String / BoolLit / NilLit / KW_self / KW_Self / KW_if / KW_else / KW_switch / KW_case / KW_in / KW_return / DOT / COMMA / COLON / ARROW / QMARK / LT / GT / Operator / Attribute
+# A default value or raw value ends at the comma or paren that ends its
+# parameter/case, so unlike `Expr` it must NOT accept a bare `,`; a comma
+# inside it is nested in a bracket group, which `DefaultItem` consumes whole.
+DefaultExpr -> DefaultItem+
+DefaultItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / DefaultAtom
+DefaultAtom -> Ident / TypeIdent / DollarIdent / Number / String / BoolLit / NilLit / KW_self / KW_Self / DOT / COLON / ARROW / QMARK / LT / GT / Operator / Attribute
 
-Atom -> Ident / TypeIdent / Number / String / BoolLit / NilLit / NL / DocComment / DocBlockComment / LineComment / BlockComment / KW_import / KW_let / KW_var / KW_func / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_actor / KW_init / KW_deinit / KW_subscript / KW_public / KW_private / KW_internal / KW_fileprivate / KW_open / KW_final / KW_static / KW_override / KW_mutating / KW_async / KW_await / KW_throws / KW_if / KW_else / KW_guard / KW_switch / KW_case / KW_for / KW_in / KW_while / KW_return / KW_where / KW_self / KW_Self / KW_get / KW_set / SEMI / COMMA / COLON / DOT / ARROW / QMARK / LT / GT / Operator / Attribute / AT
+Atom -> ExprAtom / NL / DocComment / DocBlockComment / LineComment / BlockComment / KW_import / KW_let / KW_var / KW_func / KW_class / KW_struct / KW_enum / KW_protocol / KW_extension / KW_typealias / KW_init / KW_deinit / KW_subscript / KW_public / KW_private / KW_internal / KW_fileprivate / KW_throws / KW_guard / KW_for / KW_while / KW_where / SEMI / AT
 
-Other -> Atom
+# Catch-all: one token of any kind, including a bracket whose partner the
+# declaration rules never reached (an `Atom` only accepts balanced groups).
+Other -> Atom / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === attrs
-on ClassDecl:     def id kind=Class doc=doc
-on StructDecl:    def id kind=Struct doc=doc
-on EnumDecl:      def id kind=Enum doc=doc
-on ProtocolDecl:  def id kind=Protocol doc=doc
-on ActorDecl:     def id kind=Actor doc=doc
-on FuncDecl:      def id kind=Function doc=doc
-on VarDecl:       def id kind=Variable doc=doc
-on TypeAliasDecl: def id kind=TypeAlias doc=doc
-on EnumCase:      def case_id kind=EnumCase doc=case_doc
-on AssociatedType: def assoc_id kind=AssociatedType doc=assoc_doc
-on Param:         def param_id kind=Param
-
-on ImportDecl:    import module=path
+on ClassHeader:     def id kind=Class doc=doc
+on StructHeader:    def id kind=Struct doc=doc
+on EnumHeader:      def id kind=Enum doc=doc
+on ProtocolHeader:  def id kind=Protocol doc=doc
+on ActorHeader:     def id kind=Actor doc=doc
+on FuncDecl:        def id kind=Function doc=doc
+on FuncReq:         def id kind=Function doc=doc
+on VarDecl:         def id kind=Variable doc=doc
+on VarReq:          def id kind=Variable doc=doc
+on TypeAliasDecl:   def id kind=TypeAlias doc=doc
+on EnumCase:        def case_id kind=EnumCase doc=case_doc
+on AssociatedType:  def assoc_id kind=AssociatedType doc=assoc_doc
+on Param:           def param_id kind=Param
 
 === features
-function_kinds: Function
+function_kinds: Function, Method, Initializer
 function_keyword: KW_func
 identifier_kinds: Ident, TypeIdent
 self_keyword: KW_self
@@ -232,35 +367,231 @@ qualifier_separators: DOT
 vocabulary_token_kinds: DocComment, DocBlockComment, String
 
 === semantics
-# Import dependency
+# Import dependency. Note there is deliberately no `on ImportDecl: import ...`
+# line in the `=== attrs` section: an attrs `import` directive emits its own
+# moduleDependsOn edge, so having both produced two identical edges per import.
+#
+# `$path` holds only the LAST token of the dotted name, so `$path_text` — the
+# whole accumulated `Foundation.Data` — is what has to be resolved.
 on ImportDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
-# Public declarations (vis:Visibility? in grammar — Visibility = public | open)
-on ClassDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+# ---------------------------------------------------------------------------
+# Enclosing-type stack
+# ---------------------------------------------------------------------------
+# A type nested in another type's body belongs to that type, and a declaration
+# written AFTER that body belongs to whatever enclosed it — so the enclosing
+# type has to behave like a stack, while `bind`/`$scope` is a FLAT map with no
+# save/restore of its own.
+#
+# The stack is kept explicitly, as a `|`-joined string in `type_stack` whose
+# FIRST entry is the innermost type. A header pushes by PREPENDING its own
+# symbol; the declaration rule (which fires after its whole body, events being
+# bottom-up) pops by dropping everything up to the first separator. Prepending
+# is what makes both ends reachable with the string builtins available:
+# `beforeFirst` reads the top, `afterFirst` drops it.
+#
+# `current_type` mirrors the top of the stack so the member rules can read it
+# with a single lookup; an empty string means file level.
+on ClassHeader {
+  bind ns "value" name "inherited_vis" to ""
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on StructDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+on StructHeader {
+  bind ns "value" name "inherited_vis" to ""
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on EnumDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+on EnumHeader {
+  bind ns "value" name "inherited_vis" to ""
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on ProtocolDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+on ProtocolHeader {
+  bind ns "value" name "inherited_vis" to ""
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on ActorDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Actor", "doc", $doc)
+on ActorHeader {
+  bind ns "value" name "inherited_vis" to ""
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
 }
-on FuncDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+
+# An extension has no name: its members belong to the type it extends, which is
+# what it pushes. An extension of a type declared in another file still yields
+# a sensible owner — the symbol id of that type as this file names it.
+on ExtensionHeader {
+  let sym_id = concat($file, "::", $ext_type_text)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+  # `public extension X { func f() … }` makes every member public without
+  # repeating the modifier on each one, so the extension's own visibility is
+  # published into the body and the member rules add it to what they read.
+  bind ns "value" name "inherited_vis" to trim(concat($pre_text, " ", $mods_text))
 }
-on VarDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+
+# A declaration rule fires after its own body, which is exactly where that body
+# ends, so it pops the stack: drop the top entry and re-expose the one beneath.
+on ClassDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
 }
-on TypeAliasDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc)
+on StructDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
+}
+on EnumDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
+}
+on ProtocolDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
+}
+on ActorDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
+}
+on ExtensionDecl {
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
+  bind ns "value" name "inherited_vis" to ""
+}
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+# Swift's default visibility is `internal` — module-wide but not part of the
+# package's public API — so only `public` and `open` declarations are
+# published, along with `package`. `private` and `fileprivate` never are.
+#
+# Visibility is read out of the declaration's accumulated metadata text rather
+# than from a single keyword label, because it may sit on either side of the
+# doc block and because `open` and `package` are contextual keywords with no
+# token of their own (see the lex note).
+#
+# A header has already pushed itself when its edge fires, so the type it is
+# nested in is the SECOND stack entry.
+on ClassHeader when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on StructHeader when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Struct", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on EnumHeader when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on ProtocolHeader when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Protocol", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on ActorHeader when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  # This header has already pushed itself, so the enclosing type is the
+  # SECOND stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Actor", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on TypeAliasDecl when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", "TypeAlias", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A member of a public type is itself public unless it says otherwise, but
+# Swift does NOT infer `public` for members: an unannotated member of a public
+# struct is `internal`. Publishing on the explicit modifier alone is therefore
+# the faithful reading — except inside a protocol, where every requirement is
+# part of the protocol's surface with no modifier of its own.
+on FuncDecl when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", cond(parent, "Method", "Function"), "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on VarDecl when cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", cond(parent, "Property", "Variable"), "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A protocol requirement is implicitly public with no modifier written at all,
+# so it is published unconditionally whenever the protocol itself is.
+on FuncReq when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $id) attrs obj("name", $id, "kind", "Method", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on VarReq when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $id) attrs obj("name", $id, "kind", "Property", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# An initializer is named `init`; it is declared under the type it constructs
+# so the type's public API includes the ways to build it.
+on InitDecl when cond($scope("value", "current_type"), cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "public"), 1, cond(containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "open"), 1, containsStr(concat(concat($pre_text, $mods_text), $scope("value", "inherited_vis")), "package")))) {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".init") attrs obj("name", "init", "kind", "Initializer", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on InitReq when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".init") attrs obj("name", "init", "kind", "Initializer", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# An enum case is a public member of its enum whenever the enum itself is
+# published; it carries no modifier of its own. The header pushed the enum
+# before the body was parsed.
+on EnumCase when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $case_id) attrs obj("name", $case_id, "kind", "EnumCase", "doc", trim($case_doc_text))
+}
+on ExtraCase when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $extra_id) attrs obj("name", $extra_id, "kind", "EnumCase")
+}
+
+# A protocol's associated type is part of its surface with no modifier.
+on AssociatedType when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $assoc_id) attrs obj("name", $assoc_id, "kind", "AssociatedType", "doc", trim($assoc_doc_text))
 }
 
 === resolver

@@ -6,20 +6,76 @@ sources: .yml, .yaml
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 TOKEN Comment /#[^\r\n]*/
+# Document markers, which start a line of their own.
+TOKEN DocStart /^---/
+TOKEN DocEnd /^\.\.\./
 TOKEN Dash /-/
 TOKEN Colon /:/
 TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
 TOKEN NumberLit /-?[0-9]+(\.[0-9]+)?/
 KEYWORD KW_true /true/
 KEYWORD KW_false /false/
-TOKEN BareWord /[A-Za-z0-9_.\/@-]+/
+# Flow collections: `[a, b]` and `{k: v}`.
+TOKEN LBRACKET /\[/
+TOKEN RBRACKET /\]/
+TOKEN LBRACE /\{/
+TOKEN RBRACE /\}/
+TOKEN Comma /,/
+# Block scalar headers (`|`, `>`, with the `-`/`+` chomping indicator and an
+# optional indentation digit) and the anchor / alias / tag / merge sigils.
+# Without these the lexer dropped the characters silently, so a workflow
+# step whose `run:` is a block scalar lexed as a different document than the
+# one on disk.
+TOKEN BlockScalar /[|>][-+]?[0-9]?(?=\s*(#[^\r\n]*)?\r?\n)/
+TOKEN Anchor /&[^\s,\[\]{}]+/
+TOKEN Alias /\*[^\s,\[\]{}]+/
+TOKEN Tag /!{1,2}[^\s,\[\]{}]*/
+TOKEN Question /\?/
+# A plain scalar word. Kept last so every sigil above wins at its own
+# position; it stops at whitespace and at the flow / structure punctuation.
+TOKEN BareWord /[^\s:,\[\]{}#&*!?|>'"-][^\s:,\[\]{}#]*|[^\s:,\[\]{}#]/
 
 === grammar
+# Every token kind is reachable from Doc: a YAML file that uses a flow
+# sequence, a block scalar or an anchor must still be consumed to the end,
+# or every mapping below it is lost.
 Doc -> Item*
-Item -> Mapping / ListItem / Comment / NL
-Mapping -> key:BareWord Colon value:YamlValue? NL?
-ListItem -> Dash value:YamlValue? NL?
-YamlValue -> StringLit / NumberLit / KW_true / KW_false / BareWord
+Item -> DocStart / DocEnd / Mapping / ListItem / Comment / NL / Other
+
+# `key: value`, where the value may be a scalar, a flow collection, a block
+# scalar header (the indented body that follows is read as further Items) or
+# nothing at all (the value is the indented block below).
+Mapping -> key:MapKey Colon value:YamlValue? Trailer? NL?
+
+# A key may be quoted, and an unquoted key may contain spaces and dashes
+# (`runs-on`, `on push`), so it is a run of words up to the colon.
+MapKey -> StringLit / BareWord ( !Colon BareWord )*
+
+# `- item`, `- key: value` (a mapping nested in a sequence entry) and a bare
+# `-` opening an indented block.
+ListItem -> Dash ( Mapping / value:YamlValue Trailer? )? NL?
+
+YamlValue -> FlowSeq / FlowMap / BlockScalar / StringLit / NumberLit
+           / KW_true / KW_false / Alias / Anchor / Tag / ScalarRun
+
+# An unquoted scalar runs to the end of the line; it may contain colons
+# (`image: node:20`), slashes and punctuation.
+ScalarRun -> ( !NL !Comment ScalarPart )+
+ScalarPart -> BareWord / NumberLit / Colon / Dash / Comma / Question
+            / StringLit / KW_true / KW_false
+
+# Anything after the value on the same line: a trailing comment, or the
+# anchor/tag that may follow a key.
+Trailer -> ( !NL Other )+
+
+FlowSeq -> LBRACKET ( !RBRACKET !NL FlowItem )* RBRACKET
+FlowMap -> LBRACE ( !RBRACE !NL FlowItem )* RBRACE
+FlowItem -> FlowSeq / FlowMap / Other
+
+# Any single token kind except NL, so the Item loop always makes progress.
+Other -> Comment / DocStart / DocEnd / Dash / Colon / StringLit / NumberLit
+       / KW_true / KW_false / LBRACKET / RBRACKET / LBRACE / RBRACE / Comma
+       / BlockScalar / Anchor / Alias / Tag / Question / BareWord
 
 === features
 content_type: config

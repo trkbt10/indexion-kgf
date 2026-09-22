@@ -51,12 +51,32 @@ TOKEN Other /[^\s\.\,。、！\!？\?〈《「『｢（(\[【〔〚〖〘❮❬�
 === grammar
 Doc  -> Line*
 Line -> Segment* NL?
+
+# A segment is one word-ish unit plus the particle and punctuation that
+# trail it. Every alternative ends in `Loose`, which accepts any single
+# token kind declared in `=== lex` other than NL, so a line that starts with
+# a particle (`でも、…`), a bracket or a stray character is still consumed
+# and the parse reaches the end of the text. Before that the parse stopped
+# at the first such line and every word after it was dropped.
 Segment -> BracketOpen Content BracketClose
          / w:Word Joshi? Punct?
+         / n:CjkNumber Unit? Punct?
          / n:Number Unit? Punct?
          / Punct
-Content -> Word*
+         / Loose
+
+# Quoted speech contains ordinary running text, particles included.
+Content -> ( !BracketClose !NL ( Word / Joshi / Punct / CjkNumber / Number
+           / Unit / BracketOpen ) )*
+
+# A CJK numeral is a number, not a word: `十` and `10` are the same thing
+# written two ways, so both feed the number alternative above. The token was
+# defined in `=== lex` but no rule consumed it, which stopped the parse on
+# any text containing a CJK numeral.
 Word -> Kanji / Hiragana / Katakana / Alnum / Nbsp / Other
+
+Loose -> Joshi / BracketOpen / BracketClose / Unit / CjkNumber / Number
+       / Kanji / Hiragana / Katakana / Alnum / Nbsp / Other / Punct
 
 === attrs
 on Segment: def id=w kind=Word

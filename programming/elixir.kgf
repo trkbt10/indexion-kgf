@@ -10,7 +10,11 @@ TOKEN NL /\r?\n/
 TOKEN Comment /#[^\r\n]*/
 
 # Documentation attributes
-TOKEN DocAttr /@(doc|moduledoc|typedoc)\s+(~[sSwwcCaA])?"""[\s\S]*?"""|@(doc|moduledoc|typedoc)\s+false/
+# The three documented forms, longest first (the lexer is first-match, so the
+# heredoc alternative must precede the single-line one or `"""` would match
+# as an empty `""` followed by a stray quote).
+TOKEN ModuleDocAttr /@moduledoc[ \t]*(?:~[sSwcCaA])?"""([\s\S]*?)"""|@moduledoc[ \t]*"((?:[^"\\]|\\.)*)"|@moduledoc[ \t]+(false)/
+TOKEN DocAttr /@(?:doc|typedoc)[ \t]*(?:~[sSwcCaA])?"""([\s\S]*?)"""|@(?:doc|typedoc)[ \t]*"((?:[^"\\]|\\.)*)"|@(?:doc|typedoc)[ \t]+(false)/
 TOKEN ModuleAttr /@[a-zA-Z_][a-zA-Z0-9_]*/
 
 # String literals
@@ -88,83 +92,144 @@ TOKEN AT       /@/
 === grammar
 Module -> Item*
 
+# `Other` is a catch-all accepting any single token, so the start rule can
+# never stop in front of an unmodelled construct.
 Item -> NL
      / Comment
-     / DocAttr
      / ModuleDecl
      / ProtocolDecl
      / ImplDecl
      / DefDecl
      / DefMacroDecl
      / DefGuardDecl
+     / DefDelegateDecl
+     / StructDecl
      / UseDecl
      / ImportDecl
      / AliasDecl
      / RequireDecl
+     / DocAttr
+     / ModuleDocAttr
      / Other
 
-# Module declaration
-ModuleDecl -> doc:DocAttr? NL? KW_defmodule id:ModulePath ( KW_do ModuleBody KW_end / COMMA KW_do COLON ModuleBody )
+# A `do ... end` body, consumed as a BALANCED opaque group.
+#
+# This is the central fix for this spec. The previous `DefBody` was
+# `( NL / Comment / Expr / Statement )*`, and `Statement` accepted `KW_end`;
+# an opaque body that can eat its own terminator never stops, so `DefDecl`
+# never completed, `ModuleDecl` never completed, and EVERY declaration fell
+# through to `Other` — the file produced zero edges while still reporting
+# "Parse: SUCCESS". `BlockContent` below excludes `KW_end` and instead
+# recurses into nested `do ... end` / `fn ... end` groups, so the body always
+# terminates at its own matching `end`.
+DoBlock -> KW_do BlockContent* KW_end
+BlockContent -> InlineDoKeyword
+             / DoBlock
+             / KW_fn BlockContent* KW_end
+             / LPAREN BlockContent* RPAREN
+             / LBRACE BlockContent* RBRACE
+             / LBRACKET BlockContent* RBRACKET
+             / BlockAtom
+# `do:` as a keyword-list key — `quote do: expr`, `if x, do: y` — is two
+# tokens (`do` then `:`) and must be consumed as a pair BEFORE `DoBlock` is
+# tried, or it opens a block that never closes where it should.
+InlineDoKeyword -> KW_do COLON
+
+# Every token EXCEPT the bracket/`end` terminators handled above.
+BlockAtom -> Ident / ModuleIdent / Number / String / Atom / BoolLit / NilLit / DOT / COMMA / COLON / SEMI / AT / PIPE / ARROW / LARROW / DARROW / Operator / ModuleAttr / DocAttr / ModuleDocAttr / Comment / NL
+          / KW_if / KW_unless / KW_case / KW_cond / KW_with / KW_for / KW_try / KW_receive / KW_after / KW_rescue / KW_catch / KW_else / KW_when / KW_raise
+          / KW_def / KW_defp / KW_defmacro / KW_defmacrop / KW_defguard / KW_defguardp / KW_defmodule / KW_defprotocol / KW_defimpl / KW_defstruct / KW_defexception / KW_defdelegate
+          / KW_use / KW_import / KW_alias / KW_require
+
+# The keyword-list body form: `def f(x), do: expr`. The expression runs to
+# end of line.
+KeywordBody -> COMMA KW_do COLON InlineExpr
+InlineExpr -> InlineAtom+
+InlineAtom -> LPAREN BlockContent* RPAREN / LBRACE BlockContent* RBRACE / LBRACKET BlockContent* RBRACKET / KW_fn BlockContent* KW_end
+           / Ident / ModuleIdent / Number / String / Atom / BoolLit / NilLit / DOT / COMMA / COLON / PIPE / ARROW / LARROW / DARROW / Operator / ModuleAttr
+
+Body -> DoBlock / KeywordBody
+
+# Module declaration.
+#
+# `ModuleHeader` fires BEFORE the body, so its `bind` of the module id is in
+# scope for the `def`s inside it (events fire bottom-up, so a label on
+# `ModuleDecl` itself would be too late for its own members).
+ModuleDecl -> ModuleHeader ModuleBodyBlock
+# `@moduledoc` lives INSIDE the body (`defmodule X do` then `@moduledoc`),
+# so the header captures the doc from there: `KW_do NL* doc:ModuleDocAttr?` is
+# part of the header, and the body block continues after it.
+ModuleHeader -> NL* KW_defmodule id:ModulePath KW_do NL* doc:ModuleDocAttr?
 ModulePath -> ModuleIdent ( DOT ModuleIdent )*
-ModuleBody -> ( ModuleMember )*
-ModuleMember -> DocAttr / ModuleAttr / DefDecl / DefMacroDecl / DefGuardDecl / StructDecl / UseDecl / ImportDecl / AliasDecl / RequireDecl / ModuleDecl / NL / Comment
+ModuleBodyBlock -> ModuleMember* KW_end
+# A module member is a real declaration, or — so that an unmodelled construct
+# cannot end the body early — any single non-terminator token.
+ModuleMember -> ModuleDecl / ProtocolDecl / ImplDecl / DefDecl / DefMacroDecl / DefGuardDecl / DefDelegateDecl / StructDecl / UseDecl / ImportDecl / AliasDecl / RequireDecl / DocAttr / ModuleDocAttr / ModuleAttr / NL / Comment / NestedGroup / BlockAtom
+NestedGroup -> InlineDoKeyword / DoBlock / KW_fn BlockContent* KW_end / LPAREN BlockContent* RPAREN / LBRACE BlockContent* RBRACE / LBRACKET BlockContent* RBRACKET
 
 # Protocol declaration
-ProtocolDecl -> doc:DocAttr? NL? KW_defprotocol id:ModulePath ( KW_do ProtocolBody KW_end / COMMA KW_do COLON ProtocolBody )
-ProtocolBody -> ( ProtocolMember )*
-ProtocolMember -> DocAttr / DefDecl / NL / Comment
+ProtocolDecl -> ProtocolHeader ProtocolBodyBlock
+ProtocolHeader -> NL* KW_defprotocol id:ModulePath KW_do NL* doc:ModuleDocAttr?
+ProtocolBodyBlock -> ModuleMember* KW_end
 
 # Impl declaration
-ImplDecl -> doc:DocAttr? NL? KW_defimpl ModulePath COMMA KW_for COLON ModulePath ( KW_do ImplBody KW_end / COMMA KW_do COLON ImplBody )
-ImplBody -> ( ImplMember )*
-ImplMember -> DocAttr / DefDecl / NL / Comment
+ImplDecl -> NL* KW_defimpl ModulePath ( COMMA Ident COLON ModulePath )? KW_do ModuleBodyBlock
 
 # Struct declaration
-StructDecl -> KW_defstruct LBRACKET ( StructField ( COMMA StructField )* )? RBRACKET
-StructField -> Atom / Ident / LBRACE Atom COMMA Expr RBRACE
+StructDecl -> KW_defstruct ( LBRACKET StructFieldList? RBRACKET / StructFieldList )
+StructFieldList -> StructField ( COMMA NL* StructField )*
+StructField -> field_atom:Atom ( COLON InlineExpr )? / LBRACE Atom COMMA InlineExpr RBRACE / field_id:Ident COLON InlineExpr
 
-# Def declaration
-DefDecl -> doc:DocAttr? NL? vis:( KW_def / KW_defp ) def_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
+# Function declaration.
+#
+# `vis` distinguishes `def` (public) from `defp` (private); only public ones
+# are emitted, matching how the other specs treat visibility.
+DefDecl -> doc:DocAttr? NL* vis:( KW_def / KW_defp ) def_id:DefName DefArgs? Guard? Body?
+# A function name may be a bare identifier, an operator (`def a + b`) or a
+# quoted/unquoted form; the identifier case is what matters for the edge.
+DefName -> Ident
 DefArgs -> LPAREN ParamList? RPAREN
-DefBody -> ( DefContent )*
-DefContent -> NL / Comment / Expr / Statement
+# A guard ends at the `,` that introduces the `do:` body, so `GuardExpr`
+# excludes a top-level COMMA (commas inside brackets are still fine because
+# those are consumed by the balanced-group alternatives).
+Guard -> KW_when GuardExpr
+GuardExpr -> GuardAtom+
+GuardAtom -> LPAREN BlockContent* RPAREN / LBRACE BlockContent* RBRACE / LBRACKET BlockContent* RBRACKET
+          / Ident / ModuleIdent / Number / String / Atom / BoolLit / NilLit / DOT / COLON / PIPE / ARROW / LARROW / DARROW / Operator / ModuleAttr
 
-# DefMacro declaration
-DefMacroDecl -> doc:DocAttr? NL? vis:( KW_defmacro / KW_defmacrop ) macro_id:Ident DefArgs? ( KW_when Expr )? ( KW_do DefBody KW_end / COMMA KW_do COLON Expr )
+DefMacroDecl -> doc:DocAttr? NL* vis:( KW_defmacro / KW_defmacrop ) macro_id:DefName DefArgs? Guard? Body?
+DefGuardDecl -> doc:DocAttr? NL* vis:( KW_defguard / KW_defguardp ) guard_id:DefName DefArgs? Guard? Body?
+DefDelegateDecl -> doc:DocAttr? NL* KW_defdelegate deleg_id:DefName DefArgs? COMMA InlineExpr
 
-# DefGuard declaration
-DefGuardDecl -> doc:DocAttr? NL? vis:( KW_defguard / KW_defguardp ) guard_id:Ident DefArgs? ( KW_when Expr )?
-
-# Use/Import/Alias/Require
-UseDecl -> KW_use ModulePath ( COMMA Expr )*
-ImportDecl -> KW_import path:ModulePath ( COMMA Expr )*
-AliasDecl -> KW_alias ModulePath ( COMMA Expr )*
-RequireDecl -> KW_require ModulePath ( COMMA Expr )*
+# Use/Import/Alias/Require. Each carries the full dotted module path so the
+# dependency edge records `via="GenServer"` / `via="Ecto.Query"`.
+UseDecl -> KW_use path:ModulePath ( COMMA InlineExpr )?
+ImportDecl -> KW_import path:ModulePath ( COMMA InlineExpr )?
+AliasDecl -> KW_alias path:ModulePath ( COMMA InlineExpr )? ( DOT LBRACE NL* ModulePath ( COMMA NL* ModulePath )* NL* RBRACE )?
+RequireDecl -> KW_require path:ModulePath ( COMMA InlineExpr )?
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
-Param -> param_id:Ident ( Operator Ident )? ( Operator Expr )?
+ParamList -> Param ( COMMA NL* Param )*
+# A parameter may be a plain name, a pattern (`%{}`, `{:add, title}`,
+# `_from`), or a defaulted name (`opts \\ []`). Only the plain-name form
+# binds `param_id`; patterns are consumed opaquely.
+Param -> param_id:Ident ( Operator InlineExpr )? / PatternParam
+PatternParam -> InlineAtom+
 
-# Statement
-Statement -> KW_if / KW_unless / KW_case / KW_cond / KW_with / KW_for / KW_try / KW_receive / KW_after / KW_rescue / KW_catch / KW_else / KW_end / KW_do / KW_fn / KW_raise / KW_when
-
-# Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / ModuleIdent / Number / String / Atom / BoolLit / NilLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / PIPE / ARROW / LARROW / DARROW / Operator / ModuleAttr / DocAttr
-
-Atom2 -> ExprAtom / NL / Comment / KW_defmodule / KW_defprotocol / KW_defimpl / KW_defstruct / KW_defexception / KW_defmacro / KW_defmacrop / KW_defguard / KW_def / KW_defp / KW_defdelegate / KW_if / KW_unless / KW_case / KW_cond / KW_with / KW_for / KW_try / KW_receive / KW_after / KW_rescue / KW_catch / KW_else / KW_end / KW_do / KW_fn / KW_raise / KW_require / KW_import / KW_alias / KW_use / KW_when / SEMI / AT
+Atom2 -> BlockAtom / KW_end / KW_do / KW_fn / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET
 
 Other -> Atom2
 
 === attrs
-on ModuleDecl:    def id kind=Module doc=doc
-on ProtocolDecl:  def id kind=Protocol doc=doc
-on DefDecl:       def def_id kind=Function doc=doc
-on DefMacroDecl:  def macro_id kind=Macro doc=doc
-on DefGuardDecl:  def guard_id kind=Guard doc=doc
-on Param:         def param_id kind=Param
+on ModuleHeader:      def id kind=Module doc=doc
+on ProtocolHeader:    def id kind=Protocol doc=doc
+on DefDecl:           def def_id kind=Function doc=doc
+on DefMacroDecl:      def macro_id kind=Macro doc=doc
+on DefGuardDecl:      def guard_id kind=Guard doc=doc
+on DefDelegateDecl:   def deleg_id kind=Function doc=doc
+on StructField:       def field_id kind=Field
+on Param:             def param_id kind=Param
 
-on ImportDecl:    import module=path
 
 === features
 function_kinds: Function, Guard, Macro
@@ -174,35 +239,51 @@ qualifier_separators: DOT
 vocabulary_token_kinds: DocAttr, String
 
 === semantics
-# Import dependency
+# Dependency edges. Elixir has four ways to reference another module, and the
+# `rel` attr records which one was used so consumers can tell a compile-time
+# `require` from a runtime `import`.
 on ImportDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value", "rel", "import")
+}
+on UseDecl {
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value", "rel", "use")
+}
+on RequireDecl {
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value", "rel", "require")
+}
+on AliasDecl {
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value", "rel", "alias")
 }
 
-# Elixir public declarations
-on ModuleDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+# The module HEADER carries the declares edge and the bind, not `ModuleDecl`:
+# events fire bottom-up, so a bind on `ModuleDecl` would happen after its own
+# members had already been reduced.
+on ModuleHeader {
+  bind ns "value" name "current_module" to concat($file, "::", $id_text)
+  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Module", "doc", trim($doc_text))
 }
-on ProtocolDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Protocol", "doc", $doc)
+on ProtocolHeader {
+  bind ns "value" name "current_module" to concat($file, "::", $id_text)
+  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Protocol", "doc", trim($doc_text))
 }
 
-# def = public, defp = private
+# `def` is public, `defp` private. Functions attach to the enclosing module
+# when there is one, and to the file otherwise (a bare `.exs` script).
 on DefDecl when eq($vis, "def") {
-  edge declares from $file to concat($file, "::", $def_id) attrs obj("name", $def_id, "kind", "Function", "doc", $doc)
+  let parent = $scope("value", "current_module")
+  edge declares from cond(parent, parent, $file) to concat(cond(parent, parent, $file), ".", $def_id) attrs obj("name", $def_id, "kind", "Function", "doc", trim($doc_text))
 }
 on DefMacroDecl when eq($vis, "defmacro") {
-  edge declares from $file to concat($file, "::", $macro_id) attrs obj("name", $macro_id, "kind", "Macro", "doc", $doc)
+  let parent = $scope("value", "current_module")
+  edge declares from cond(parent, parent, $file) to concat(cond(parent, parent, $file), ".", $macro_id) attrs obj("name", $macro_id, "kind", "Macro", "doc", trim($doc_text))
 }
 on DefGuardDecl when eq($vis, "defguard") {
-  edge declares from $file to concat($file, "::", $guard_id) attrs obj("name", $guard_id, "kind", "Guard", "doc", $doc)
-}
-
-# Def in module
-on DefDecl when $scope("value", "current_module") {
   let parent = $scope("value", "current_module")
-  let sym_id = concat(parent, ".", $def_id)
-  edge declares from parent to sym_id attrs obj("name", $def_id, "kind", "Function", "doc", $doc)
+  edge declares from cond(parent, parent, $file) to concat(cond(parent, parent, $file), ".", $guard_id) attrs obj("name", $guard_id, "kind", "Guard", "doc", trim($doc_text))
+}
+on DefDelegateDecl {
+  let parent = $scope("value", "current_module")
+  edge declares from cond(parent, parent, $file) to concat(cond(parent, parent, $file), ".", $deleg_id) attrs obj("name", $deleg_id, "kind", "Function", "doc", trim($doc_text))
 }
 
 === resolver

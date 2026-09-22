@@ -45,6 +45,7 @@ KEYWORD KW_implicit  /implicit\b/
 KEYWORD KW_given     /given\b/
 KEYWORD KW_using     /using\b/
 KEYWORD KW_extension /extension\b/
+KEYWORD KW_derives   /derives\b/
 KEYWORD KW_extends   /extends\b/
 KEYWORD KW_with      /with\b/
 KEYWORD KW_new       /new\b/
@@ -58,6 +59,7 @@ KEYWORD KW_yield     /yield\b/
 KEYWORD KW_try       /try\b/
 KEYWORD KW_catch     /catch\b/
 KEYWORD KW_finally   /finally\b/
+KEYWORD KW_throw     /throw\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -73,7 +75,15 @@ TOKEN Ident /[a-z_][a-zA-Z0-9_]*/
 TOKEN ARROW    /=>/
 TOKEN LARROW   /<-/
 TOKEN COLON2   /::/
-TOKEN Operator /[+\-*\/%&|^~!<>=:?@#]+|->/
+# `Operator` deliberately omits the BARE `:`. The lexer matches token rules
+# in definition order (first match wins, not longest match), and this rule
+# is defined before `COLON`; with `:` in the character class every single
+# `:` in the language lexed as `Operator`, so `param: Type`, `def f: T` and
+# `val x: T` could never match their `COLON` slot. Multi-character operators
+# that merely CONTAIN a colon (`::`, `:+`, `+:`, `<:`, `>:`, `:=`) still
+# match here because they are longer at the same position; the alternation
+# below lists them explicitly so they keep winning over the bare `COLON`.
+TOKEN Operator /<:|>:|:\+|\+:|:=|[+\-*\/%&|^~!<>=?@#]+|->/
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -90,6 +100,8 @@ TOKEN COLON    /:/
 === grammar
 Module -> Item*
 
+# `Other` is a catch-all accepting any single token so the start rule can
+# never stop in front of an unmodelled construct.
 Item -> NL
      / PackageDecl
      / ImportDecl
@@ -97,102 +109,149 @@ Item -> NL
      / TraitDecl
      / ObjectDecl
      / EnumDecl
+     / GivenDecl
+     / ExtensionDecl
      / DefDecl
      / ValDecl
      / VarDecl
      / TypeDecl
-     / ExtensionDecl
      / DocComment
      / Other
 
-# Package declaration
-PackageDecl -> KW_package QualifiedName
+# Package declaration.
+#
+# `path` is the WHOLE dotted name; `$path` alone would hold only its last
+# segment, so the package/import edges must use `$path_text`.
+PackageDecl -> KW_package path:QualifiedName ( LBRACE Item* RBRACE )?
 QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
 
-# Import declaration
-ImportDecl -> KW_import path:QualifiedName ( DOT ( Ident / TypeIdent / Operator / LBRACE ImportSelectors RBRACE ) )?
-ImportSelectors -> ImportSelector ( COMMA ImportSelector )*
-ImportSelector -> ( Ident / TypeIdent ) ( ARROW ( Ident / TypeIdent ) )?
+# Import declaration.
+#
+# `import a.b.{C, D}` and `import a.b.given` both end in something that is not
+# a plain name, so the selector group is part of the path match rather than an
+# optional tail that could be left unconsumed.
+ImportDecl -> KW_import path:QualifiedName ( DOT ImportTail )?
+ImportTail -> LBRACE NL* ImportSelectors NL* RBRACE / Operator / Ident / TypeIdent
+ImportSelectors -> ImportSelector ( NL* COMMA NL* ImportSelector )* NL* COMMA? NL*
+ImportSelector -> ( Ident / TypeIdent / Operator ) ( ARROW ( Ident / TypeIdent / Operator ) )?
+                / KW_given Type?
 
-# Class declaration
-ClassDecl -> doc:DocComment? NL? Annotation* Modifier* KW_case? KW_class id:TypeIdent TypeParams? ClassParams? ExtendsClause? ClassBody?
-ClassParams -> LPAREN ParamList? RPAREN
-ExtendsClause -> KW_extends Type ( KW_with Type )*
-ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> DefDecl / ValDecl / VarDecl / TypeDecl / ClassDecl / TraitDecl / ObjectDecl / NL / LineComment / BlockComment
+# A Scaladoc block. Scala 3's indented continuation lines (`  *`) are part of
+# the same BlockComment token, so a single DocComment token is the whole block.
+DocBlock -> DocComment
+
+# Class declaration.
+#
+# `ClassHeader` fires BEFORE the body, so its `bind` of the class id is in
+# scope for the members inside it (events fire bottom-up, so a label on
+# `ClassDecl` itself would be too late for its own members).
+ClassDecl -> ClassHeader Body?
+ClassHeader -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_case? KW_class id:TypeIdent TypeParams? ClassParams* ExtendsClause?
+ClassParams -> LPAREN NL* ( KW_using / KW_implicit )? ParamList? NL* RPAREN
+ExtendsClause -> ( KW_extends / KW_derives ) Parent ( ( KW_with / KW_derives / COMMA ) Parent )*
+# A parent is a type followed by the constructor arguments it is applied to.
+Parent -> Type ( LPAREN BodyToken* RPAREN )*
+
+# A brace-delimited body, shared by every declaration that has one.
+#
+# `Member` tries the real declaration rules first, then falls back to any
+# single non-terminator token, so an unmodelled construct inside a body
+# cannot end the body early and make the enclosing declaration fail.
+Body -> LBRACE Member* RBRACE
+Member -> EnumCase / DefDecl / ValDecl / VarDecl / TypeDecl / ClassDecl / TraitDecl / ObjectDecl / EnumDecl / GivenDecl / ExtensionDecl / NL / DocComment / LineComment / BlockComment / NestedGroup / MemberAtom
+NestedGroup -> LBRACE Member* RBRACE / LPAREN BodyToken* RPAREN / LBRACKET BodyToken* RBRACKET
+# Every token except the brace/paren/bracket terminators, which the balanced
+# groups above handle.
+BodyToken -> LBRACE BodyToken* RBRACE / LPAREN BodyToken* RPAREN / LBRACKET BodyToken* RBRACKET / MemberAtom / NL / DocComment / LineComment / BlockComment
+MemberAtom -> Ident / TypeIdent / Number / String / Char / Symbol / BoolLit / NullLit / ThisLit / SuperLit / DOT / COMMA / COLON / COLON2 / SEMI / ARROW / LARROW / Operator / Annotation
+          / KW_package / KW_import / KW_def / KW_val / KW_var / KW_lazy / KW_type / KW_class / KW_trait / KW_object / KW_enum / KW_case / KW_sealed / KW_abstract / KW_final / KW_private / KW_protected / KW_override / KW_implicit / KW_given / KW_using / KW_derives / KW_extension / KW_extends / KW_with / KW_new / KW_if / KW_else / KW_match / KW_for / KW_while / KW_return / KW_yield / KW_try / KW_catch / KW_finally / KW_throw
 
 # Trait declaration
-TraitDecl -> doc:DocComment? NL? Annotation* Modifier* KW_sealed? KW_trait id:TypeIdent TypeParams? ExtendsClause? TraitBody?
-TraitBody -> LBRACE TraitMember* RBRACE
-TraitMember -> DefDecl / ValDecl / VarDecl / TypeDecl / NL / LineComment / BlockComment
+TraitDecl -> TraitHeader Body?
+TraitHeader -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_trait id:TypeIdent TypeParams? ClassParams* ExtendsClause?
 
 # Object declaration
-ObjectDecl -> doc:DocComment? NL? Annotation* Modifier* KW_case? KW_object id:TypeIdent ExtendsClause? ObjectBody?
-ObjectBody -> LBRACE ObjectMember* RBRACE
-ObjectMember -> DefDecl / ValDecl / VarDecl / TypeDecl / ClassDecl / TraitDecl / ObjectDecl / NL / LineComment / BlockComment
+ObjectDecl -> ObjectHeader Body?
+ObjectHeader -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_case? KW_object id:TypeIdent ExtendsClause?
 
-# Enum declaration
-EnumDecl -> doc:DocComment? NL? Annotation* Modifier* KW_enum id:TypeIdent TypeParams? ExtendsClause? EnumBody
-EnumBody -> LBRACE EnumMember* RBRACE
-EnumMember -> EnumCase / DefDecl / ValDecl / VarDecl / TypeDecl / NL / LineComment / BlockComment
-EnumCase -> case_doc:DocComment? KW_case case_id:TypeIdent ClassParams? ExtendsClause?
+# Enum declaration.
+#
+# The previous rule required `KW_enum id:TypeIdent TypeParams? ...` with no
+# slot for Scala 3's parameterised form `enum Priority(val weight: Int)`, so
+# the whole enum failed to match and every one of its cases was lost.
+EnumDecl -> EnumHeader Body?
+EnumHeader -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_enum id:TypeIdent TypeParams? ClassParams* ExtendsClause?
+# `case A, B, C` declares several cases at once; only the first is captured as
+# the id, the rest are consumed.
+EnumCase -> ( Annotation / NL )* case_doc:DocBlock? ( Annotation / NL )* KW_case case_id:TypeIdent ClassParams* ExtendsClause? ( COMMA TypeIdent )*
 
-# Extension declaration
-ExtensionDecl -> doc:DocComment? NL? KW_extension TypeParams? LPAREN Ident COLON Type RPAREN ExtensionBody
-ExtensionBody -> LBRACE ExtensionMember* RBRACE / DefDecl
-ExtensionMember -> DefDecl / NL / LineComment / BlockComment
+# Given declaration (Scala 3): `given Name: Type = ...` or anonymous.
+GivenDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_given given_id:Ident TypeParams? ClassParams* ( COLON Type )? ( ExtendsClause / Operator Expr / Body )?
 
-# Def declaration
-DefDecl -> doc:DocComment? NL? Annotation* Modifier* KW_def def_id:Ident TypeParams? ParamClauses? ( COLON Type )? ( Operator Expr )?
-ParamClauses -> LPAREN ( KW_using / KW_implicit )? ParamList? RPAREN ParamClauses?
+# Extension declaration (Scala 3)
+ExtensionDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* KW_extension TypeParams? ClassParams+ ( Body / DefDecl )
 
-# Val declaration
-ValDecl -> doc:DocComment? NL? Annotation* Modifier* KW_lazy? KW_val val_id:Ident ( COLON Type )? Operator Expr
+# Def declaration.
+#
+# The body is `( Operator Expr )?` for `def f = expr` and `Body?` for
+# `def f = { ... }` / `def f: T = { ... }`. Both must be accepted or a method
+# with a brace body leaves its `{` unconsumed and the enclosing body ends.
+DefDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_def def_id:( Ident / Operator ) TypeParams? ParamClauses* ( COLON NL* Type )? DefRhs?
+DefRhs -> Operator NL* ( Body / Expr ) / Body
+ParamClauses -> LPAREN NL* ( KW_using / KW_implicit )? ParamList? NL* RPAREN
 
-# Var declaration
-VarDecl -> doc:DocComment? NL? Annotation* Modifier* KW_var var_id:Ident ( COLON Type )? Operator Expr
+# Val / Var declarations
+ValDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_lazy? KW_val val_id:Ident ( COLON NL* Type )? ( Operator NL* ( Body / Expr ) )?
+VarDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_var var_id:Ident ( COLON NL* Type )? ( Operator NL* ( Body / Expr ) )?
 
 # Type declaration
-TypeDecl -> doc:DocComment? NL? Annotation* Modifier* KW_type type_id:TypeIdent TypeParams? ( Operator Type )?
+TypeDecl -> ( Annotation / NL )* doc:DocBlock? ( Annotation / NL )* Modifier* KW_type type_id:TypeIdent TypeParams? ( Operator NL* Type )?
 
 # Modifiers
-Modifier -> KW_abstract / KW_final / KW_sealed / KW_private / KW_protected / KW_override / KW_implicit / KW_given
+Modifier -> ( KW_abstract / KW_final / KW_sealed / KW_private / KW_protected / KW_override / KW_implicit / KW_lazy ) AccessQualifier?
+AccessQualifier -> LBRACKET ( Ident / TypeIdent / ThisLit ) RBRACKET
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
-Param -> Annotation* KW_val? KW_var? param_id:Ident COLON Type ( Operator Expr )?
+ParamList -> Param ( NL* COMMA NL* Param )* NL* COMMA? NL*
+Param -> ( Annotation / NL )* KW_val? KW_var? Modifier* param_id:Ident COLON NL* Type ( Operator Expr )?
 
 # Types
-TypeParams -> LBRACKET TypeParam ( COMMA TypeParam )* RBRACKET
-TypeParam -> Annotation* ( Operator / Ident )? TypeIdent TypeBounds?
-TypeBounds -> ( Operator Type )+
-Type -> TypeAtom ( KW_with TypeAtom )* / TypeAtom ARROW Type
-TypeAtom -> QualifiedName TypeArgs? / LPAREN TypeList? RPAREN / LBRACE TypeMember* RBRACE
-TypeArgs -> LBRACKET Type ( COMMA Type )* RBRACKET
-TypeList -> Type ( COMMA Type )*
-TypeMember -> DefDecl / ValDecl / TypeDecl / NL
+TypeParams -> LBRACKET NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* RBRACKET
+TypeParam -> Annotation* ( Operator / KW_type )? ( Ident / TypeIdent / Operator ) TypeParams? TypeBounds?
+TypeBounds -> ( ( Operator / COLON / KW_with ) Type )+
+Type -> TypeAtom ( ( KW_with / Operator / ARROW / COMMA ) TypeAtom )*
+TypeAtom -> QualifiedName TypeArgs? / LPAREN NL* TypeList? NL* RPAREN TypeArgs? / LBRACE Member* RBRACE / Literal
+Literal -> Number / String / Char / BoolLit / NullLit
+TypeArgs -> LBRACKET NL* Type ( NL* COMMA NL* Type )* NL* RBRACKET
+TypeList -> Type ( NL* COMMA NL* Type )*
 
-# Expressions
+# Expressions.
+#
+# An expression right-hand side is opaque: a balanced token soup that cannot
+# break the enclosing declaration. `NL` is excluded so it stops at end of
+# line; a brace body is reached through `DefRhs`/`ValDecl` instead.
 Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / Char / Symbol / BoolLit / NullLit / ThisLit / SuperLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / COLON2 / ARROW / LARROW / Operator / Annotation
+ExprAtom -> LPAREN BodyToken* RPAREN / LBRACKET BodyToken* RBRACKET
+         / Ident / TypeIdent / Number / String / Char / Symbol / BoolLit / NullLit / ThisLit / SuperLit / DOT / COMMA / COLON / COLON2 / ARROW / LARROW / Operator / Annotation
+         / KW_new / KW_if / KW_else / KW_match / KW_for / KW_while / KW_return / KW_yield / KW_try / KW_catch / KW_finally / KW_throw / KW_case / KW_given / KW_using
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_def / KW_val / KW_var / KW_lazy / KW_type / KW_class / KW_trait / KW_object / KW_enum / KW_case / KW_sealed / KW_abstract / KW_final / KW_private / KW_protected / KW_override / KW_implicit / KW_given / KW_using / KW_extension / KW_extends / KW_with / KW_new / KW_if / KW_else / KW_match / KW_for / KW_while / KW_return / KW_yield / KW_try / KW_catch / KW_finally / SEMI
+Atom -> MemberAtom / NL / DocComment / LineComment / BlockComment / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 Other -> Atom
 
 === attrs
-on ClassDecl:   def id kind=Class doc=doc
-on TraitDecl:   def id kind=Trait doc=doc
-on ObjectDecl:  def id kind=Object doc=doc
-on EnumDecl:    def id kind=Enum doc=doc
-on DefDecl:     def def_id kind=Def doc=doc
-on ValDecl:     def val_id kind=Val doc=doc
-on VarDecl:     def var_id kind=Var doc=doc
-on TypeDecl:    def type_id kind=Type doc=doc
-on EnumCase:    def case_id kind=EnumCase doc=case_doc
-on Param:       def param_id kind=Param
+on ClassHeader:  def id kind=Class doc=doc
+on TraitHeader:  def id kind=Trait doc=doc
+on ObjectHeader: def id kind=Object doc=doc
+on EnumHeader:   def id kind=Enum doc=doc
+on GivenDecl:    def given_id kind=Given doc=doc
+on DefDecl:      def def_id kind=Def doc=doc
+on ValDecl:      def val_id kind=Val doc=doc
+on VarDecl:      def var_id kind=Var doc=doc
+on TypeDecl:     def type_id kind=Type doc=doc
+on EnumCase:     def case_id kind=EnumCase doc=case_doc
+on Param:        def param_id kind=Param
 
-on ImportDecl:  import module=path
 
 === features
 function_kinds: Def
@@ -202,42 +261,70 @@ qualifier_separators: DOT
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependency
+# Import dependency. `$path_text` is the whole dotted path; `$path` alone
+# would be only its last segment, which produced `maven:mutable` for
+# `import scala.collection.mutable`.
 on ImportDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
-# Scala top-level declarations (default visibility is public)
-on ClassDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+# The package a file belongs to, recorded as a note so consumers can map the
+# file to its package without re-parsing.
+on PackageDecl {
+  note package payload obj("name", $path_text)
 }
-on TraitDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+
+# Scala declarations. Default visibility is public; `private`/`protected` are
+# part of `Modifier*` and are not currently distinguished.
+#
+# Each type-like declaration publishes its id through `bind` from its HEADER
+# rule, which matches before the body is entered — events fire bottom-up, so
+# a bind on the whole declaration would happen after its own members.
+# Members then attach to `current_owner` when there is one, and to the file
+# when there is not (a top-level def in a Scala 3 source).
+on ClassHeader {
+  bind ns "value" name "current_owner" to concat($file, "::", $id)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text))
 }
-on ObjectDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Object", "doc", $doc)
+on TraitHeader {
+  bind ns "value" name "current_owner" to concat($file, "::", $id)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", trim($doc_text))
 }
-on EnumDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+on ObjectHeader {
+  bind ns "value" name "current_owner" to concat($file, "::", $id)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Object", "doc", trim($doc_text))
 }
+on EnumHeader {
+  bind ns "value" name "current_owner" to concat($file, "::", $id)
+  bind ns "value" name "current_enum" to concat($file, "::", $id)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
+}
+on GivenDecl {
+  edge declares from $file to concat($file, "::", $given_id) attrs obj("name", $given_id, "kind", "Given", "doc", trim($doc_text))
+}
+
+# Members attach to their enclosing type when there is one.
 on DefDecl {
-  edge declares from $file to concat($file, "::", $def_id) attrs obj("name", $def_id, "kind", "Def", "doc", $doc)
+  let owner = $scope("value", "current_owner")
+  edge declares from cond(owner, owner, $file) to concat(cond(owner, owner, $file), ".", $def_id) attrs obj("name", $def_id, "kind", "Def", "doc", trim($doc_text))
 }
 on ValDecl {
-  edge declares from $file to concat($file, "::", $val_id) attrs obj("name", $val_id, "kind", "Val", "doc", $doc)
+  let owner = $scope("value", "current_owner")
+  edge declares from cond(owner, owner, $file) to concat(cond(owner, owner, $file), ".", $val_id) attrs obj("name", $val_id, "kind", "Val", "doc", trim($doc_text))
 }
 on VarDecl {
-  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Var", "doc", $doc)
+  let owner = $scope("value", "current_owner")
+  edge declares from cond(owner, owner, $file) to concat(cond(owner, owner, $file), ".", $var_id) attrs obj("name", $var_id, "kind", "Var", "doc", trim($doc_text))
 }
 on TypeDecl {
-  edge declares from $file to concat($file, "::", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", $doc)
+  let owner = $scope("value", "current_owner")
+  edge declares from cond(owner, owner, $file) to concat(cond(owner, owner, $file), ".", $type_id) attrs obj("name", $type_id, "kind", "Type", "doc", trim($doc_text))
 }
 
-# Enum case
+# Enum cases attach to the enum published by `EnumHeader`.
 on EnumCase when $scope("value", "current_enum") {
   let parent = $scope("value", "current_enum")
-  let sym_id = concat(parent, ".", $case_id)
-  edge declares from parent to sym_id attrs obj("name", $case_id, "kind", "EnumCase", "doc", $case_doc)
+  edge declares from parent to concat(parent, ".", $case_id) attrs obj("name", $case_id, "kind", "EnumCase", "doc", trim($case_doc_text))
 }
 
 === resolver

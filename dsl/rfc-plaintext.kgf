@@ -10,7 +10,11 @@ TOKEN TEXT /[^\r\n]+/
 
 === grammar
 Doc -> Line*
-Line -> HEADING TEXT? NL? / TEXT NL?
+# A blank line is a Line of its own: the preprocess steps above deliberately
+# manufacture blank lines (page breaks, running headers), and RFC files start
+# with several, so `Doc` must be able to consume a bare NL or it stops on the
+# very first token.
+Line -> HEADING TEXT? NL? / TEXT NL? / NL
 
 === attrs
 

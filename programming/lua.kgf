@@ -60,53 +60,99 @@ TOKEN EQ       /=/
 === grammar
 Module -> Item*
 
+# `Other` is a catch-all accepting any single token so the start rule can
+# never stop in front of an unmodelled construct.
 Item -> NL
      / FunctionDecl
      / LocalFunctionDecl
+     / RequireDecl
      / LocalVarDecl
      / AssignmentDecl
      / DocComment
      / Other
 
-# Doc block
-DocBlock -> DocComment ( NL DocComment )*
+# A Luadoc block: a `---` line plus its `--` continuation lines, which lex as
+# `LineComment` and must be absorbed here or they break the declaration that
+# follows.
+DocBlock -> DocComment ( NL LineComment )*
 
-# Function declaration (global)
-FunctionDecl -> doc:DocBlock? NL? KW_function id:FunctionName LPAREN ParamList? RPAREN FunctionBody KW_end
-FunctionName -> Ident ( DOT Ident )* ( COLON Ident )?
+# A block body, consumed as a BALANCED opaque group.
+#
+# This is the central fix for this spec. The previous `FunctionBody` was
+# `( NL / ... / Expr )*` and `Statement` listed `KW_end` among the keywords it
+# accepted; a body that can eat its own terminator never stops, so every
+# `function ... end` failed to match and the whole file fell through to
+# `Other` — zero edges while still reporting "Parse: SUCCESS".
+#
+# `BlockContent` excludes `end` (and `until`, which closes a `repeat`) and
+# recurses into the nested block forms instead, so a body always stops at its
+# own terminator.
+Block -> BlockContent* KW_end
+BlockContent -> BlockOpener BlockContent* KW_end
+             / KW_repeat BlockContent* KW_until
+             / LPAREN BlockContent* RPAREN
+             / LBRACE BlockContent* RBRACE
+             / LBRACKET BlockContent* RBRACKET
+             / BlockAtom
+# Every keyword that OPENS a block terminated by `end`.
+#
+# `if`/`for`/`while` are NOT listed: they are closed by `end`, but so is the
+# `do`/`then` that follows them, and consuming the opener separately lets the
+# inner `do ... end` pair up correctly. They are ordinary atoms here and the
+# `do`/`then` carries the nesting.
+BlockOpener -> KW_function / KW_do / KW_then
+# Every token EXCEPT `end`, `until` and the bracket terminators handled above.
+BlockAtom -> Ident / Number / String / BoolLit / NilLit / DOT / COMMA / COLON / SEMI / EQ / Operator / DocComment / LineComment / BlockComment / NL
+          / KW_local / KW_return / KW_if / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_break
+
+# Function declaration (global or a method on a table).
+#
+# `FunctionName` covers `f`, `M.f` and `M:f`; the label binds the LAST
+# identifier, which is the method name, and `$id_text` holds the whole
+# dotted/colon path.
+FunctionDecl -> doc:DocBlock? NL* KW_function id:FunctionName LPAREN NL* ParamList? NL* RPAREN Block
+FunctionName -> Ident ( ( DOT / COLON ) Ident )*
 
 # Local function declaration
-LocalFunctionDecl -> doc:DocBlock? NL? KW_local KW_function id:Ident LPAREN ParamList? RPAREN FunctionBody KW_end
+LocalFunctionDecl -> doc:DocBlock? NL* KW_local KW_function id:Ident LPAREN NL* ParamList? NL* RPAREN Block
+
+# `local x = require("mod")` / `require "mod"` — Lua's only import form.
+# The module name is a string literal, so `via` carries its text.
+# The captures are INLINE rather than in a `RequireCall` sub-rule: a label
+# bound in a referenced rule does not leak to its caller.
+RequireDecl -> doc:DocBlock? NL* ( KW_local? NameList EQ )? req:Ident ( LPAREN NL* path:String NL* RPAREN / path:String )
+NameList -> Ident ( COMMA Ident )*
 
 # Local variable declaration
-LocalVarDecl -> doc:DocBlock? NL? KW_local id:Ident ( COMMA Ident )* ( EQ ExprList )?
+LocalVarDecl -> doc:DocBlock? NL* KW_local id:Ident ( COMMA Ident )* ( EQ ExprList )?
 
-# Global assignment (can define functions too)
-AssignmentDecl -> doc:DocBlock? NL? id:Ident ( DOT Ident )* EQ Expr
-
-# Function body
-FunctionBody -> ( Statement )*
-Statement -> NL / LineComment / BlockComment / KW_if / KW_then / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_do / KW_repeat / KW_until / KW_break / KW_return / Expr
+# Global assignment. `M.f = function(...) ... end` is how many modules define
+# their methods, so the value may be a whole function body.
+AssignmentDecl -> doc:DocBlock? NL* id:AssignTarget EQ Value
+AssignTarget -> Ident ( ( DOT / COLON ) Ident )* ( LBRACKET BlockContent* RBRACKET )?
+Value -> KW_function LPAREN NL* ParamList? NL* RPAREN Block / Expr
 
 # Parameters
-ParamList -> Param ( COMMA Param )*
+ParamList -> Param ( NL* COMMA NL* Param )*
 Param -> param_id:Ident / Operator
 
 # Expression list
-ExprList -> Expr ( COMMA Expr )*
+ExprList -> Expr ( COMMA NL* Expr )*
 
-# Expressions
+# Expressions.
+#
+# A value is opaque: a balanced token soup that cannot break the enclosing
+# declaration. `NL` is excluded so it stops at end of line.
 Expr -> ExprAtom+
-ExprAtom -> Ident / Number / String / BoolLit / NilLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / EQ / Operator
+ExprAtom -> LPAREN BlockContent* RPAREN / LBRACE BlockContent* RBRACE / LBRACKET BlockContent* RBRACKET
+         / Ident / Number / String / BoolLit / NilLit / DOT / COMMA / COLON / EQ / Operator
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_function / KW_local / KW_end / KW_return / KW_if / KW_then / KW_elseif / KW_else / KW_for / KW_in / KW_while / KW_do / KW_repeat / KW_until / KW_break / SEMI
+Atom -> BlockAtom / KW_function / KW_end / KW_do / KW_then / KW_repeat / KW_until / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET
 
 Other -> Atom
 
 === attrs
 on FunctionDecl:      def id kind=Function doc=doc
-on LocalFunctionDecl: def id kind=Function doc=doc
-on LocalVarDecl:      def id kind=Variable doc=doc
 on AssignmentDecl:    def id kind=Variable doc=doc
 on Param:             def param_id kind=Param
 
@@ -118,14 +164,29 @@ qualifier_separators: DOT, COLON
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Lua public declarations
-# FunctionDecl = global function (public), LocalFunctionDecl = local (private)
-on FunctionDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+# `require "mod"` is Lua's only import form; the module name is a string
+# literal, so `stripQuotes` removes the surrounding quotes before resolving.
+on RequireDecl when eq($req, "require") {
+  let mod = stripQuotes($path)
+  edge moduleDependsOn from $file to $resolve(mod) attrs obj("via", mod, "dep_kind", "value")
 }
-# Global assignments are module-level exports
+
+# Lua declarations.
+#
+# `local` IS Lua's visibility keyword: a `local` function or variable is
+# file-private and must NOT appear in the module's public surface, the same
+# way `defp` is private in Elixir. Only globals, and the fields assigned onto
+# the module table, are declared.
+#
+# `$doc_text` is the doc block's accumulated text; `$doc` alone would hold
+# only its last token.
+on FunctionDecl {
+  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Function", "doc", trim($doc_text))
+}
+# A global assignment is a module-level export; `M.f = function() ... end` is
+# a very common way to define a method.
 on AssignmentDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Variable", "doc", trim($doc_text))
 }
 
 === resolver

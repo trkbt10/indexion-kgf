@@ -6,16 +6,34 @@ sources: .gitmodules
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 TOKEN Comment /#[^\r\n]*|;[^\r\n]*/
-TOKEN Section /\[[^\]\r\n]+\]/
-TOKEN Key /[A-Za-z0-9._-]+/
+# A section header is the first thing on its line, so it is anchored with `^`
+# (which matches at the start of the input or just after a newline). Without
+# the anchor a bracketed value elsewhere on a line would also lex as a header.
+TOKEN Section /^\[[^\]\r\n]+\]/
 TOKEN Equals /=/
-TOKEN Value /[^\r\n]+/
+# The rest of a line, after an `=`. This CANNOT be a lexer token: the lexer has
+# no context, so a `Value /[^\r\n]+/` rule would swallow a whole `key = value`
+# line from its first character, and putting it after `Key` (as before) means
+# it never wins at all — `url = git@github.com:o/r.git` lexed as Key("url"),
+# Equals, Key("git"), Value("@github.com:o/r.git"), and the grammar's
+# `key Equals value` never matched, so EVERY entry line was dropped.
+#
+# Instead the value is reassembled in the grammar from whatever tokens the
+# line holds, and only `Key` and the punctuation below are lexed.
+TOKEN Key /[A-Za-z0-9._-]+/
+TOKEN Punct /[^\r\n \t]/
 
 === grammar
 Doc -> Item*
-Item -> SectionLine / EntryLine / Comment / NL
+# `Other` last so an unparseable line costs only itself.
+Item -> SectionLine / EntryLine / Comment / NL / Other
 SectionLine -> section:Section NL?
-EntryLine -> key:Key Equals value:Value NL?
+# `key = <rest of line>`. The value is the run of tokens up to the newline;
+# `$value_text` is their concatenated text.
+EntryLine -> key:Key Equals value:ValueRest NL?
+ValueRest -> ValueAtom+
+ValueAtom -> Key / Equals / Punct / Section
+Other -> Key / Equals / Punct / Section
 
 === features
 content_type: config
@@ -23,7 +41,7 @@ section_token: Section
 section_level: flat
 heading_text_tokens: Section
 reference_token_kinds: Key
-vocabulary_token_kinds: Section, Key, Value
+vocabulary_token_kinds: Section, Key
 
 === resolver
 relative_prefixes:

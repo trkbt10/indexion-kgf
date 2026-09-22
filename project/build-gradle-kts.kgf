@@ -2,8 +2,17 @@ kgf 0.6
 language: build-gradle-kts
 sources: build.gradle.kts
 
-# KGF spec for Kotlin Gradle build.gradle.kts files
-# Extracts project dependencies
+# KGF spec for Kotlin Gradle build scripts (build.gradle.kts).
+#
+# A build.gradle.kts is a Kotlin program, so enumerating the block names that
+# happen to appear in one sample cannot work — the next script uses different
+# ones. The backbone here is generic Kotlin-ish script structure: a script is
+# a sequence of statements; a statement is a (possibly dotted, possibly
+# generic, possibly parenthesised) call that may be followed by a trailing
+# lambda block; blocks nest. The Gradle meaning is layered on top by matching
+# the *call name* in the semantics.
+#
+# Emits: projectGroup, projectVersion, dependsOn.
 
 === lex
 SKIP        /[ \t]+/
@@ -11,94 +20,145 @@ TOKEN NL            /\r?\n/
 TOKEN Comment       /\/\/[^\r\n]*/
 TOKEN BlockComment  /\/\*[\s\S]*?\*\//
 
-# Keywords
-KEYWORD KW_plugins    /plugins\b/
-KEYWORD KW_group      /group\b/
+# Keywords. Only `version`, used infix in `id("x") version "1.0"`, needs to be
+# distinguishable, and only because the plugin DSL writes it without a dot.
+#
+# NOTE: `plugins`, `dependencies`, `repositories`, `kotlin`, `tasks`,
+# `implementation` and the rest are NOT keywords. They are ordinary method
+# names; a KEYWORD for each one means every block whose name is not on the
+# list fails to parse, which is what stopped this file at `tasks.withType`.
+# Which call is interesting is decided in the semantics, from the call name.
 KEYWORD KW_version    /version\b/
-KEYWORD KW_repositories /repositories\b/
-KEYWORD KW_dependencies /dependencies\b/
-KEYWORD KW_implementation /implementation\b/
-KEYWORD KW_testImplementation /testImplementation\b/
-KEYWORD KW_api        /api\b/
-KEYWORD KW_compileOnly /compileOnly\b/
-KEYWORD KW_runtimeOnly /runtimeOnly\b/
-KEYWORD KW_kotlin     /kotlin\b/
-KEYWORD KW_tasks      /tasks\b/
-KEYWORD KW_id         /id\b/
+KEYWORD KW_val        /val\b/
+KEYWORD KW_true       /true\b/
+KEYWORD KW_false      /false\b/
 
-# Literals
+# Literals. The raw (triple-quoted) form must precede the ordinary one.
+TOKEN RawString     /"""[\s\S]*?"""/
 TOKEN StringLit     /"([^"\\]|\\.)*"/
-TOKEN NumberLit     /[0-9]+(\.[0-9]+)*/
+TOKEN CharLit       /'([^'\\]|\\.)'/
+TOKEN NumberLit     /[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9]+)?[fFlLdD]?/
 
-# Punctuation
+# Punctuation. ARROW precedes the angle brackets so a lambda arrow is not
+# split into `=` and `>`.
+#
+# LANGLE / RANGLE are what `tasks.withType<Test>` needs: the previous spec had
+# no token for `<` or `>` at all, so a generic type argument produced two
+# "unrecognized input" lexer errors and the statement could not be parsed.
+TOKEN ARROW         /->/
 TOKEN LPAREN        /\(/
 TOKEN RPAREN        /\)/
 TOKEN LBRACE        /\{/
 TOKEN RBRACE        /\}/
 TOKEN LBRACKET      /\[/
 TOKEN RBRACKET      /\]/
+TOKEN LANGLE        /</
+TOKEN RANGLE        />/
 TOKEN COMMA         /,/
 TOKEN DOT           /\./
+TOKEN COLON         /:/
 TOKEN EQUALS        /=/
+TOKEN Operator      /[!%&*+\-\/?^|~@$]+/
 
 # Identifiers
-TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Ident         /[A-Za-z_][A-Za-z0-9_]*/
 
 === grammar
 GradleFile      -> Statement*
-Statement       -> PluginsBlock / GroupStmt / VersionStmt / ReposBlock
-                 / DepsBlock / KotlinBlock / TasksBlock
-                 / OtherBlock / OtherStmt / NL / Comment / BlockComment
 
-PluginsBlock    -> KW_plugins LBRACE NL? PluginStmt* RBRACE
-PluginStmt      -> PluginDecl NL / NL / Comment
-PluginDecl      -> KW_kotlin LPAREN StringLit RPAREN VersionSpec?
-                 / KW_id LPAREN StringLit RPAREN VersionSpec?
-                 / Ident LPAREN StringLit RPAREN VersionSpec?
-VersionSpec     -> KW_version StringLit
+# `Other` last: a single token of any kind, so an unfamiliar construct costs
+# only itself instead of truncating everything after it.
+Statement       -> Assignment / CallStmt
+                 / NL / Comment / BlockComment / Other
 
-GroupStmt       -> KW_group EQUALS value:StringLit NL
-VersionStmt     -> KW_version EQUALS value:StringLit NL
+# `group = "com.example"`, `version = "0.0.1"`, `val x = ...`
+Assignment      -> KW_val? target:Name EQUALS value:Expr
 
-ReposBlock      -> KW_repositories LBRACE BlockContent* RBRACE
+# A call statement: a dotted name, optional type arguments, optional argument
+# list, optional infix `version "..."`, optional trailing lambda.
+#
+#   implementation("org:artifact")
+#   kotlin("jvm") version "1.9.21"
+#   tasks.withType<Test> { ... }
+#   repositories { mavenCentral() }
+# The first alternative matches a call whose sole argument is one string
+# literal, and labels that literal ON CallStmt. The label has to live on this
+# rule: a label bound inside a sub-rule (ArgList) stays on that sub-rule's own
+# event and is not visible to the parent, so `lit` would never reach the
+# semantics if ArgList carried it.
+#
+# That shape is exactly every Gradle dependency declaration
+# (`implementation("org:artifact")`) and the plugin DSL (`id("org.x")`,
+# `kotlin("jvm")`). The second alternative is the general call.
+CallStmt        -> name:Name TypeArgs? LPAREN Sep* lit:StringLit Sep* RPAREN InfixVersion? Lambda?
+                 / name:Name TypeArgs? ArgList? InfixVersion? Lambda?
+InfixVersion    -> KW_version value:Expr
 
-DepsBlock       -> KW_dependencies LBRACE NL? DepStmt* RBRACE
-DepStmt         -> DepDecl NL / NL / Comment / BlockComment
-DepDecl         -> KW_implementation LPAREN dep:StringLit RPAREN
-                 / KW_testImplementation LPAREN dep:StringLit RPAREN
-                 / KW_api LPAREN dep:StringLit RPAREN
-                 / KW_compileOnly LPAREN dep:StringLit RPAREN
-                 / KW_runtimeOnly LPAREN dep:StringLit RPAREN
-                 / Ident LPAREN StringLit RPAREN
+# A dotted name. `$name_text` is the whole path and `$name` its last segment,
+# so the semantics can match either `implementation` or `tasks.withType`.
+Name            -> NameSeg ( DOT NameSeg )*
+NameSeg         -> Ident / KW_version / KW_val
 
-KotlinBlock     -> KW_kotlin LBRACE BlockContent* RBRACE
-TasksBlock      -> KW_tasks DOT Ident GenericBlock
-OtherBlock      -> Ident LBRACE BlockContent* RBRACE
-OtherStmt       -> Ident OtherExpr* NL
+# Generic type arguments: `<Test>`, `<Map<String, Int>>`, `<*>`.
+TypeArgs        -> LANGLE TypeArgInner* RANGLE
+TypeArgInner    -> TypeArgs / Ident / COMMA / DOT / COLON / Operator
+                 / KW_version / KW_val / NumberLit / LPAREN / RPAREN
 
-BlockContent    -> NL / Comment / BlockComment / NestedBlock / OtherContent
-NestedBlock     -> Ident LBRACE BlockContent* RBRACE
-OtherContent    -> Ident / StringLit / NumberLit / LPAREN / RPAREN / DOT / EQUALS / COMMA
-GenericBlock    -> LBRACE BlockContent* RBRACE / LPAREN Expr* RPAREN
-OtherExpr       -> DOT Ident / LPAREN Expr* RPAREN / LBRACE BlockContent* RBRACE / EQUALS Expr
-Expr            -> StringLit / NumberLit / Ident / LPAREN Expr* RPAREN
+ArgList         -> LPAREN Sep* ( Arg ( Sep* COMMA Sep* Arg )* ( Sep* COMMA )? )? Sep* RPAREN
+Arg             -> NamedArg / Expr
+NamedArg        -> Ident EQUALS Sep* Expr
+
+# A trailing lambda is a brace block whose body is itself statements, which is
+# what makes `dependencies { ... }` and any nested block parse uniformly.
+Lambda          -> LBRACE LambdaParams? Statement* RBRACE
+LambdaParams    -> Ident ( COMMA Ident )* ARROW
+
+Expr            -> Term ( Sep* ( Operator / DOT / EQUALS ) Sep* Term )*
+Term            -> RawString / StringLit / CharLit / NumberLit
+                 / KW_true / KW_false
+                 / CallStmt / ListLit / Paren
+ListLit         -> LBRACKET Sep* ( Expr ( Sep* COMMA Sep* Expr )* ( Sep* COMMA )? )? Sep* RBRACKET
+Paren           -> LPAREN Sep* Expr? Sep* RPAREN
+
+Sep             -> NL / Comment / BlockComment
+
+Other           -> RawString / StringLit / CharLit / NumberLit / Ident
+                 / KW_version / KW_val / KW_true / KW_false
+                 / Operator / ARROW / COMMA / DOT / COLON / EQUALS
+                 / LANGLE / RANGLE
+                 / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET
 
 === attrs
-on GroupStmt:   note fieldKey payload="group"
-on VersionStmt: note fieldKey payload="version"
+on Assignment: note fieldKey payload=target
 
 === semantics
-on GroupStmt {
-  let g = stripQuotes($value)
-  edge projectGroup from $file to g attrs obj("raw", $value)
+# `group = "..."` / `version = "..."` at any level. A build script sets these
+# on the project object, so the assignment target name is what identifies them.
+on Assignment when eq($target_text, "group") {
+  edge projectGroup from $file to stripQuotes($value) attrs obj("raw", $value)
 }
-on VersionStmt {
-  let ver = stripQuotes($value)
-  edge projectVersion from $file to ver attrs obj("raw", $value)
+on Assignment when eq($target_text, "version") {
+  edge projectVersion from $file to stripQuotes($value) attrs obj("raw", $value)
 }
-on DepDecl {
-  let d = stripQuotes($dep)
-  edge dependsOn from $file to concat("maven:", d) attrs obj("dep_kind", "runtime")
+
+# Dependency declarations. Every Gradle configuration is a method taking the
+# dependency notation, so the call name IS the dependency kind: implementation,
+# testImplementation, api, compileOnly, runtimeOnly, annotationProcessor,
+# ksp, and any custom configuration a build defines. Recording the name as
+# `dep_kind` keeps this open-ended instead of enumerating a fixed list — the
+# previous spec dropped every configuration it had not been taught.
+#
+# `$lit` is bound only when the call takes exactly one string literal, which
+# is the dependency-notation shape. A call with no arguments
+# (`mavenCentral()`), with a block (`repositories { ... }`), or with a version
+# catalog accessor (`implementation(libs.spring.boot)`) leaves it unbound and
+# produces no edge.
+#
+# The plugin DSL uses the same shape, so `id("...")` and `kotlin("...")` are
+# excluded by name: a plugin is not a dependency of the built artifact. This
+# matches the previous spec, which never emitted edges for plugin lines.
+on CallStmt when cond($lit, cond(eq($name_text, "id"), "", cond(eq($name_text, "kotlin"), "", "y")), "") {
+  edge dependsOn from $file to concat("maven:", stripQuotes($lit)) attrs obj("dep_kind", $name_text)
 }
 
 === features

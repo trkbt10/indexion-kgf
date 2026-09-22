@@ -13,8 +13,13 @@ TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # Preprocessor directives
-TOKEN Include /#\s*include\s*[<"][^>"]+[>"]/
-TOKEN Preprocessor /#\s*(define|ifdef|ifndef|endif|if|else|elif|undef|pragma|error|warning)[^\r\n]*/
+TOKEN Include /#\s*(include|import)\s*[<"][^>"]+[>"]/
+# Preprocessor directive. A directive is one logical line, and a backslash
+# immediately before the newline continues it onto the next physical line,
+# which is how any non-trivial macro is written. Matching only the first
+# physical line left the continuation lines to be lexed as ordinary code
+# and the trailing backslash matched nothing at all.
+TOKEN Preprocessor /#\s*(define|ifdef|ifndef|endif|if|else|elif|undef|pragma|error|warning)([^\\\r\n]|\\[\s\S])*/
 
 # String/char literals
 TOKEN String /"([^"\\]|\\.)*"|R"[^(]*\([^)]*\)[^"]*"/
@@ -107,6 +112,7 @@ Item -> NL
      / StructDecl
      / UnionDecl
      / EnumDecl
+     / OutOfLineCtorDecl
      / FunctionDecl
      / TemplateDecl
      / UsingDecl
@@ -124,9 +130,15 @@ DocBlock -> DocComment ( NL DocComment )*
           / DocBlockComment
 
 # Namespace declaration
-NamespaceDecl -> KW_namespace id:Name? NamespaceBody
+# A namespace may carry a Doxygen block like any other declaration, so it
+# captures its own doc rather than referencing a label nothing binds.
+NamespaceDecl -> doc:DocBlock? NL? KW_namespace id:Name? NamespaceBody
 NamespaceBody -> LBRACE NamespaceMember* RBRACE
-NamespaceMember -> ClassDecl / StructDecl / EnumDecl / FunctionDecl / TemplateDecl / UsingDecl / TypedefDecl / VarDecl / NamespaceDecl / NL / LineComment / BlockComment
+# A namespace body holds the same constructs as the top level, so it reuses
+# Item. The guard keeps the namespace's own closing brace out of the
+# member list: without it Item's bracket fallback would consume the `}`
+# and NamespaceDecl could never complete.
+NamespaceMember -> !RBRACE Item
 
 # Class declaration
 ClassDecl -> doc:DocBlock? NL? KW_class id:Name ( KW_final )? InheritanceClause? ClassBody SEMI
@@ -137,17 +149,20 @@ ClassMember -> AccessLabel / ConstructorDecl / DestructorDecl / MethodDecl / Fie
 AccessLabel -> AccessSpec COLON
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? KW_struct id:Name ( KW_final )? InheritanceClause? StructBody SEMI
+StructDecl -> doc:DocBlock? NL? KW_typedef KW_struct id:Name? StructBody id:Name SEMI
+            / doc:DocBlock? NL? KW_struct id:Name ( KW_final )? InheritanceClause? StructBody SEMI
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> AccessLabel / ConstructorDecl / MethodDecl / FieldDecl / NL / LineComment / BlockComment
 
 # Union declaration
-UnionDecl -> doc:DocBlock? NL? KW_union id:Name UnionBody SEMI
+UnionDecl -> doc:DocBlock? NL? KW_typedef KW_union id:Name? UnionBody id:Name SEMI
+           / doc:DocBlock? NL? KW_union id:Name UnionBody SEMI
 UnionBody -> LBRACE UnionMember* RBRACE
 UnionMember -> field_doc:DocBlock? Type field_id:Name SEMI / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Name ( COLON Type )? EnumBody SEMI
+EnumDecl -> doc:DocBlock? NL? KW_typedef KW_enum id:Name? EnumBody id:Name SEMI
+          / doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Name ( COLON Type )? EnumBody SEMI
 EnumBody -> LBRACE EnumValue* RBRACE
 EnumValue -> value_doc:DocBlock? value_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
@@ -160,8 +175,15 @@ Initializer -> Ident LPAREN ( Expr ( COMMA Expr )* )? RPAREN / Ident LBRACE ( Ex
 # Method declaration
 MethodDecl -> doc:DocBlock? NL? Modifier* Type AMP? method_id:Name LPAREN ParamList? RPAREN Modifier* ( Body / SEMI / Operator Expr SEMI )
 
-# Function declaration
-FunctionDecl -> doc:DocBlock? NL? Modifier* Type AMP? func_id:Name LPAREN ParamList? RPAREN Modifier* ( Body / SEMI )
+# Function declaration.
+# Covers both a plain function and an out-of-line member definition, where
+# the name is qualified (`Config::load`); owner captures the class so the
+# member can be attached to its type rather than to the file.
+FunctionDecl -> doc:DocBlock? NL? Modifier* Type AMP? STAR* ( owner:Name SCOPE )* func_id:Name LPAREN ParamList? RPAREN Modifier* Initializers? ( Body / SEMI )
+
+# Out-of-line constructor/destructor definition: `S::S(...) : init(...) {}`.
+# It has no return type, so it cannot match FunctionDecl.
+OutOfLineCtorDecl -> doc:DocBlock? NL? Modifier* owner:Name SCOPE Operator? ctor_id:Name LPAREN ParamList? RPAREN Modifier* Initializers? ( Body / SEMI )
 
 # Template declaration
 TemplateDecl -> doc:DocBlock? NL? KW_template LT TemplateParams GT ( ClassDecl / StructDecl / FunctionDecl )
@@ -195,7 +217,7 @@ ArraySize -> ( Ident / TypeIdent / Number / Operator / STAR )+
 # Types
 Type -> TypeQual* TypeAtom STAR* AMP*
 TypeQual -> KW_const
-TypeAtom -> QualifiedName TemplateArgs? / KeywordType
+TypeAtom -> QualifiedName TemplateArgs? / KeywordType+
 QualifiedName -> ( SCOPE )? Name ( SCOPE Name )*
 TemplateArgs -> LT Type ( COMMA Type )* GT
 
@@ -209,7 +231,12 @@ ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / Thi
 
 Atom -> ExprAtom / NL / DocComment / DocBlockComment / LineComment / BlockComment / Include / Preprocessor / KW_class / KW_struct / KW_union / KW_enum / KW_namespace / KW_template / KW_typename / KW_public / KW_private / KW_protected / KW_virtual / KW_override / KW_final / KW_const / KW_constexpr / KW_static / KW_extern / KW_inline / KW_using / KW_typedef / KW_friend / KW_explicit / KW_if / KW_else / KW_switch / KW_case / KW_for / KW_while / KW_return / KW_new / KW_delete / KW_try / KW_catch / KW_throw / KW_noexcept / KW_operator / SEMI
 
-Other -> Atom
+# Module-level fallback: a balanced bracket group taken as one opaque unit,
+# then any single token including a bracket whose partner is missing, so no
+# construct can stop the module parse and silently drop later declarations.
+Other -> Atom / OpaqueGroup / LBRACE / RBRACE / LBRACKET / RBRACKET / LPAREN / RPAREN
+OpaqueGroup -> LBRACE OpaqueInner* RBRACE / LBRACKET OpaqueInner* RBRACKET / LPAREN OpaqueInner* RPAREN
+OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN !LBRACE !RBRACE !LBRACKET !RBRACKET Atom
 
 === attrs
 on ClassDecl:       def id kind=Class doc=doc

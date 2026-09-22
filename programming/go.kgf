@@ -43,8 +43,15 @@ KEYWORD KW_return    /return\b/
 KEYWORD KW_defer     /defer\b/
 KEYWORD KW_go        /go\b/
 
-# Built-in types
-TOKEN KeywordType /\b(?:bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any|comparable)\b/
+# NOTE: there is intentionally NO token for Go's predeclared type names
+# (`int`, `string`, `error`, `any`, `bool`, `rune`, …). None of them are
+# reserved words: every one is an ordinary identifier that a program may shadow
+# or reuse — a struct field named `error`, a parameter named `string`, a local
+# `any`. The lexer matches token rules in definition order, so a `KeywordType`
+# token would tokenize those names ahead of `Ident` everywhere and make such a
+# declaration unmatchable, silently dropping it and (when it has a brace body)
+# everything after it. They need no special token: `TypeAtom` accepts `Ident`,
+# so they parse correctly in type position as plain identifiers.
 
 # Identifiers
 TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
@@ -72,93 +79,176 @@ Module -> ModuleDoc? Item*
 # Module-level documentation (// Package xxx followed by more // comments)
 ModuleDoc -> module_doc:PackageDoc ( NL DocComment )*
 
+# Every top-level construct is one of these. `Other` is the catch-all: it
+# accepts ANY single token, including a lone bracket, so a construct the
+# declaration rules only partially match can never stop the module parse. The
+# leftovers are skipped one token at a time and the next declaration is picked
+# up again. Without it a single unsupported expression form (a composite
+# literal in a package-level `var`, say) silently truncates the file and every
+# declaration below it disappears from the graph.
 Item -> NL
-     / PackageDoc
      / PackageDecl
      / ImportDecl
      / FuncDecl
      / TypeDecl
      / VarDecl
      / ConstDecl
-     / DocComment
+     / ModuleDoc
+     / DocBlock
      / Other
 
 # Doc comment block (consecutive // comments)
 DocBlock -> DocComment ( NL DocComment )*
 
 # Package declaration
-PackageDecl -> KW_package id:Ident
+PackageDecl -> ( DocBlock / PackageDoc / NL )* KW_package id:Ident
 
 # Import declaration
 # Go permits whitespace (incl. newlines) between the `import` keyword and the
 # parenthesised group, and between successive import specs inside a group.
-ImportDecl -> KW_import NL* ( ImportSpec / ImportGroup )
-ImportGroup -> LPAREN ( NL / ImportSpec )* RPAREN
-ImportSpec -> alias:Ident? path:String NL?
+# A grouped import may also carry per-line comments and the `_` / `.` blank
+# and dot aliases, so the group body tolerates both.
+ImportDecl -> KW_import NL* ( ImportGroup / ImportSpec )
+# The spec alternative is tried before the bare `DocComment` one: a comment
+# line above an entry belongs to that entry, and a leading `DocComment`
+# alternative would consume it first (PEG ordered choice, first match wins)
+# and strip the doc off every documented group member.
+ImportGroup -> LPAREN ( NL / ImportSpec / DocComment )* RPAREN
+ImportSpec -> alias:( Ident / DOT )? path:String DocComment? NL?
 
-# Function declaration
-FuncDecl -> doc:DocBlock? NL? KW_func Receiver? id:Ident GenericParams? Signature Body?
-Receiver -> LPAREN Ident? STAR? Ident RPAREN
+# Every top-level declaration carries the same prefix: its doc block, framed by
+# the blank lines around it. Real Go writes
+#
+#   // Foo does a thing.
+#   //
+#   // More detail.
+#   func Foo() {}
+#
+# and build-constraint / `//go:` directive comments land in the same DocBlock.
+# `NL*` on both sides lets the doc capture bind wherever blank lines fall.
+#
+# The prefix is spelled out in every rule rather than factored into a shared
+# sub-rule because a label binds only inside the rule that writes it: behind a
+# `DeclHead` indirection `$doc` would be invisible to the declaration's own
+# semantics and every doc comment would be dropped.
 
-# Type declaration
-TypeDecl -> doc:DocBlock? NL? KW_type ( TypeSpec / TypeGroup )
-TypeGroup -> LPAREN ( TypeSpec NL? )* RPAREN
-TypeSpec -> id:Ident GenericParams? Type
+# Function declaration. A method carries a receiver: `func (s *Server) Run(...)`.
+# The receiver's type name is captured — inline, for the same reason — so the
+# method attaches to the type it belongs to instead of floating at file level.
+FuncDecl -> NL* doc:DocBlock? NL* KW_func ( LPAREN recv_name:Ident? STAR? recv_type:Ident GenericArgs? RPAREN )? id:Ident GenericParams? Signature Body?
+
+# Type declaration. Go's doc comment sits before the `type` keyword for a
+# single spec (`// Config …` then `type Config struct { … }`) and before the
+# name inside a `type ( … )` group. `TypeHeader` therefore spans the keyword
+# and treats it as optional: the single form supplies it, a group member does
+# not. A label binds only inside the rule that writes it, which is why the
+# keyword and the doc live on the header rather than behind a shared prefix
+# rule — otherwise `$doc` would be invisible to the header's own semantics.
+#
+# `TypeHeader` is a rule of its own so that it fires BEFORE the struct or
+# interface body it introduces: PEG matches the header to completion first, so
+# its event (and the `bind` in its semantics) precedes every field / interface
+# method event of the body. That binding is what lets each member be declared
+# under the type it belongs to instead of floating at file level.
+TypeDecl -> TypeSpec / NL* DocBlock? NL* KW_type TypeGroup
+TypeGroup -> LPAREN ( NL / TypeSpec / DocComment )* RPAREN
+# `type A = B` is an alias; `type A B` is a definition. Both declare A.
+TypeSpec -> TypeHeader Type
+# The alias form `type A = B` puts `=` between the name and the type; Go lexes
+# `=` as part of the generic `Operator` token (there is no dedicated EQ token,
+# and adding one would shadow `==`, `:=`, `>=` … because the lexer matches in
+# definition order), so the alias marker is matched as `Operator?`.
+TypeHeader -> NL* doc:DocBlock? NL* KW_type? id:Ident GenericParams? Operator?
 StructType -> KW_struct LBRACE StructField* RBRACE
-InterfaceType -> KW_interface LBRACE InterfaceMethod* RBRACE
-StructField -> field_doc:DocBlock? field_id:Ident Type Tag? / NL / DocComment
-InterfaceMethod -> method_doc:DocBlock? method_id:Ident Signature / NL / DocComment
+InterfaceType -> KW_interface LBRACE InterfaceMember* RBRACE
+# A struct field: one or more names sharing a type, an embedded type, or a
+# `//` comment line. The doc may sit on the line above or trail the field.
+StructField -> NL / DocComment
+            / field_doc:DocBlock? NL* field_id:Ident ( COMMA Ident )* Type Tag? trailing:DocComment?
+            / field_doc:DocBlock? NL* STAR? EmbeddedType Tag? trailing:DocComment?
+EmbeddedType -> Ident ( DOT Ident )? GenericArgs?
+# An interface lists methods and embedded interfaces; Go 1.18 also allows
+# type-set elements (`~int | ~string`).
+InterfaceMember -> NL / DocComment
+                / method_doc:DocBlock? NL* method_id:Ident Signature trailing:DocComment?
+                / method_doc:DocBlock? NL* TypeSet
+TypeSet -> TypeSetTerm ( Operator TypeSetTerm )*
+TypeSetTerm -> Operator? Type
 Tag -> RawString
 
-# Var declaration
-VarDecl -> doc:DocBlock? NL? KW_var ( VarSpec / VarGroup )
-VarGroup -> LPAREN ( VarSpec NL? )* RPAREN
-VarSpec -> id:Ident Type? ( Operator Expr )?
+# Var / const declaration. Same shape as TypeDecl: the keyword lives inside the
+# spec rule for the single form so the spec's own `doc` label sees the comment
+# that precedes `var` / `const`; the group form re-enters the spec rule per
+# line, where the keyword is absent and the doc sits directly above the name.
+VarDecl -> VarSpec / NL* DocBlock? NL* KW_var VarGroup
+VarGroup -> LPAREN ( NL / VarSpec / DocComment )* RPAREN
+VarSpec -> NL* doc:DocBlock? NL* KW_var? id:Ident ( COMMA Ident )* Type? ( Operator Expr )? DocComment?
 
-# Const declaration
-ConstDecl -> doc:DocBlock? NL? KW_const ( ConstSpec / ConstGroup )
-ConstGroup -> LPAREN ( ConstSpec NL? )* RPAREN
-ConstSpec -> id:Ident Type? ( Operator Expr )?
+ConstDecl -> ConstSpec / NL* DocBlock? NL* KW_const ConstGroup
+ConstGroup -> LPAREN ( NL / ConstSpec / DocComment )* RPAREN
+ConstSpec -> NL* doc:DocBlock? NL* KW_const? id:Ident ( COMMA Ident )* Type? ( Operator Expr )? DocComment?
 
 # Types and signatures
-Signature -> LPAREN ParamList? RPAREN Result?
-Result -> LPAREN TypeList RPAREN / Type
-ParamList -> Param ( COMMA Param )*
-Param -> Ident? Type
-GenericParams -> LBRACKET TypeParam ( COMMA TypeParam )* RBRACKET
-TypeParam -> Ident Type?
-TypeList -> Type ( COMMA Type )*
-Type -> TypeAtom / STAR Type / LBRACKET RBRACKET Type / KW_map LBRACKET Type RBRACKET Type / KW_chan Type
-TypeAtom -> Ident ( DOT Ident )? GenericArgs? / KeywordType / StructType / InterfaceType / LPAREN Type RPAREN
+Signature -> LPAREN NL* ParamList? NL* RPAREN Result?
+Result -> LPAREN NL* TypeList? NL* RPAREN / Type
+ParamList -> Param ( NL* COMMA NL* Param )* ( NL* COMMA )?
+# A parameter is `name Type`, a bare `Type`, or `name ...Type`. The bare-type
+# form is why `Param` must try the two-element shape first and backtrack.
+Param -> param_id:Ident Operator? Type / Operator? Type
+GenericParams -> LBRACKET NL* TypeParam ( NL* COMMA NL* TypeParam )* ( NL* COMMA )? NL* RBRACKET
+TypeParam -> Ident ( COMMA Ident )* TypeConstraint
+TypeConstraint -> TypeSet
+TypeList -> Type ( NL* COMMA NL* Type )* ( NL* COMMA )?
+Type -> STAR Type
+      / LBRACKET ArrayLen? RBRACKET Type
+      / KW_map LBRACKET Type RBRACKET Type
+      / Operator KW_chan Type
+      / KW_chan Operator? Type
+      / KW_func Signature
+      / InterfaceType
+      / StructType
+      / TypeAtom
+ArrayLen -> Operator / Expr
+TypeAtom -> QualifiedName GenericArgs? / LPAREN Type RPAREN
+QualifiedName -> Ident ( DOT Ident )?
 GenericArgs -> LBRACKET Type ( COMMA Type )* RBRACKET
 
-# Body (simplified - balance braces)
+# Body — an opaque balanced-bracket group. Nothing inside a function body
+# declares a package-level symbol, so the contents only need to be consumed
+# safely, with every bracket pair matched so the body ends at the right `}`.
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
-# Expressions
-Expr -> ( ExprAtom / LBRACE Expr? RBRACE / LBRACKET Expr? RBRACKET )+
-ExprAtom -> Ident / Number / String / RawString / Char / LPAREN / RPAREN / DOT / COMMA / COLON / Operator / STAR
+# Expressions — the right-hand side of a package-level `var`/`const`. Go's
+# composite literals (`&pkg.T{ Field: v, Fn: func(...) {...} }`) mix braces,
+# newlines, comments and nested function literals, so an expression is simply
+# a run of atoms and balanced bracket groups, exactly like a body. Modelling
+# it any more precisely only creates new ways to stop the parse.
+Expr -> ExprItem+
+ExprItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / ExprAtom
+# A newline ends a top-level expression (Go's implicit semicolon), unless it
+# is inside a bracket group — where `BodyContent`'s `Atom` accepts it.
+ExprAtom -> Ident / Number / String / RawString / Char / DOT / COMMA / COLON / SEMI / Operator / STAR / KW_func / KW_map / KW_chan / KW_struct / KW_interface / KW_range
 
-Atom -> ExprAtom / NL / DocComment / BlockComment / KW_package / KW_import / KW_func / KW_type / KW_struct / KW_interface / KW_var / KW_const / KW_map / KW_chan / KW_if / KW_else / KW_switch / KW_case / KW_default / KW_for / KW_range / KW_return / KW_defer / KW_go / KeywordType / SEMI
+Atom -> ExprAtom / NL / DocComment / PackageDoc / BlockComment / KW_package / KW_import / KW_type / KW_var / KW_const / KW_if / KW_else / KW_switch / KW_case / KW_default / KW_for / KW_return / KW_defer / KW_go
 
-Other -> Atom
+# Catch-all: one token of any kind, including a bracket whose partner the
+# declaration rules never reached (an `Atom` only accepts balanced groups).
+Other -> Atom / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === attrs
 on ModuleDoc:  module_doc doc=module_doc
 on FuncDecl:   def id kind=Function doc=doc
-on TypeSpec:   def id kind=Type doc=doc
+on TypeHeader: def id kind=Type doc=doc
 on VarSpec:    def id kind=Variable doc=doc
 on ConstSpec:  def id kind=Const doc=doc
 on StructField: def field_id kind=Field doc=field_doc
-on InterfaceMethod: def method_id kind=Method doc=method_doc
-on Param:      def id kind=Param
-
-on ImportSpec: import module=path
+on InterfaceMember: def method_id kind=Method doc=method_doc
+on Param:      def param_id kind=Param
 
 === features
 document_symbol_kinds: Function, Type
-function_kinds: Function
+function_kinds: Function, Method
 function_keyword: KW_func
 coverage_token_kinds: Ident
 identifier_kinds: Ident
@@ -171,30 +261,59 @@ on ModuleDoc {
   note module_doc payload obj("doc", $module_doc_text)
 }
 
-# Import dependency
+# Import dependency. Note there is deliberately no `on ImportSpec: import ...`
+# line in the `=== attrs` section: an attrs `import` directive emits its own
+# moduleDependsOn edge, so having both produced two identical edges per import.
 on ImportSpec {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value", "alias", $alias)
 }
 
-# Exported declarations only (uppercase identifier = exported in Go)
-on FuncDecl when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Function", "doc", $doc)
+# Exported declarations only (an uppercase initial = exported in Go). Each
+# guard also requires the name to be non-empty: the member rules have
+# comment-only and blank-line alternatives that fire an event with no name
+# bound, and `toUpper("") == ""` would otherwise pass the case test.
+#
+# `$doc` holds only the LAST token of a multi-line doc block, so `$doc_text`
+# — the block's full accumulated text — is what consumers need.
+on FuncDecl when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
+  # A method (`func (s *Server) Run(...)`) belongs to its receiver type, so it
+  # hangs off the type's symbol instead of the file. An exported method on an
+  # unexported type is still reachable through that type, so the receiver name
+  # is not itself filtered on case.
+  let owner = cond($recv_type, concat($file, "::", $recv_type), $file)
+  let sym_id = cond($recv_type, concat($file, "::", $recv_type, ".", $id), concat($file, "::", $id))
+  edge declares from owner to sym_id attrs obj("name", $id, "kind", cond($recv_type, "Method", "Function"), "doc", trim($doc_text), "receiver", $recv_type)
 }
 
-on TypeSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Type", "doc", $doc)
+# The header fires before the body, so it both declares the type and publishes
+# it for the member rules that follow.
+on TypeHeader {
+  bind ns "value" name "current_type" to concat($file, "::", $id)
 }
 
-on VarSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Variable", "doc", $doc)
+on TypeHeader when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))
 }
 
-on ConstSpec when eq(slice($id, 0, 1), toUpper(slice($id, 0, 1))) {
-  let sym_id = concat($file, "::", $id)
-  edge declares from $file to sym_id attrs obj("name", $id, "kind", "Const", "doc", $doc)
+on VarSpec when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", trim($doc_text))
+}
+
+on ConstSpec when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", trim($doc_text))
+}
+
+# Exported struct fields and interface methods are part of the type's public
+# surface, so they are declared under the type that contains them — the one
+# `TypeHeader` published through `bind` just before the body was parsed.
+on StructField when cond($field_id, eq(slice($field_id, 0, 1), toUpper(slice($field_id, 0, 1)))) {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $field_id) attrs obj("name", $field_id, "kind", "Field", "doc", trim($field_doc_text))
+}
+
+on InterfaceMember when cond($method_id, eq(slice($method_id, 0, 1), toUpper(slice($method_id, 0, 1)))) {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", trim($method_doc_text))
 }
 
 === resolver

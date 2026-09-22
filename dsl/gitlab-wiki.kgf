@@ -25,7 +25,11 @@ Other        -> TEXT / HEADING / CODE_FENCE / INLINE_CODE / PIPE / HASH / NL / L
 
 WikiLink     -> LBRACK LBRACK wpath:TEXT ( PIPE alias:TEXT )? RBRACK RBRACK
 MdLink       -> LBRACK label:TextLike RBRACK LPAREN path:TEXT RPAREN
-MetaComment  -> META_COMMENT
+# The metadata payload is bound to `id` here, on the rule whose event the
+# `def` attr below handles: `def id kind=Metadata` names a label, and
+# without this capture it named one nothing ever bound, so the metadata
+# comment declared no symbol at all.
+MetaComment  -> id:META_COMMENT
 TextLike     -> ( TEXT )*
 
 === attrs

@@ -2,28 +2,84 @@ kgf 0.6
 language: toml
 sources: .toml
 
+# Generic TOML spec, used for any .toml file that has no more specific spec
+# (Cargo.toml, pyproject.toml and moon.mod have their own).
+#
+# A TOML document is a preamble of key/value lines followed by tables; every
+# table is a header plus a run of key/value lines. Values may be scalars,
+# arrays or inline tables, and arrays and inline tables routinely span lines.
+# All of that is structural, so the grammar models it directly rather than
+# treating the right-hand side of `=` as an opaque run of characters — which
+# is what the previous `Value /[^#\r\n]+/` token did, and why every array,
+# inline table, number and boolean stopped the parse.
+
 === lex
 SKIP /[ \t]+/
 TOKEN NL /\r?\n/
 TOKEN Comment /#[^\r\n]*/
-TOKEN Section /\[[A-Za-z0-9._-]+\]/
-TOKEN Key /[A-Za-z0-9._-]+/
-TOKEN Equals /=/
+
+# Table headers, anchored to the start of a line with `^` (which matches at
+# the start of the input or just after a newline). The anchor is essential:
+# without it a bracketed array VALUE such as `keywords = ["a", "b"]` lexes as
+# a table header, because a context-free lexer cannot otherwise tell `[...]`
+# as a header from `[...]` as an array. A TOML table header is by definition
+# the first thing on its line, which is exactly the distinguishing fact.
+#
+# `[[array.of.tables]]` must precede `[table]` so the double-bracket form is
+# not mis-lexed as a table whose name begins with a bracket.
+TOKEN ArrayTableHeader /^\[\[[^\]\r\n]*\]\]/
+TOKEN Section /^\[[^\]\r\n]*\]/
+
+# Values. The multi-line string forms must precede the single-line ones.
+TOKEN MultiString /"""[\s\S]*?"""|'''[\s\S]*?'''/
 TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
-TOKEN Number /-?[0-9]+(\.[0-9]+)?/
-TOKEN Bool /true|false/
+TOKEN DateTime /[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})?)?/
+TOKEN Bool /true\b|false\b/
+TOKEN Number /[+-]?(?:0[xXoObB][0-9a-fA-F_]+|[0-9][0-9_]*(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?|inf\b|nan\b)/
+
+TOKEN Equals /=/
 TOKEN LBracket /\[/
 TOKEN RBracket /\]/
 TOKEN LBrace /\{/
 TOKEN RBrace /\}/
 TOKEN Comma /,/
-TOKEN Value /[^#\r\n]+/
+TOKEN Dot /\./
+
+# Bare keys: letters, digits, underscore and hyphen.
+TOKEN Key /[A-Za-z0-9_-]+/
 
 === grammar
-Doc -> Item*
-Item -> SectionLine / EntryLine / NL / Comment
-SectionLine -> section:Section NL?
-EntryLine -> key:Key Equals value:Value NL?
+Doc          -> Preamble Table*
+
+# Key/value lines before the first table header belong to the document root.
+Preamble     -> Line*
+
+# Every table, known or not, is a header plus the lines up to the next header.
+Table        -> TableMark Line*
+TableMark    -> section:Section / section:ArrayTableHeader
+
+Line         -> EntryLine / NL / Comment / Other
+
+# A key/value pair. The key may be dotted (`a.b.c = 1`).
+EntryLine    -> key:KeyPath Equals value:Value
+KeyPath      -> KeySeg ( Dot KeySeg )*
+KeySeg       -> Key / String / Number / Bool
+
+Value        -> Scalar / InlineTable / ArrayValue
+Scalar       -> MultiString / String / DateTime / Number / Bool
+
+# Arrays and inline tables may contain newlines and comments anywhere.
+ArrayValue   -> LBracket Sep* ( Value Sep* ( Comma Sep* Value Sep* )* ( Comma Sep* )? )? RBracket
+InlineTable  -> LBrace Sep* ( InlineEntry Sep* ( Comma Sep* InlineEntry Sep* )* ( Comma Sep* )? )? RBrace
+InlineEntry  -> KeyPath Equals Value
+Sep          -> NL / Comment
+
+# Catch-all: a single token of any kind, so a malformed line costs only itself
+# instead of truncating every table after it.
+Other        -> Key / String / MultiString / DateTime / Number / Bool
+              / Equals / Comma / Dot
+              / LBracket / RBracket / LBrace / RBrace
+              / Section / ArrayTableHeader
 
 === attrs
 on EntryLine: note fieldKey payload=key

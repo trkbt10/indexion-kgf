@@ -47,11 +47,15 @@ TOKEN BracketIdent /\[[^\]]+\]/
 # Regular identifiers (must come after keywords)
 TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
 
-# Punctuation
+# Punctuation. DOT is a token of its own because SQL qualifies names with it
+# (`schema.table`, `t.col`, `u.*`); without it the lexer dropped every `.` in
+# a query as unrecognized input and the parse silently saw a different
+# statement than the one on disk.
 TOKEN LPAREN /\(/
 TOKEN RPAREN /\)/
 TOKEN COMMA /,/
 TOKEN SEMICOLON /;/
+TOKEN DOT /\./
 
 # Operators (for default values, etc.)
 TOKEN Operator /[+\-*\/%=<>!&|^~:]+/
@@ -60,7 +64,13 @@ TOKEN Operator /[+\-*\/%=<>!&|^~:]+/
 Doc -> Statement*
 Statement -> CreateTableStmt / OtherStmt
 
-CreateTableStmt -> KW_CREATE KW_TABLE tableName:TableName LPAREN ColumnDefList RPAREN SEMICOLON?
+# The header is a rule of its own so its event fires BEFORE the constraints
+# inside the body: events fire bottom-up (children first), so a foreign key
+# nested in the body would otherwise have no way to learn which table it
+# belongs to. The header binds the table name into scope; the FK rule reads
+# it back.
+CreateTableStmt -> CreateTableHeader LPAREN ColumnDefList RPAREN SEMICOLON?
+CreateTableHeader -> KW_CREATE KW_TABLE tableName:TableName
 
 TableName -> QuotedIdent / BacktickIdent / BracketIdent / Ident
 
@@ -68,27 +78,36 @@ ColumnDefList -> ColumnDef ( COMMA ColumnDef )*
 
 ColumnDef -> InlineConstraint / ColumnWithType
 
-ColumnWithType -> colName:ColName colType:ColType ColumnConstraints?
+# Every label the semantics read is bound HERE, on the rule whose event the
+# semantics handle. A label bound inside a child rule (`ColType`,
+# `PrimaryKeyInline`, ...) never reaches the parent event, so the column's
+# type, its PK / NOT NULL / UNIQUE flags and its inline REFERENCES target
+# were all silently absent from every hasColumn edge.
+# The column's type and its inline constraints are spelled out here rather
+# than delegated to sub-rules, because a label bound inside a child rule
+# never reaches the parent's event: with `colType:ColType` and
+# `PrimaryKeyInline -> isPK:KW_PRIMARY ...` the semantics below saw no type,
+# no flags and no inline REFERENCES target at all, and every hasColumn edge
+# carried none of them.
+# The constraint alternatives are written inline rather than behind a
+# `ColumnConstraint` rule so their labels are bound on ColumnWithType, whose
+# event the semantics handle.
+ColumnWithType -> colName:ColName colTypeName:KeywordType TypeArgs?
+                  ( isPK:KW_PRIMARY KW_KEY
+                  / isNotNull:KW_NOT KW_NULL
+                  / isUnique:KW_UNIQUE
+                  / DefaultInline
+                  / KW_REFERENCES inlineRefTable:TableName LPAREN inlineRefCol:ColName RPAREN OnDeleteClause? OnUpdateClause?
+                  )*
 
-ColName -> QuotedIdent / Ident
-
-ColType -> colTypeName:KeywordType (LPAREN TypeParams RPAREN)?
+TypeArgs -> LPAREN TypeParams RPAREN
 TypeParams -> NumberLit ( COMMA NumberLit )*
 
-ColumnConstraints -> ColumnConstraint+
-ColumnConstraint -> PrimaryKeyInline / NotNullInline / UniqueInline / DefaultInline / ReferencesInline
-
-PrimaryKeyInline -> isPK:KW_PRIMARY KW_KEY
-
-NotNullInline -> isNotNull:KW_NOT KW_NULL
-
-UniqueInline -> isUnique:KW_UNIQUE
+ColName -> QuotedIdent / Ident
 
 DefaultInline -> KW_DEFAULT DefaultValue
 DefaultValue -> StringLit / NumberLit / Ident / LPAREN DefaultExpr RPAREN
 DefaultExpr -> ( Ident / StringLit / NumberLit / Operator / COMMA )*
-
-ReferencesInline -> KW_REFERENCES inlineRefTable:TableName LPAREN inlineRefCol:ColName RPAREN OnDeleteClause? OnUpdateClause?
 
 # Table-level constraints
 InlineConstraint -> KW_CONSTRAINT constraintName:ConstraintName ConstraintBody
@@ -107,22 +126,32 @@ OnDeleteClause -> KW_ON KW_DELETE FKAction
 OnUpdateClause -> KW_ON KW_UPDATE FKAction
 FKAction -> KW_CASCADE / KW_RESTRICT / KW_SET KW_NULL / KW_NO KW_ACTION
 
-# Other statements (skip processing)
-OtherStmt -> ( Token )+ SEMICOLON
-Token -> StringLit / NumberLit / QuotedIdent / BacktickIdent / BracketIdent / KeywordType / Ident / LPAREN / RPAREN / COMMA / Operator / KW_CREATE / KW_TABLE / KW_CONSTRAINT / KW_PRIMARY / KW_FOREIGN / KW_KEY / KW_REFERENCES / KW_UNIQUE / KW_NOT / KW_NULL / KW_DEFAULT / KW_ON / KW_DELETE / KW_UPDATE / KW_CASCADE / KW_RESTRICT / KW_SET / KW_NO / KW_ACTION
+# Other statements (skip processing). The terminating semicolon is optional:
+# the last statement of a script often has none, and requiring it stopped the
+# parse at the start of that statement, dropping it and everything the
+# semantics would have read from it. A lone semicolon is a statement too, so
+# `Doc -> Statement*` always makes progress and never loops.
+OtherStmt -> ( Token )+ SEMICOLON? / SEMICOLON
+Token -> StringLit / NumberLit / QuotedIdent / BacktickIdent / BracketIdent / KeywordType / Ident / LPAREN / RPAREN / COMMA / DOT / Operator / KW_CREATE / KW_TABLE / KW_CONSTRAINT / KW_PRIMARY / KW_FOREIGN / KW_KEY / KW_REFERENCES / KW_UNIQUE / KW_NOT / KW_NULL / KW_DEFAULT / KW_ON / KW_DELETE / KW_UPDATE / KW_CASCADE / KW_RESTRICT / KW_SET / KW_NO / KW_ACTION
 
 === attrs
-on CreateTableStmt: def id=tableName kind=Table
+on CreateTableHeader: def id=tableName kind=Table
 on ColumnWithType: def id=colName kind=Column
 
 === semantics
-on CreateTableStmt {
+# Fires before anything in the table body, so the table name is in scope for
+# the foreign keys declared inside it.
+on CreateTableHeader {
   let tbl = stripQuotes($tableName)
   module tbl file file
+  bind ns "table" name "current" to tbl
 }
 
-on CreateTableStmt when $fkCol {
-  let tbl = stripQuotes($tableName)
+# A table-level foreign key. Its own rule declares the edge, because a table
+# may declare several of them and a label bound once on the enclosing
+# statement could only carry the last one.
+on ForeignKeyConstraint {
+  let tbl = $scope("table", "current")
   let fk = stripQuotes($fkCol)
   let ref = stripQuotes($refTable)
   let refC = stripQuotes($refCol)

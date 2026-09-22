@@ -24,20 +24,63 @@ TOKEN NumberLit   /(?:0|[1-9][0-9]*)(?:\.[0-9]+)?/
 TOKEN LBRACE      /\{/
 TOKEN RBRACE      /\}/
 TOKEN COMMA       /,/
+TOKEN LBRACKET    /\[/
+TOKEN RBRACKET    /\]/
+# Selector combinators and attribute-selector operators (`a[href^="http"]`,
+# `ul > li`, `h1 + p`, `a ~ b`), the `/` that separates values in shorthand
+# properties (`font: 12px/1.5`), and the `*` universal selector. Without
+# these the lexer dropped the characters silently and the parse saw a
+# different stylesheet than the one on disk.
+TOKEN MATCHOP     /[~^|$*]=/
+TOKEN COMBINATOR  /[>+~]/
+TOKEN SLASH       /\//
+TOKEN STAR        /\*/
+TOKEN AMP         /&/
 
 === grammar
-Stylesheet    -> ( ImportRule / Rule / Other )*
-Other         -> (LBRACE|RBRACE|SEMI|COMMA|Ident|StringLit|RPAREN|URLFN|DOT|HASH)*
+# Every top-level construct, ending in `Other` so the stylesheet rule
+# consumes any token the structural rules cannot classify and the parse
+# never stops part-way through a file.
+Stylesheet    -> ( ImportRule / Rule / AtBlock / Other )*
 
-ImportRule    -> AT_IMPORT ImportTarget SEMI?
-ImportTarget  -> URL / String
-URL           -> URLFN LPAREN UrlInner RPAREN
-UrlInner      -> String / Ident
-String        -> path:StringLit
+# Any single token kind declared in `=== lex`. `Other` used to be a *run* of
+# tokens that included RBRACE, which meant a rule body could swallow its own
+# closing brace; it is one token at a time here, and the block rules below
+# own their braces.
+Other         -> AT_IMPORT / AT_MEDIA / AT_SUPPORTS / AT_KEYFRAMES
+               / IMPORTANT / URLFN / LPAREN / RPAREN / SEMI / COLON / DOT
+               / HEXCOLOR / HASH / FUNCTION / Ident / StringLit / NumberLit
+               / LBRACE / RBRACE / COMMA / LBRACKET / RBRACKET
+               / MATCHOP / COMBINATOR / SLASH / STAR / AMP
 
-Rule          -> SelectorList LBRACE Other RBRACE
+# `@import "a.css";` / `@import url(a.css);` / `@import url("a.css") screen;`
+# The path is captured on ImportRule itself: labels bound inside a child rule
+# (the old `String -> path:StringLit`) never reach the parent, so the import
+# edge resolved an empty path and pointed at the bare fallback prefix.
+ImportRule    -> AT_IMPORT ( URLFN LPAREN path:UrlInner RPAREN / path:StringLit ) MediaQuery? SEMI?
+UrlInner      -> StringLit / Ident
+MediaQuery    -> ( !SEMI !LBRACE !RBRACE Other )+
+
+# A style rule: selectors, then a brace-delimited body. The body is any run
+# of tokens that is not a brace, plus whole nested blocks, so a declaration
+# (`font-family: sans-serif;`, which contains COLON) and nesting both fit.
+Rule          -> SelectorList Block
+Block         -> LBRACE BlockBody RBRACE
+BlockBody     -> ( Block / !LBRACE !RBRACE Other )*
+
+# An at-rule that takes a block (`@media`, `@supports`, `@keyframes`): its
+# prelude runs up to the opening brace, and the block may contain whole
+# style rules.
+AtBlock       -> ( AT_MEDIA / AT_SUPPORTS / AT_KEYFRAMES ) Prelude Block
+Prelude       -> ( !LBRACE !SEMI !RBRACE Other )*
+
 SelectorList  -> Selector ( COMMA Selector )*
-Selector      -> ( ClassSel / IdSel / Ident )+
+# A selector is a run of simple selectors, combinators, pseudo-classes
+# (`:hover`, `::after`) and attribute selectors (`[href^="http"]`).
+Selector      -> ( ClassSel / IdSel / AttrSel / PseudoSel / Ident / STAR
+                 / COMBINATOR / AMP )+
+AttrSel       -> LBRACKET ( !RBRACKET Other )* RBRACKET
+PseudoSel     -> COLON COLON? ( FUNCTION LPAREN ( !RPAREN Other )* RPAREN / Ident )
 ClassSel      -> DOT name:Ident
 IdSel         -> HASH name:Ident
 

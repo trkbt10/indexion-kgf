@@ -51,6 +51,12 @@ KEYWORD KW_in         /in\b/
 TOKEN Ident         /[A-Za-z_$][A-Za-z0-9_$]*/
 TOKEN Number        /0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|[0-9]+(?:\.[0-9]+)?/
 
+# Regex literal /.../flags.
+# Defined after the comment and JSX tokens so `//`, `/*`, `</` and `/>` keep
+# priority, and before SLASH so a regex body stays one token instead of
+# shredding into punctuation (dropping `^`, `@` and `\` on the way).
+TOKEN RegexLit /\/(?![*\/])([^\/\\\[\r\n]|\\[^\r\n]|\[([^\]\\\r\n]|\\[^\r\n])*\])+\/[dgimsuvy]*/
+
 # Punctuation
 TOKEN LBRACE  /\{/
 TOKEN RBRACE  /\}/
@@ -74,6 +80,11 @@ TOKEN PLUS    /\+/
 TOKEN MINUS   /-/
 TOKEN SLASH   /\//
 TOKEN BANG    /!/
+TOKEN PERCENT /%/
+TOKEN AT      /@/
+TOKEN CARET   /\^/
+TOKEN TILDE   /~/
+TOKEN BACKSLASH /\\/
 
 === grammar
 Module -> Item*
@@ -111,10 +122,14 @@ VarDecl -> doc:DocComment? NL* (KW_const / KW_let / KW_var) id:Ident ( EQ Expr )
 
 # Class bodies
 ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> doc:DocComment? NL* Modifier* ( MethodDecl / PropertyDecl ) / NL / LineComment / BlockComment
+ClassMember -> MethodDecl / PropertyDecl / NL / LineComment / BlockComment
 Modifier -> KW_static / KW_async
-MethodDecl -> id:Ident LPAREN NL* ParamList? NL* RPAREN ( Body / SEMI? )
-PropertyDecl -> id:Ident ( EQ Expr )? SEMI?
+# The doc comment is captured on the member declaration itself, with the
+# modifiers absorbed there too. Capturing it on the wrapper instead left
+# the member's own $doc unbound, so every class member was reported
+# undocumented no matter what JSDoc preceded it.
+MethodDecl -> doc:DocComment? NL* Modifier* id:Ident LPAREN NL* ParamList? NL* RPAREN ( Body / SEMI? )
+PropertyDecl -> doc:DocComment? NL* Modifier* id:Ident ( EQ Expr )? SEMI?
 
 # Parameters
 ParamList -> Param ( NL* COMMA NL* Param )* NL* COMMA?
@@ -136,12 +151,28 @@ ObjectProp -> PropertyName COLON Expr / PropertyName
 PropertyName -> Ident / StringLit / Number
 ArrayLit -> LBRACKET ArrayEntry* RBRACKET
 ArrayEntry -> NL / LineComment / BlockComment / DocComment / Expr COMMA? / COMMA
-ExprAtom -> Ident / Number / StringLit / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / NL / LineComment / BlockComment / DocComment / KW_as / KW_new / KW_typeof / KW_const / KW_in
-BodyAtom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / KW_async / KW_await / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_switch / KW_case / KW_break / KW_continue / KW_new / KW_throw / KW_const / KW_let / KW_var / KW_function / KW_class / KW_extends / KW_static / KW_import / KW_export / KW_from / KW_as / KW_default / KW_typeof / KW_in / NL / LineComment / BlockComment / DocComment
-Atom -> Ident / Number / StringLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / LT / GT / LPAREN / RPAREN / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_in / KW_export / KW_function / KW_class / KW_const / KW_let / KW_var / KW_async / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_break / KW_continue / KW_new / KW_throw / KW_default / KW_switch / KW_case / KW_import / KW_from / KW_extends / KW_static / KW_await
+ExprAtom -> Ident / Number / StringLit / RegexLit / DOT / COMMA / COLON / LT / GT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / PERCENT / AT / CARET / TILDE / BACKSLASH / NL / LineComment / BlockComment / DocComment / KW_as / KW_new / KW_typeof / KW_const / KW_in
+BodyAtom -> Ident / Number / StringLit / RegexLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / PERCENT / AT / CARET / TILDE / BACKSLASH / LT / GT / KW_async / KW_await / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_switch / KW_case / KW_break / KW_continue / KW_new / KW_throw / KW_const / KW_let / KW_var / KW_function / KW_class / KW_extends / KW_static / KW_import / KW_export / KW_from / KW_as / KW_default / KW_typeof / KW_in / NL / LineComment / BlockComment / DocComment
+Atom -> Ident / Number / StringLit / RegexLit / SEMI / COMMA / COLON / DOT / EQ / ARROW / QMARK / STAR / PIPE / AMP / PLUS / MINUS / SLASH / BANG / PERCENT / AT / CARET / TILDE / BACKSLASH / LT / GT / LPAREN / RPAREN / NL / LineComment / BlockComment / DocComment / KW_as / KW_typeof / KW_in / KW_export / KW_function / KW_class / KW_const / KW_let / KW_var / KW_async / KW_return / KW_if / KW_else / KW_for / KW_while / KW_do / KW_break / KW_continue / KW_new / KW_throw / KW_default / KW_switch / KW_case / KW_import / KW_from / KW_extends / KW_static / KW_await
 
-# Fallback
-Other -> Atom
+# Module-level fallback.
+#
+# A statement that is not a declaration (a bare call, an assignment, an IIFE)
+# still has to be consumed, or the module parse stops there and every later
+# declaration is silently dropped. It is consumed in two steps:
+#
+#   1. OpaqueGroup — a balanced bracket group taken as one opaque unit, so the
+#      braces of a call's object-literal argument or of a callback body do not
+#      have to be understood, only balanced.
+#   2. a single token of any kind, including a lone bracket whose partner is
+#      missing, so even malformed or truncated source cannot stop the parse.
+Other -> Atom / OpaqueGroup / LBRACE / RBRACE / LBRACKET / RBRACKET / LPAREN / RPAREN
+
+# Inside a group only balanced sub-groups and plain atoms are allowed, so a
+# group never swallows an unmatched opening bracket and stays truly balanced.
+# Atom lists LPAREN/RPAREN, so they are excluded here explicitly.
+OpaqueGroup -> LBRACE OpaqueInner* RBRACE / LBRACKET OpaqueInner* RBRACKET / LPAREN OpaqueInner* RPAREN
+OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN Atom
 
 === attrs
 on FunctionDecl: def id kind=Function doc=doc

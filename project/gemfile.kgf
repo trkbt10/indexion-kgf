@@ -2,58 +2,119 @@ kgf 0.6
 language: gemfile
 sources: Gemfile
 
-# KGF spec for Ruby Gemfile
-# Extracts gem dependencies
+# KGF spec for Ruby Gemfile.
+#
+# A Gemfile is executable Ruby, so it cannot be modelled by enumerating the
+# statements that happen to appear in one sample. The backbone here is a
+# generic Ruby-ish statement/block structure — a statement is a call with
+# arguments, and `do ... end` / `{ ... }` delimit blocks that may nest — with
+# `gem`, `source` and `ruby` layered on top as the calls that carry meaning.
+#
+# Emits: rubyVersion, dependsOn.
 
 === lex
-SKIP        /[ \t]+/
+SKIP        /[ \t\\\r]+/
 TOKEN NL            /\r?\n/
 TOKEN Comment       /#[^\r\n]*/
 
-# Keywords
-KEYWORD KW_source     /source\b/
-KEYWORD KW_ruby       /ruby\b/
-KEYWORD KW_gem        /gem\b/
-KEYWORD KW_group      /group\b/
+# Keywords. Only the words the grammar needs structurally are keywords:
+# `do`/`end` delimit blocks, and `gem`/`source`/`ruby` head the calls that
+# carry semantics.
+#
+# NOTE: `require`, `group`, `platforms`, `git`, `path` and friends are NOT
+# keywords. They appear as ordinary hash keys (`gem "x", require: false`) and
+# as block-heading method names, and the lexer has no context to tell the two
+# apart — a KEYWORD `require` turns the hash key into KW_require and makes
+# every generic option rule fail, which is exactly what truncated this file
+# at the first `require: false`.
 KEYWORD KW_do         /do\b/
 KEYWORD KW_end        /end\b/
-KEYWORD KW_require    /require\b/
+KEYWORD KW_gem        /gem\b/
+KEYWORD KW_source     /source\b/
+KEYWORD KW_ruby       /ruby\b/
 KEYWORD KW_true       /true\b/
 KEYWORD KW_false      /false\b/
+KEYWORD KW_nil        /nil\b/
+KEYWORD KW_if         /if\b/
+KEYWORD KW_unless     /unless\b/
 
-# Literals
+# Literals. A symbol may be written `:name` or, as a hash key, `name:`; both
+# forms appear in real Gemfiles.
 TOKEN StringLit     /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
-TOKEN VersionSpec   /[~><=]+\s*[0-9]+(\.[0-9]+)*/
-TOKEN Symbol        /:[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Symbol        /:[a-zA-Z_][a-zA-Z0-9_]*[?!]?/
+TOKEN Number        /-?[0-9]+(\.[0-9]+)?/
 
-# Punctuation
+# Punctuation and operators. ARROW (`=>`) must precede the generic Operator
+# so a hash rocket is not split, and the operator class covers the comparison
+# operators that appear in version constraints written without quotes.
+TOKEN ARROW         /=>/
 TOKEN LPAREN        /\(/
 TOKEN RPAREN        /\)/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
+TOKEN LBRACKET      /\[/
+TOKEN RBRACKET      /\]/
 TOKEN COMMA         /,/
 TOKEN COLON         /:/
-TOKEN ARROW         /=>/
+TOKEN DOT           /\./
+TOKEN Operator      /[!%&*+\-\/<=>?^|~]+/
 
-# Identifiers
-TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_]*/
+# Identifiers, including the constant and variable forms.
+TOKEN Ident         /[A-Za-z_][A-Za-z0-9_]*[?!]?/
 
 === grammar
 GemfileContent  -> Statement*
-Statement       -> SourceStmt / RubyStmt / GemStmt / GroupBlock
-                 / NL / Comment
 
-SourceStmt      -> KW_source url:StringLit NL
-RubyStmt        -> KW_ruby version:StringLit NL
+# `Other` last: a single token of any kind, so an unfamiliar construct costs
+# only itself and every `gem` line after it is still seen.
+Statement       -> SourceStmt / RubyStmt / GemStmt / Block
+                 / NL / Comment / Other
 
-GemStmt         -> KW_gem name:StringLit GemOptions? NL
-GemOptions      -> COMMA GemOption ( COMMA GemOption )*
-GemOption       -> VersionOption / KeyValueOption
-VersionOption   -> version:StringLit
-KeyValueOption  -> Symbol ARROW Value / Ident COLON Value
-Value           -> StringLit / Symbol / KW_true / KW_false / Ident
+SourceStmt      -> KW_source Args
+RubyStmt        -> KW_ruby version:StringLit
 
-GroupBlock      -> KW_group GroupNames KW_do NL GroupContent* KW_end NL?
-GroupNames      -> Symbol ( COMMA Symbol )*
-GroupContent    -> GemStmt / NL / Comment
+# `gem "name", "~> 1.0", require: false, group: [:test]`
+GemStmt         -> KW_gem name:StringLit GemOpts?
+GemOpts         -> ( COMMA Sep* OptValue )+
+
+# Any `name ... do ... end` or `name ... { ... }` block: `group :development
+# do`, `platforms :ruby do`, `source "..." do`, `git_source(:github) { |n| }`.
+# Heading the rule with a generic call is what makes an unknown block kind
+# (a future `gemspec do`, a conditional wrapper) parse as a block instead of
+# stopping the file.
+Block           -> BlockHead KW_do BlockBody KW_end
+                 / BlockHead LBRACE BlockBody RBRACE
+BlockHead       -> ( Ident / KW_source / KW_gem / KW_ruby / KW_if / KW_unless ) Args? BlockParams?
+BlockParams     -> Operator ( Ident ( COMMA Ident )* )? Operator
+BlockBody       -> Statement*
+
+# A call's arguments, with or without parentheses.
+Args            -> LPAREN Sep* ArgList? RPAREN / ArgList
+ArgList         -> OptValue ( Sep* COMMA Sep* OptValue )*
+
+# An argument or option: a hash entry in either Ruby syntax, or a bare value.
+OptValue        -> HashEntry / Value
+HashEntry       -> Symbol ARROW Sep* Value
+                 / HashKey COLON Sep* Value
+# A hash key written `name:` may be any identifier, including one that is
+# also a keyword elsewhere (`source:`, `gem:`, `if:`).
+HashKey         -> Ident / KW_source / KW_gem / KW_ruby / KW_do / KW_end
+                 / KW_if / KW_unless / KW_true / KW_false / KW_nil
+
+Value           -> StringLit / Symbol / Number / KW_true / KW_false / KW_nil
+                 / HashLit / ArrayLit / Call / Ident
+
+Call            -> Ident LPAREN Sep* ArgList? RPAREN / Ident DOT Ident Args?
+HashLit         -> LBRACE Sep* ( OptValue ( Sep* COMMA Sep* OptValue )* ( Sep* COMMA )? )? Sep* RBRACE
+ArrayLit        -> LBRACKET Sep* ( Value ( Sep* COMMA Sep* Value )* ( Sep* COMMA )? )? Sep* RBRACKET
+
+Sep             -> NL / Comment
+
+Other           -> StringLit / Symbol / Number / Ident / Operator
+                 / KW_true / KW_false / KW_nil / KW_if / KW_unless
+                 / KW_source / KW_gem / KW_ruby / KW_do / KW_end
+                 / COMMA / COLON / DOT / ARROW
+                 / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET
 
 === attrs
 on SourceStmt: note fieldKey payload="source"

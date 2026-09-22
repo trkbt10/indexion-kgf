@@ -2,103 +2,201 @@ kgf 0.6
 language: package-swift
 sources: Package.swift
 
-# KGF spec for Swift Package.swift manifest files
-# Extracts package name and dependencies
+# KGF spec for Swift Package.swift manifest files.
+#
+# A Package.swift is not a data file: it is a Swift program that is compiled
+# and run to produce a package description. Real manifests contain typed
+# `let` bindings, `#if` compiler directives, closures, generics, string
+# interpolation and arbitrary expressions, so a grammar that enumerates the
+# argument names of `Package(...)` parses only the sample it was written
+# against.
+#
+# The backbone here is therefore a generic Swift *expression* grammar: a file
+# is a sequence of statements; an expression is a chain of postfix operations
+# (member access, calls, subscripts) over balanced primaries; every bracket
+# pair may span lines. The manifest meaning is layered on top by labelling
+# two specific argument shapes — `name:` at the top of a `Package(...)` call
+# and `url:`/`from:` inside a `.package(...)` call — and by matching the call
+# name in the semantics.
+#
+# Emits: projectName, dependsOn.
 
 === lex
 SKIP        /[ \t]+/
 TOKEN NL            /\r?\n/
-TOKEN Comment       /\/\/[^\r\n]*/
+
+# Comments. The block form must precede the line form's `/` and both must
+# precede any operator token that could otherwise consume the slashes.
 TOKEN BlockComment  /\/\*[\s\S]*?\*\//
+TOKEN Comment       /\/\/[^\r\n]*/
 
-# Keywords
-KEYWORD KW_import     /import\b/
-KEYWORD KW_let        /let\b/
-KEYWORD KW_package    /package\b/
-KEYWORD KW_Package    /Package\b/
-KEYWORD KW_name       /name\b/
-KEYWORD KW_platforms  /platforms\b/
-KEYWORD KW_products   /products\b/
-KEYWORD KW_dependencies /dependencies\b/
-KEYWORD KW_targets    /targets\b/
-KEYWORD KW_url        /url\b/
-KEYWORD KW_from       /from\b/
+# Compiler directives (`#if canImport(Darwin)`, `#else`, `#endif`,
+# `#warning(...)`). These appear at statement level in real manifests and had
+# no token at all before, so `#` was an unrecognized input and the statement
+# could not be parsed.
+TOKEN Directive     /#[A-Za-z_][A-Za-z0-9_]*/
 
-# Literals
-TOKEN StringLit     /"([^"\\]|\\.)*"/
-TOKEN NumberLit     /[0-9]+(\.[0-9]+)*/
+# Attributes (`@main`, `@available(...)`).
+TOKEN Attribute     /@[A-Za-z_][A-Za-z0-9_]*/
 
-# Punctuation
+# Keywords. Only `let`/`var` (which head a binding) and `import` are
+# structural. Argument names such as `name`, `url`, `from`, `dependencies`,
+# `targets` and `products` are deliberately NOT keywords: they are ordinary
+# argument labels, and a keyword token for each would make every call whose
+# labels are not on the list fail to parse — which is what stopped the old
+# spec at the very first `let package = Package(`.
+KEYWORD KW_import   /import\b/
+KEYWORD KW_let      /let\b/
+KEYWORD KW_var      /var\b/
+KEYWORD KW_true     /true\b/
+KEYWORD KW_false    /false\b/
+KEYWORD KW_nil      /nil\b/
+
+# Literals. The multi-line string form must precede the ordinary one.
+TOKEN MultiString   /"""[\s\S]*?"""/
+TOKEN StringLit     /"([^"\\\r\n]|\\.)*"/
+TOKEN NumberLit     /-?[0-9][0-9_]*(\.[0-9][0-9_]*)*([eE][+-]?[0-9]+)?/
+
+# Identifiers. The backquoted form (`` `default` ``) lets a reserved word be
+# used as a name and appears in real manifests.
+TOKEN Ident         /`[^`\r\n]+`|[A-Za-z_][A-Za-z0-9_]*/
+
+# Punctuation. ARROW precedes the operator class so a function type's `->` is
+# not split, and the operator class is a single catch-all for everything that
+# can appear between operands (`?`, `!`, `&`, `|`, `+`, `*`, `<`, `>`, `\`,
+# `$`, ...). Keeping operators generic is what lets generic type arguments,
+# optional chaining and string escapes pass through without dedicated rules.
+TOKEN ARROW         /->/
 TOKEN LPAREN        /\(/
 TOKEN RPAREN        /\)/
 TOKEN LBRACKET      /\[/
 TOKEN RBRACKET      /\]/
+TOKEN LBRACE        /\{/
+TOKEN RBRACE        /\}/
 TOKEN COMMA         /,/
 TOKEN COLON         /:/
 TOKEN DOT           /\./
 TOKEN EQUALS        /=/
-
-# Identifiers
-TOKEN Ident         /[a-zA-Z_][a-zA-Z0-9_]*/
+TOKEN Operator      /[!%&*+\-\/<>?^|~$\\]+/
 
 === grammar
-SwiftFile       -> Item*
-Item            -> CommentLine / ImportStmt / PackageDecl / OtherLine
-CommentLine     -> Comment NL / BlockComment NL?
-ImportStmt      -> KW_import Ident NL
-OtherLine       -> NL
+SwiftFile   -> Item*
 
-PackageDecl     -> KW_let KW_package EQUALS KW_Package LPAREN NL? PackageArgs RPAREN
-PackageArgs     -> PackageArg ( COMMA NL? PackageArg )* COMMA? NL?
-PackageArg      -> NameArg / PlatformsArg / ProductsArg / DepsArg / TargetsArg / OtherArg
+# `Other` last: a single token of any kind, so an unfamiliar construct costs
+# only itself and the `Package(...)` call after it is still seen.
+Item        -> ImportStmt / Binding / Directive
+             / NL / Comment / BlockComment / Other
 
-NameArg         -> KW_name COLON value:StringLit
-PlatformsArg    -> KW_platforms COLON LBRACKET PlatformList? RBRACKET
-ProductsArg     -> KW_products COLON LBRACKET ProductList? RBRACKET
-DepsArg         -> KW_dependencies COLON LBRACKET DepList? RBRACKET
-TargetsArg      -> KW_targets COLON LBRACKET TargetList? RBRACKET
-OtherArg        -> Ident COLON ArgValue
+ImportStmt  -> KW_import Ident ( DOT Ident )*
 
-DepList         -> NL? DepItem ( COMMA NL? DepItem )* COMMA? NL?
-DepItem         -> DOT KW_package LPAREN DepArgs RPAREN
-DepArgs         -> DepArg ( COMMA NL? DepArg )*
-DepArg          -> UrlArg / FromArg / OtherDepArg
-UrlArg          -> KW_url COLON url:StringLit
-FromArg         -> KW_from COLON version:StringLit
-OtherDepArg     -> Ident COLON ArgValue
+# `let package = Package(...)`, `let x: [T] = [...]`, `var y = ...`
+Binding     -> ( KW_let / KW_var ) Ident TypeAnn? EQUALS Expr
+TypeAnn     -> COLON Type
 
-PlatformList    -> NL? PlatformItem ( COMMA NL? PlatformItem )* COMMA? NL?
-PlatformItem    -> DOT Ident LPAREN DOT Ident RPAREN / ArgValue
+# A type is a run of balanced atoms that stops at `=`; generics, optionals,
+# tuples and array types are all covered without naming any of them.
+Type        -> TypeAtom+
+TypeAtom    -> Ident / DOT / Operator / ARROW / COLON / COMMA
+             / Paren / Bracket / Brace
 
-ProductList     -> NL? ProductItem ( COMMA NL? ProductItem )* COMMA? NL?
-ProductItem     -> DOT Ident LPAREN ProductArgs RPAREN
-ProductArgs     -> ProductArg ( COMMA NL? ProductArg )* NL?
-ProductArg      -> ArgKey COLON ArgValue / ArgValue
-ArgKey          -> Ident / KW_name / KW_url / KW_from / KW_dependencies / KW_targets
+# An expression is a primary followed by any number of postfix operations.
+# `.package(url:from:)`, `Package(name:...)`, `foo.bar[0]` and
+# `.product(name:) + other` are all this one shape.
+Expr        -> Primary Postfix*
+Postfix     -> ArgCall / Bracket / Brace / MemberOp / BinOp
+MemberOp    -> DOT name:Ident
+BinOp       -> ( Operator / ARROW / COLON ) Sep* Primary
 
-TargetList      -> NL? TargetItem ( COMMA NL? TargetItem )* COMMA? NL?
-TargetItem      -> DOT Ident LPAREN TargetArgs RPAREN
-TargetArgs      -> TargetArg ( COMMA NL? TargetArg )* NL?
-TargetArg       -> ArgKey COLON ArgValue / ArgValue
+# ArrayLit comes before the opaque Bracket bag: the elements of
+# `dependencies: [ .package(url: ...), ... ]` are expressions that the
+# semantics must see. Bracket remains as the fallback for a bracketed run that
+# is not a comma-separated expression list (a subscript, a type such as
+# `[String: Int]`), so nothing is lost when ArrayLit does not fit.
+Primary     -> MultiString / StringLit / NumberLit
+             / KW_true / KW_false / KW_nil
+             / Attribute / Directive
+             / LeadingDot / Callee / Ident
+             / ArrayLit / Paren / Bracket / Brace
+# A bare identifier immediately followed by `(` is a call target. Matching it
+# as its own rule (rather than as a plain Ident) is what lets the semantics
+# publish `Package` before the `name:` argument inside it is read.
+Callee      -> Ident &LPAREN
+ArrayLit    -> LBRACKET Sep* ( Expr ( Sep* COMMA Sep* Expr )* ( Sep* COMMA )? )? Sep* RBRACKET
+# A leading-dot expression is Swift's implicit-member shorthand: `.package`,
+# `.library`, `.target`. The name is labelled so the semantics can tell a
+# `.package(...)` dependency entry from a `.target(...)`.
+LeadingDot  -> DOT name:Ident
 
-ArgValue        -> StringLit / NumberLit / Ident / ArrayLit / FuncCall
-ArrayLit        -> LBRACKET ArgValueList? RBRACKET
-ArgValueList    -> ArgValue ( COMMA ArgValue )*
-FuncCall        -> DOT? Ident LPAREN FuncArgs? RPAREN
-FuncArgs        -> FuncArg ( COMMA NL? FuncArg )* NL?
-FuncArg         -> ArgKey COLON ArgValue / ArgValue
+# A call's argument list.
+ArgCall     -> LPAREN Sep* ArgItems? Sep* RPAREN
+ArgItems    -> Arg ( Sep* COMMA Sep* Arg )* ( Sep* COMMA )?
+
+# One labelled-argument rule, not one per interesting label. The grammar
+# cannot tell `name:` from `url:` — both are just an Ident before a COLON —
+# so a rule per label would make the first one shadow all the others (PEG
+# takes the first alternative that matches, and `NameLabel -> Ident` matches
+# `url` perfectly well). WHICH label this is, is a semantic question, decided
+# from `$label` in the semantics section.
+Arg         -> StringArg / PlainArg
+StringArg   -> label:Ident COLON Sep* value:StringLit !ArgTail
+PlainArg    -> ArgLabel COLON Sep* Expr / Expr
+# `!ArgTail` keeps StringArg from matching when the string is only the first
+# operand of a larger expression (`name: "a" + suffix`), so `$value` always
+# carries the whole value.
+ArgTail     -> Operator / ARROW / DOT / LPAREN / LBRACKET
+
+ArgLabel    -> Ident / KW_let / KW_var / KW_true / KW_false / KW_nil
+
+# Balanced containers, newline-tolerant throughout. Their contents are a bag
+# of anything, which is what makes a closure body, an array of targets or a
+# `#if`-guarded list parse without the grammar knowing their shape.
+Paren       -> LPAREN Bag* RPAREN
+Bracket     -> LBRACKET Bag* RBRACKET
+Brace       -> LBRACE Bag* RBRACE
+Bag         -> Paren / Bracket / Brace
+             / MultiString / StringLit / NumberLit / Ident
+             / Attribute / Directive
+             / KW_let / KW_var / KW_true / KW_false / KW_nil / KW_import
+             / Operator / ARROW / COMMA / COLON / DOT / EQUALS / Sep
+
+Sep         -> NL / Comment / BlockComment
+
+Other       -> MultiString / StringLit / NumberLit / Ident
+             / Attribute / Directive
+             / KW_let / KW_var / KW_true / KW_false / KW_nil / KW_import
+             / Operator / ARROW / COMMA / COLON / DOT / EQUALS
+             / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE
 
 === attrs
-on NameArg: note fieldKey payload="name"
+on StringArg: note fieldKey payload=label
 
 === semantics
-on NameArg {
-  let name = stripQuotes($value)
-  edge projectName from $file to name attrs obj("raw", $value)
+# Which call an argument belongs to decides what the argument means: `name:`
+# is the package's own name inside `Package(...)` but a product's or target's
+# name inside `.library(...)` / `.target(...)`, and `url:` is a dependency
+# only inside `.package(...)`.
+#
+# Events fire bottom-up, so a call cannot tell its own arguments what it is.
+# What CAN: the callee is matched before the argument list, so LeadingDot
+# (`.package`) and Callee (a bare `Package`) publish the name into scope just
+# before the arguments are walked, and each argument reads it back.
+on LeadingDot {
+  bind ns "value" name "callee" to concat(".", $name)
 }
-on UrlArg {
-  let url = stripQuotes($url)
-  edge dependsOn from $file to concat("swift:", url) attrs obj("dep_kind", "runtime")
+on Callee {
+  bind ns "value" name "callee" to $_text
+}
+
+# The package's own name: `name:` directly inside `Package(...)`.
+on StringArg when cond(eq($scope("value", "callee"), "Package"), eq($label, "name"), "") {
+  edge projectName from $file to stripQuotes($value) attrs obj("raw", $value)
+}
+
+# `.package(url: "...")` — a remote package dependency. The local form
+# `.package(path: "../x")` and the registry form `.package(id:)` carry no URL
+# and so produce no edge here, matching the previous spec's behaviour.
+on StringArg when cond(eq($scope("value", "callee"), ".package"), eq($label, "url"), "") {
+  edge dependsOn from $file to concat("swift:", stripQuotes($value)) attrs obj("dep_kind", "runtime")
 }
 
 === features

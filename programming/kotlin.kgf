@@ -22,6 +22,19 @@ TOKEN Number /0x[0-9a-fA-F_]+|0b[01_]+|[0-9][0-9_]*(\.[0-9_]+)?([eE][+-]?[0-9_]+
 TOKEN Annotation /@[a-zA-Z_][a-zA-Z0-9_.:]*/
 
 # Keywords
+#
+# Kotlin distinguishes HARD keywords, which are reserved everywhere, from SOFT
+# keywords, which only act as keywords in one position and are ordinary
+# identifiers anywhere else. Only the hard ones get a `KEYWORD` token here.
+#
+# The lexer matches token rules in definition order (first match wins), so a
+# token for a soft keyword shadows `Ident` everywhere in the file. That is not
+# a hypothetical: `val data = 1`, `fun get(): T`, a parameter named `open`, a
+# property named `value` are all ordinary Kotlin, and while `data`, `get` and
+# `open` had keyword tokens each of those declarations became unmatchable —
+# silently dropping the symbol and, when it had a brace body, everything after
+# it. Soft keywords are matched through `SoftModifier` below, which accepts a
+# plain `Ident` only where a modifier can actually stand.
 KEYWORD KW_package   /package\b/
 KEYWORD KW_import    /import\b/
 KEYWORD KW_fun       /fun\b/
@@ -30,38 +43,23 @@ KEYWORD KW_var       /var\b/
 KEYWORD KW_class     /class\b/
 KEYWORD KW_interface /interface\b/
 KEYWORD KW_object    /object\b/
-KEYWORD KW_enum      /enum\b/
-KEYWORD KW_sealed    /sealed\b/
-KEYWORD KW_data      /data\b/
 KEYWORD KW_typealias /typealias\b/
-KEYWORD KW_companion /companion\b/
-KEYWORD KW_public    /public\b/
-KEYWORD KW_private   /private\b/
-KEYWORD KW_internal  /internal\b/
-KEYWORD KW_protected /protected\b/
-KEYWORD KW_open      /open\b/
-KEYWORD KW_final     /final\b/
-KEYWORD KW_abstract  /abstract\b/
-KEYWORD KW_override  /override\b/
-KEYWORD KW_suspend   /suspend\b/
-KEYWORD KW_inline    /inline\b/
 KEYWORD KW_if        /if\b/
 KEYWORD KW_else      /else\b/
 KEYWORD KW_when      /when\b/
 KEYWORD KW_for       /for\b/
 KEYWORD KW_while     /while\b/
+KEYWORD KW_do        /do\b/
 KEYWORD KW_return    /return\b/
+KEYWORD KW_break     /break\b/
+KEYWORD KW_continue  /continue\b/
+KEYWORD KW_throw     /throw\b/
+KEYWORD KW_try       /try\b/
 KEYWORD KW_is        /is\b/
 KEYWORD KW_as        /as\b/
 KEYWORD KW_in        /in\b/
-KEYWORD KW_by        /by\b/
-KEYWORD KW_where     /where\b/
-KEYWORD KW_constructor /constructor\b/
-KEYWORD KW_init      /init\b/
-KEYWORD KW_get       /get\b/
-KEYWORD KW_set       /set\b/
 KEYWORD KW_this      /this\b/
-KEYWORD KW_out       /out\b/
+KEYWORD KW_super     /super\b/
 
 # Built-in values
 TOKEN BoolLit /\b(?:true|false)\b/
@@ -72,11 +70,26 @@ TOKEN TypeIdent /[A-Z][a-zA-Z0-9_]*/
 TOKEN Ident /[a-z_][a-zA-Z0-9_]*|`[^`]+`/
 
 # Operators
+#
+# `?` is deliberately NOT part of the `Operator` character class and gets its
+# own `QMARK` token defined BEFORE `Operator`. The lexer matches token rules in
+# definition order (first match wins, not longest match), so while `?` was
+# inside the class every `?` in the file — the nullable-type marker in
+# `fun getById(id: Long): Task?`, the safe call `a?.b`, the elvis `a ?: b` —
+# lexed as `Operator`. `Type -> TypeAtom QMARK?` could then never match a
+# nullable type, so the whole declaration failed and, when it had a brace body,
+# took the rest of the file down with it.
+#
+# The `?:` and `?.` alternatives that used to be spelled out at the end of the
+# `Operator` alternation were already unreachable for the same reason: the
+# leading `[…]+` class matched the `?` first. They are now `QMARK COLON` and
+# `QMARK DOT`, both of which the expression rules accept.
 TOKEN ARROW   /->/
 TOKEN DCOLON  /::/
+TOKEN QMARK   /\?/
 TOKEN LT      /</
 TOKEN GT      />/
-TOKEN Operator /[+\-*\/%&|^~!=?]+|&&|\|\||\.\.|\?:|\?\./
+TOKEN Operator /&&|\|\||\.\.|[+\-*\/%&|^~!=]+/
 
 # Punctuation
 TOKEN LBRACE   /\{/
@@ -89,12 +102,22 @@ TOKEN SEMI     /;/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
 TOKEN COLON    /:/
-TOKEN QMARK    /\?/
 TOKEN AT       /@/
 
 === grammar
 Module -> Item*
 
+# Every top-level construct is one of these. `Other` is the catch-all and
+# accepts ANY single token, including a lone bracket, so a declaration the
+# rules only partially match can never stop the module parse: the leftovers are
+# skipped one token at a time and the next declaration is picked up again.
+# Without that a single unsupported form (a trailing-lambda initializer such as
+# `private val logger = KotlinLogging.logger {}`) truncated the file and every
+# declaration below it vanished from the graph.
+#
+# Declarations come before the bare `DocComment` alternative: PEG ordered
+# choice takes the first match, so a leading `DocComment` alternative would
+# swallow the doc that belongs to the declaration underneath it.
 Item -> NL
      / PackageDecl
      / ImportDecl
@@ -110,124 +133,380 @@ Item -> NL
 # Package declaration
 PackageDecl -> KW_package QualifiedName
 
-# Import declaration
-ImportDecl -> KW_import path:QualifiedName ( DOT Operator )?
-QualifiedName -> ( Ident / TypeIdent ) ( DOT ( Ident / TypeIdent ) )*
+# Import declaration. `import a.b.*` ends in a star, `import a.b.C as D` in an
+# alias.
+ImportDecl -> KW_import path:QualifiedName ( DOT Operator )? ( KW_as ( Ident / TypeIdent ) )?
+# The lexer splits identifiers by first letter case, so a name in declaration
+# position may be either kind: `const val MAX`, `fun Box()`, `val Companion`.
+Name -> Ident / TypeIdent
+QualifiedName -> Name ( DOT Name )*
 
-# Class declaration
-ClassDecl -> doc:DocComment? NL? Annotation* Modifier* ( KW_data / KW_sealed / KW_enum )? KW_class id:TypeIdent TypeParams? PrimaryConstructor? ( COLON SuperTypes )? WhereClause? ClassBody?
-PrimaryConstructor -> ( Modifier* KW_constructor )? LPAREN ParamList? NL* RPAREN
-SuperTypes -> Type ( COMMA Type )*
+# ---------------------------------------------------------------------------
+# Declaration heads
+# ---------------------------------------------------------------------------
+# Every declaration carries the same outer metadata: a KDoc block, annotations
+# and modifiers, each typically on its own line and in that order — but
+# annotations also appear before the doc, and blank lines fall anywhere
+# between. A `( Annotation / Modifier / NL )*` group on BOTH sides of the doc
+# absorbs them wherever they land; the doc capture still binds because a
+# DocComment is none of those three, so the greedy groups never swallow it.
+#
+# The metadata is spelled out in each rule rather than factored into a shared
+# prefix rule because a label binds only inside the rule that writes it:
+# behind an indirection `$doc` and `$vis` would be invisible to the
+# declaration's own semantics and every doc comment would be lost.
+# A metadata element: an annotation, a modifier, or a blank line.
+DeclMeta -> Annotation / SoftModifier / NL
+
+# Kotlin's modifiers are soft keywords — ordinary identifiers that only act as
+# modifiers in front of a declaration (`data`, `sealed`, `open`, `override`,
+# `suspend`, `inline`, `private`, `const`, `lateinit`, `operator`, `infix`,
+# `companion`, `annotation`, `enum`, `actual`, …). They must NOT get lexer
+# tokens, because that would shadow `Ident` everywhere and break every
+# `val data`, `fun get`, parameter `open` in the file (see the lex note).
+#
+# Instead a modifier is recognized POSITIONALLY: a bare identifier counts as a
+# modifier only when a declaration keyword actually follows it, across any run
+# of further modifiers, annotations and newlines. The `&(…)` and-predicate
+# checks that without consuming, so a property named `data` — where no
+# declaration keyword follows — is left alone for the declaration rules.
+SoftModifier -> mod:Ident &( ( Ident / Annotation / NL )* DeclStart )
+DeclStart -> KW_fun / KW_val / KW_var / KW_class / KW_interface / KW_object / KW_typealias
+
+# Visibility cannot be captured by a lexer token for the same reason, so it is
+# read back from the accumulated modifier text of the declaration. Kotlin's
+# default is public: only an explicit `private` or `protected` hides a
+# declaration, and `internal` is still part of the module's surface.
+
+# Class declaration. `ClassHeader` is a rule of its own so that it fires BEFORE
+# the class body (PEG matches the header to completion first, so its event —
+# and the `bind` in its semantics — precedes every member event of the body).
+# That binding is what attaches each method, property and enum entry to the
+# class it belongs to instead of leaving it floating at file level.
+# The primary constructor sits OUTSIDE the header on purpose. Its `val` / `var`
+# parameters declare properties on the class, and an event fires only once its
+# rule has matched to completion — so a constructor parsed inside the header
+# would emit its `Param` events BEFORE the header published the class, and
+# every constructor property would be attributed to the previous type.
+ClassDecl -> ClassHeader PrimaryConstructor? ( COLON SuperTypes )? WhereClause? ClassBody?
+ClassHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_class id:TypeIdent TypeParams?
+PrimaryConstructor -> ( DeclMeta* ConstructorKw )? LPAREN NL* ParamList? NL* RPAREN
+SuperTypes -> NL* SuperType ( NL* COMMA NL* SuperType )*
+# A supertype may be a plain type, a constructor call, or a delegation
+# (`: Base by impl`).
+# `by` is a soft keyword: delegation is `Ident` followed by an expression.
+SuperType -> Type ( LPAREN BodyContent* RPAREN )? Delegation?
+Delegation -> Ident Expr
 ClassBody -> LBRACE ClassMember* RBRACE
-ClassMember -> FunDecl / PropertyDecl / InitBlock / SecondaryConstructor / ClassDecl / InterfaceDecl / ObjectDecl / EnumEntry / NL / LineComment / BlockComment
+# EnumEntry is tried after the real declarations but before the fallbacks: an
+# enum constant is a bare `TypeIdent`, which would otherwise be mistaken for
+# whatever follows it.
+#
+# The `!RBRACE` guard is essential. The member list ends at the body's closing
+# brace, and the trailing `Other` catch-all — which must accept any token so a
+# member the rules cannot match does not abort the class — would otherwise
+# consume that `}` and keep going to end of file. `ClassBody`'s own `RBRACE`
+# would then never match, `ClassBody?` would yield nothing, and `Item*` would
+# re-parse the whole body at top level: every member declared twice, and every
+# method detached from its class.
+ClassMember -> !RBRACE ( NL / LineComment / BlockComment
+            / FunDecl / PropertyDecl / InitBlock / SecondaryConstructor
+            / ClassDecl / InterfaceDecl / ObjectDecl / EnumEntry
+            / SEMI / MemberOther )
+# Inside a body the catch-all must not swallow a brace either: an unbalanced
+# one would run past the body's end exactly like `RBRACE` above.
+MemberOther -> Atom / LPAREN / RPAREN / LBRACKET / RBRACKET / Body
 
-# Interface declaration
-InterfaceDecl -> doc:DocComment? NL? Annotation* Modifier* KW_interface id:TypeIdent TypeParams? ( COLON SuperTypes )? WhereClause? InterfaceBody?
-InterfaceBody -> LBRACE InterfaceMember* RBRACE
-InterfaceMember -> FunDecl / PropertyDecl / ClassDecl / InterfaceDecl / NL / LineComment / BlockComment
+# Interface declaration — same header/body split as a class.
+InterfaceDecl -> InterfaceHeader ( COLON SuperTypes )? WhereClause? InterfaceBody?
+InterfaceHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_interface id:TypeIdent TypeParams?
+InterfaceBody -> LBRACE ClassMember* RBRACE
 
-# Object declaration
-ObjectDecl -> doc:DocComment? NL? Annotation* Modifier* KW_companion? KW_object id:TypeIdent? ( COLON SuperTypes )? ClassBody?
+# Object declaration (named object, `companion object`, or anonymous `object :
+# Base { … }` in expression position — the last has no name).
+ObjectDecl -> ObjectHeader ( COLON SuperTypes )? ClassBody?
+ObjectHeader -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_object id:TypeIdent?
 
-# Function declaration
-FunDecl -> doc:DocComment? NL? Annotation* Modifier* KW_fun TypeParams? ( ReceiverType DOT )? id:Ident LPAREN ParamList? RPAREN ( COLON Type )? WhereClause? ( Body / Operator Expr / SEMI )?
+# Function declaration. A body is a block, a single expression after `=`, or
+# nothing at all (an abstract / interface method).
+FunDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_fun TypeParams? ( ReceiverType DOT )? id:Name LPAREN NL* ParamList? NL* RPAREN ( COLON Type )? WhereClause? ( Body / Operator Expr / SEMI )?
 ReceiverType -> Type
 
 # Property declaration
-PropertyDecl -> doc:DocComment? NL? Annotation* Modifier* ( KW_val / KW_var ) TypeParams? ( ReceiverType DOT )? id:Ident ( COLON Type )? ( KW_by Expr / Operator Expr )? ( PropertyAccessor )*
-PropertyAccessor -> Annotation* Modifier* ( KW_get / KW_set ) ( LPAREN ParamList? RPAREN )? ( Body / Operator Expr )?
+PropertyDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* ( KW_val / KW_var ) TypeParams? ( ReceiverType DOT )? id:Name ( COLON Type )? ( Delegation / Operator Expr )? ( NL* PropertyAccessor )*
+# `get` / `set` are soft keywords; an accessor is an identifier directly
+# followed by `(`, `{` or `=` inside a property declaration.
+PropertyAccessor -> DeclMeta* Ident ( LPAREN ParamList? RPAREN )? ( Body / Operator Expr )
 
 # Type alias
-TypeAliasDecl -> doc:DocComment? NL? Annotation* Modifier* KW_typealias id:TypeIdent TypeParams? Operator Type
+TypeAliasDecl -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* KW_typealias id:TypeIdent TypeParams? Operator Type
 
 # Init block
-InitBlock -> KW_init Body
+# `constructor` and `init` are soft keywords too, matched positionally by the
+# shape that follows them.
+ConstructorKw -> Ident &LPAREN
+InitBlock -> InitKw Body
+InitKw -> Ident &LBRACE
 
 # Secondary constructor
-SecondaryConstructor -> doc:DocComment? Annotation* Modifier* KW_constructor LPAREN ParamList? RPAREN ( COLON KW_this LPAREN ( Expr ( COMMA Expr )* )? RPAREN )? Body?
+SecondaryConstructor -> pre:DeclMeta* doc:DocComment? mods:DeclMeta* ConstructorKw LPAREN NL* ParamList? NL* RPAREN ( COLON ( KW_this / KW_super ) LPAREN BodyContent* RPAREN )? Body?
 
 # Enum entry
-EnumEntry -> entry_doc:DocComment? Annotation* entry_id:TypeIdent ( LPAREN ( Expr ( COMMA Expr )* )? RPAREN )? ClassBody? COMMA?
+EnumEntry -> DeclMeta* entry_doc:DocComment? DeclMeta* entry_id:TypeIdent ( LPAREN BodyContent* RPAREN )? ClassBody? ( COMMA / SEMI )?
 
-# Modifiers
-Modifier -> KW_public / KW_private / KW_internal / KW_protected / KW_open / KW_final / KW_abstract / KW_override / KW_suspend / KW_inline
-
-# Parameters
-ParamList -> Param ( COMMA NL* Param )* COMMA?
-Param -> NL* Annotation* ( KW_val / KW_var )? param_id:Ident COLON Type ( Operator Expr )?
-WhereClause -> KW_where WhereConstraint ( COMMA WhereConstraint )*
+# Parameters. A primary-constructor parameter may itself declare a property
+# (`val id: Long = 0`), which is part of the type's public surface, so `val` /
+# `var` is captured.
+ParamList -> Param ( NL* COMMA NL* Param )* ( NL* COMMA )? NL*
+Param -> NL* pre:DeclMeta* param_doc:DocComment? mods:DeclMeta* prop:( KW_val / KW_var )? param_id:Name COLON Type ( Operator DefaultExpr )?
+# `where` is a soft keyword; a where clause is an identifier followed by a
+# `TypeIdent COLON Type` constraint list.
+WhereClause -> Ident &( TypeIdent COLON ) Ident? WhereConstraint ( COMMA WhereConstraint )*
 WhereConstraint -> TypeIdent COLON Type
 
 # Types
-TypeParams -> LT TypeParam ( COMMA TypeParam )* GT
-TypeParam -> Annotation* ( KW_in / KW_out )? TypeIdent ( COLON Type )?
-Type -> TypeAtom QMARK?
-TypeAtom -> TypeIdent TypeArgs? / LPAREN Type ( COMMA Type )* RPAREN ARROW Type / LPAREN TypeList? RPAREN
-TypeArgs -> LT Type ( COMMA Type )* GT
-TypeList -> Type ( COMMA Type )*
-# Body (simplified - balance braces)
+TypeParams -> LT NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* GT
+TypeParam -> Annotation* ( KW_in / Ident )* TypeIdent ( COLON Type )?
+# A type may be suspended (`suspend () -> Unit`), nullable (`T?`), a function
+# type, or a dotted path (`kotlinx.coroutines.flow.Flow<Task>`).
+# `suspend` is a soft keyword preceding a function type.
+Type -> ( Ident &( LPAREN / TypeIdent ) )? TypeAtom QMARK?
+TypeAtom -> ( LPAREN NL* TypeList? NL* RPAREN ARROW Type )
+          / ( Ident DOT )* TypeIdent TypeArgs? ( DOT TypeIdent TypeArgs? )*
+          / LPAREN NL* Type NL* RPAREN
+# A type argument may be a star projection (`Map<String, *>`) or variance-
+# annotated (`List<out T>`).
+TypeArgs -> LT NL* TypeArg ( NL* COMMA NL* TypeArg )* NL* GT
+TypeArg -> Operator / ( KW_in / Ident )? Type
+TypeList -> Type ( NL* COMMA NL* Type )* ( NL* COMMA )?
+
+# Body — an opaque balanced-bracket group. Nothing inside a function body
+# declares part of a type's public surface, so its contents only need to be
+# consumed safely, with every bracket pair matched so the body ends at the
+# right `}`.
 Body -> LBRACE BodyContent* RBRACE
 BodyContent -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / Atom
 
-# Expressions
-Expr -> ExprAtom+
-ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / KW_is / KW_as / KW_in / KW_this / LPAREN / RPAREN / DOT / DCOLON / ARROW / LT / GT / Operator / Annotation
+# A parameter default value. It must NOT be a general `Expr`: a general
+# expression accepts `,` as an atom, so the default of the first parameter
+# swallowed every parameter after it — the rest of the constructor's properties
+# silently disappeared and the class body was never reached. A default value
+# ends at the comma or closing paren that ends the parameter, and any comma
+# inside it is nested in a bracket group, which `DefaultItem` consumes whole.
+DefaultExpr -> DefaultItem+
+DefaultItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / DefaultAtom
+DefaultAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / KW_is / KW_as / KW_this / KW_super / KW_object / KW_if / KW_else / KW_when / DOT / DCOLON / ARROW / LT / GT / QMARK / COLON / Operator / Annotation
 
-Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_fun / KW_val / KW_var / KW_class / KW_interface / KW_object / KW_enum / KW_sealed / KW_data / KW_typealias / KW_companion / KW_public / KW_private / KW_internal / KW_protected / KW_open / KW_final / KW_abstract / KW_override / KW_suspend / KW_inline / KW_if / KW_else / KW_when / KW_for / KW_while / KW_return / KW_is / KW_as / KW_in / KW_by / KW_where / KW_constructor / KW_init / KW_get / KW_set / KW_out / SEMI / COMMA / COLON / QMARK / AT
+# Expressions — the right-hand side of `=` in an expression-bodied function or
+# a property initializer. Kotlin puts trailing lambdas, collection literals and
+# nested calls there (`KotlinLogging.logger {}`, `mutableMapOf<Long, Task>()`),
+# so an expression is a run of atoms and balanced bracket groups, exactly like
+# a body. Modelling it any more precisely only creates new ways to stop.
+Expr -> ExprItem+
+ExprItem -> LBRACE BodyContent* RBRACE / LPAREN BodyContent* RPAREN / LBRACKET BodyContent* RBRACKET / ExprAtom
+ExprAtom -> Ident / TypeIdent / Number / String / Char / BoolLit / NullLit / KW_is / KW_as / KW_in / KW_this / KW_super / KW_object / KW_if / KW_else / KW_when / KW_return / KW_throw / KW_try / KW_break / KW_continue / KW_do / DOT / DCOLON / ARROW / LT / GT / QMARK / COLON / COMMA / Operator / Annotation / AT / SEMI
 
-Other -> Atom
+Atom -> ExprAtom / NL / DocComment / LineComment / BlockComment / KW_package / KW_import / KW_fun / KW_val / KW_var / KW_class / KW_interface / KW_typealias / KW_for / KW_while
+
+# Catch-all: one token of any kind, including a bracket whose partner the
+# declaration rules never reached (an `Atom` only accepts balanced groups).
+Other -> Atom / LBRACE / RBRACE / LPAREN / RPAREN / LBRACKET / RBRACKET
 
 === attrs
-on ClassDecl:     def id kind=Class doc=doc
-on InterfaceDecl: def id kind=Interface doc=doc
-on ObjectDecl:    def id kind=Object doc=doc
-on FunDecl:       def id kind=Function doc=doc
-on PropertyDecl:  def id kind=Property doc=doc
-on TypeAliasDecl: def id kind=TypeAlias doc=doc
-on EnumEntry:     def entry_id kind=EnumEntry doc=entry_doc
-on Param:         def param_id kind=Param
-
-on ImportDecl:    import module=path
+on ClassHeader:     def id kind=Class doc=doc
+on InterfaceHeader: def id kind=Interface doc=doc
+on ObjectHeader:    def id kind=Object doc=doc
+on FunDecl:         def id kind=Function doc=doc
+on PropertyDecl:    def id kind=Property doc=doc
+on TypeAliasDecl:   def id kind=TypeAlias doc=doc
+on EnumEntry:       def entry_id kind=EnumEntry doc=entry_doc
+on Param:           def param_id kind=Param doc=param_doc
 
 === features
-function_kinds: Function
+function_kinds: Function, Method
 function_keyword: KW_fun
 identifier_kinds: Ident, TypeIdent
 qualifier_separators: DOT, DCOLON
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependency
+# Import dependency. Note there is deliberately no `on ImportDecl: import ...`
+# line in the `=== attrs` section: an attrs `import` directive emits its own
+# moduleDependsOn edge, so having both produced two identical edges per import.
+# `$path` holds only the LAST token of the dotted name, so `$path_text` — the
+# whole accumulated `com.example.service.GreetingService` — is what has to be
+# resolved. Resolving `$path` alone pointed every import at its trailing
+# segment.
+#
+# Resolution is anchored at the project's SOURCE ROOT, not at the importing
+# file's directory. A Kotlin import names a package path from the root of the
+# source tree (`com.example.service.GreetingService` ->
+# `com/example/service/GreetingService.kt`), so resolving it relative to the
+# importer — which is what a plain `$resolve` does — can never find a sibling
+# package: every intra-project import fell back to the `maven:` prefix and the
+# graph had no edge between two files of the same project.
+#
+# The root is found by walking up for the build manifest, and the source root
+# is that directory plus the conventional Gradle layout. A Gradle module may
+# keep Kotlin sources under either `src/main/kotlin` or `src/main/java`, so
+# both are probed, Kotlin first; `$resolveFrom` then runs the spec's own chain
+# (`module_path_style: dot` turns the dots into slashes, `ext: .kt, .kts` adds
+# the extension) against that base. When nothing matches — `mu.KotlinLogging`,
+# `org.springframework.…` — the chain's `fallback: maven:` still applies, so
+# external imports keep their prefixed form.
+#
+# Note the source root is spelled out inline rather than bound with `let`: the
+# semantics engine resolves the built-in variables `root`, `file` and
+# `language` BEFORE locals, so a local named `root` is silently shadowed by
+# `$root` (empty in the docgen pipeline) and the whole probe misses.
+#
+# Nothing here names a language or a fixture path: the manifests and the
+# layout come from this spec, and the dot-to-slash conversion and the
+# extensions from the `=== resolver` section below.
 on ImportDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  # The project root is the directory holding the Gradle manifest. Each is
+  # tried in turn; `$findAncestor` returns "" when a marker is absent, and the
+  # final "." keeps the base project-relative — `concat("", "/src/main/kotlin")`
+  # would start with a slash, which the resolver reads as a filesystem-ABSOLUTE
+  # path, sending the probe outside the project.
+  let proj = cond($findAncestor("build.gradle.kts"), $findAncestor("build.gradle.kts"), cond($findAncestor("build.gradle"), $findAncestor("build.gradle"), cond($findAncestor("settings.gradle.kts"), $findAncestor("settings.gradle.kts"), ".")))
+  # A Gradle module may keep Kotlin sources under either `src/main/kotlin` or
+  # `src/main/java`, so both are probed, Kotlin first. A miss is recognised by
+  # the chain's own `fallback: maven:` prefix, which is exactly what the second
+  # probe — and, if it misses too, the final edge — falls back to.
+  let kt = $resolveFrom(concat(proj, "/src/main/kotlin"), $path_text)
+  let jv = $resolveFrom(concat(proj, "/src/main/java"), $path_text)
+  edge moduleDependsOn from $file to cond(startsWith(kt, "maven:"), jv, kt) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
-# Kotlin declarations (default visibility is public)
+# Kotlin's default visibility is public, so a declaration is published unless
+# it is explicitly `private` or `protected`. `internal` is module-visible and
+# is still part of the module's surface, so it is kept.
+#
+# Visibility is read out of the declaration's accumulated modifier text rather
+# than from a keyword token, because Kotlin's visibility words are soft
+# keywords: giving them lexer tokens would shadow `Ident` and break every
+# identifier that happens to be spelled the same (see the lex note).
+#
+# Each type header fires before its own body and publishes itself through
+# `bind`, so the member rules below know which type they belong to. The binding
+# is overwritten by the next header, which is exactly the nesting order the
+# members are parsed in.
+# ---------------------------------------------------------------------------
+# Enclosing-type stack
+# ---------------------------------------------------------------------------
+# A type nested in another type's body belongs to that type, and a declaration
+# written AFTER that body belongs to whatever enclosed it — so the enclosing
+# type has to behave like a stack, while `bind`/`$scope` is a FLAT map with no
+# save/restore of its own.
+#
+# The stack is therefore kept explicitly, as a `|`-joined string in
+# `type_stack` whose FIRST entry is the innermost type. A header pushes by
+# PREPENDING its own symbol; the declaration rule (which fires after its whole
+# body, events being bottom-up) pops by dropping everything up to the first
+# separator. Prepending is what makes both ends reachable with the string
+# builtins available: `beforeFirst` reads the top, `afterFirst` drops it.
+#
+# `current_type` mirrors the top of the stack so the member rules can read it
+# with a single lookup; an empty string means file level.
+on ClassHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+on InterfaceHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+# `companion object` and an anonymous `object : Base { … }` expression have no
+# name. They still open a body, so they must push something — an unnamed object
+# pushes the type that encloses it, which keeps its members on that type. That
+# is exactly what `companion object` means in Kotlin, and it keeps the pushes
+# and pops balanced.
+on ObjectHeader {
+  let outer = $scope("value", "current_type")
+  let sym_id = cond($id, concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id), outer)
+  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
+  bind ns "value" name "current_type" to sym_id
+}
+
+# A declaration rule fires after its own body, which is exactly where that body
+# ends, so it pops the stack: drop the top entry and re-expose the one beneath
+# it. Without this a top-level `fun main()` written below a class was still
+# attributed to that class, and a sibling type after a nested one was declared
+# under the wrong owner.
 on ClassDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
 }
 on InterfaceDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
 }
 on ObjectDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Object", "doc", $doc)
-}
-on FunDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
-}
-on PropertyDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Property", "doc", $doc)
-}
-on TypeAliasDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "TypeAlias", "doc", $doc)
+  let rest = afterFirst($scope("value", "type_stack"), "|")
+  bind ns "value" name "type_stack" to rest
+  bind ns "value" name "current_type" to beforeFirst(rest, "|")
 }
 
+on ClassHeader when cond($id, not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected")))) {
+  # This header has already pushed itself, so the enclosing type is the SECOND
+  # stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on InterfaceHeader when cond($id, not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected")))) {
+  # This header has already pushed itself, so the enclosing type is the SECOND
+  # stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Interface", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+on ObjectHeader when cond($id, not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected")))) {
+  # This header has already pushed itself, so the enclosing type is the SECOND
+  # stack entry.
+  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let from_id = cond(owner, owner, $file)
+  edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Object", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A function or property inside a type body is a member of that type and hangs
+# off the type's symbol; one at file level is a top-level declaration and hangs
+# off the file.
+on FunDecl when not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", cond(parent, "Method", "Function"), "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on PropertyDecl when not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected"))) {
+  let parent = $scope("value", "current_type")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, cond(parent, ".", "::"), $id) attrs obj("name", $id, "kind", "Property", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+on TypeAliasDecl when not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected"))) {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "TypeAlias", "doc", trim($doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
+
+# A `val` / `var` in the primary constructor declares a property on the type.
+# The constructor is parsed after the header (see the ClassDecl note), so
+# `current_type` already names the class the property belongs to.
+on Param when cond($prop, cond($scope("value", "current_type"), not(cond(containsStr(concat($pre_text, $mods_text), "private"), 1, containsStr(concat($pre_text, $mods_text), "protected"))))) {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $param_id) attrs obj("name", $param_id, "kind", "Property", "doc", trim($param_doc), "modifiers", trim(concat($pre_text, " ", $mods_text)))
+}
 
 # Enum entry
-on EnumEntry when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $entry_id)
-  edge declares from parent to sym_id attrs obj("name", $entry_id, "kind", "EnumEntry", "doc", $entry_doc)
+on EnumEntry when $scope("value", "current_type") {
+  let parent = $scope("value", "current_type")
+  edge declares from parent to concat(parent, ".", $entry_id) attrs obj("name", $entry_id, "kind", "EnumEntry", "doc", trim($entry_doc))
 }
 
 === resolver
