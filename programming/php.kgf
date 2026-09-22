@@ -214,28 +214,53 @@ on UseDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# PHP top-level declarations
+# ---------------------------------------------------------------------------
+# Enclosing-type frames
+# ---------------------------------------------------------------------------
+# A member belongs to the type whose body it sits in, and a declaration written
+# AFTER that body belongs to whatever enclosed it. `scope push` / `scope pop`
+# express that directly: a bind lands in the innermost frame and `$scope`
+# searches frames innermost-first, so popping a type's frame re-exposes
+# whatever enclosed it — a top-level function written below a class is no
+# longer attributed to that class.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER — which matches
+# to completion before the body is parsed — and closed by the declaration rule,
+# which fires after the whole body. The type's own `declares` edge is emitted
+# from the header BEFORE the push, so it hangs off the file, not off itself.
 on ClassHeader {
   let sym_id = concat($file, "::", $id)
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  scope push
   bind ns "value" name "current_class" to sym_id
 }
 on InterfaceHeader {
   let sym_id = concat($file, "::", $id)
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  scope push
   bind ns "value" name "current_class" to sym_id
 }
 on TraitHeader {
   let sym_id = concat($file, "::", $id)
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+  scope push
   bind ns "value" name "current_class" to sym_id
 }
 on EnumHeader {
   let sym_id = concat($file, "::", $id)
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  scope push
   bind ns "value" name "current_class" to sym_id
   bind ns "value" name "current_enum" to sym_id
 }
+
+# Each declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on ClassDecl { scope pop }
+on InterfaceDecl { scope pop }
+on TraitDecl { scope pop }
+on EnumDecl { scope pop }
+
 on FunctionDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
 }

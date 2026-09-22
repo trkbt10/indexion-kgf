@@ -227,25 +227,56 @@ on PackageDecl {
 
 # Protobuf has no visibility modifiers: every declaration is public.
 #
-# Each container publishes its id through `bind` from its HEADER rule, which
-# matches before the body is entered, so its members can attach to it.
+# ---------------------------------------------------------------------------
+# Enclosing-container frames
+# ---------------------------------------------------------------------------
+# A `MessageElement` may itself be a `MessageDecl` or an `EnumDecl`, so the
+# enclosing container behaves like a stack: a member belongs to the container
+# whose body it sits in, and a declaration written AFTER that body belongs to
+# whatever enclosed it. `scope push` / `scope pop` are that stack — a bind
+# lands in the innermost frame and `$scope` searches frames innermost-first,
+# so popping a container's frame re-exposes the one around it.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER rule, which
+# matches before the body is entered, and closed by the declaration rule, which
+# fires after the whole body. The container's own `declares` edge is emitted
+# from the header BEFORE the push, so `current_container` there still names the
+# ENCLOSING container — which is both the edge's `from` and the prefix of the
+# nested container's symbol id, giving `Outer.Inner` rather than a second
+# file-level `Inner`.
+#
 # `$doc_text` is the doc block's accumulated text; `$doc` alone would hold
 # only its last line.
 
 on MessageHeader {
-  bind ns "value" name "current_container" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Message", "doc", trim($doc_text))
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Message", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_container" to sym_id
 }
 
 on EnumHeader {
-  bind ns "value" name "current_container" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_container" to sym_id
 }
 
 on ServiceHeader {
-  bind ns "value" name "current_container" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Service", "doc", trim($doc_text))
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Service", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_container" to sym_id
 }
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on MessageDecl { scope pop }
+on EnumDecl { scope pop }
+on ServiceDecl { scope pop }
 
 on RpcDecl when $scope("value", "current_container") {
   let parent = $scope("value", "current_container")

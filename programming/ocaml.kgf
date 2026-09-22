@@ -267,18 +267,40 @@ on IncludeDecl {
 #
 # `$doc_text` is the doc block's accumulated text; `$doc` alone would hold
 # only its last token.
+# ---------------------------------------------------------------------------
+# Enclosing frames
+# ---------------------------------------------------------------------------
+# `scope push` / `scope pop` bracket a body's members in a frame of their own:
+# a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a body's frame re-exposes whatever enclosed it.
+# The frame is opened by the HEADER — which matches before the body is entered,
+# events being bottom-up — and closed by the declaration rule, which fires once
+# the whole body is complete. A `StructItem` may itself be a `ModuleDecl` and a
+# `TypeDecl` chains headers with `and`, so without the pop a binding outlived
+# its own declaration: a variant of a later type, or a method of a later class,
+# was attributed to the previous one.
 on ModuleHeader {
   # Publish the module id for the members of its `struct`/`sig` body. The
   # header matches before the body is entered, so this is in scope for them.
-  bind ns "value" name "current_module" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", trim($doc_text))
+  let outer = $scope("value", "current_module")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Module", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_module" to sym_id
 }
+on ModuleDecl { scope pop }
 on ModuleTypeDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "ModuleType", "doc", trim($doc_text))
 }
 on TypeHeader {
   # Publish the type id so the variants and record fields of its definition
   # attach to it. The header matches before the definition is parsed.
+  #
+  # No frame is opened here: a single `TypeDecl` chains SEVERAL `TypeHeader`s
+  # with `and`, so one push per header could never be matched by one pop per
+  # declaration. The binding is simply rebound by the next header, which is
+  # exactly the order the definitions are parsed in, and the enclosing module's
+  # frame is what stops it escaping the `struct` it was written in.
   bind ns "value" name "current_type" to concat($file, "::", $id)
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))
 }
@@ -295,9 +317,11 @@ on ExceptionDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Exception", "doc", trim($doc_text))
 }
 on ClassHeader {
-  bind ns "value" name "current_class" to concat($file, "::", $id)
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_class" to concat($file, "::", $id)
 }
+on ClassDecl { scope pop }
 
 # Variants and record fields attach to the type published by `TypeHeader`.
 on Variant when $scope("value", "current_type") {

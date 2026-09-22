@@ -255,17 +255,38 @@ on AliasDecl {
   edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value", "rel", "alias")
 }
 
-# The module HEADER carries the declares edge and the bind, not `ModuleDecl`:
-# events fire bottom-up, so a bind on `ModuleDecl` would happen after its own
-# members had already been reduced.
+# The module HEADER carries the declares edge and opens the scope frame, not
+# `ModuleDecl`: events fire bottom-up, so a bind on `ModuleDecl` would happen
+# after its own members had already been reduced.
+#
+# A `ModuleMember` may itself be a `ModuleDecl`, so the enclosing module
+# behaves like a stack. `scope push` / `scope pop` are that stack: a bind lands
+# in the innermost frame, `$scope` searches frames innermost-first, and the
+# declaration rule — which fires after the whole body — pops back to the
+# enclosing module. Without the pop a `def` written after a nested `defmodule`
+# was still attributed to that nested module. The module's own `declares` edge
+# is emitted BEFORE the push, so `current_module` there still names the
+# ENCLOSING module — the edge's `from` and the prefix of the nested module's
+# symbol id.
 on ModuleHeader {
-  bind ns "value" name "current_module" to concat($file, "::", $id_text)
-  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Module", "doc", trim($doc_text))
+  let outer = $scope("value", "current_module")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id_text)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id_text, "kind", "Module", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_module" to sym_id
 }
 on ProtocolHeader {
-  bind ns "value" name "current_module" to concat($file, "::", $id_text)
-  edge declares from $file to concat($file, "::", $id_text) attrs obj("name", $id_text, "kind", "Protocol", "doc", trim($doc_text))
+  let outer = $scope("value", "current_module")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id_text)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id_text, "kind", "Protocol", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_module" to sym_id
 }
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on ModuleDecl { scope pop }
+on ProtocolDecl { scope pop }
 
 # `def` is public, `defp` private. Functions attach to the enclosing module
 # when there is one, and to the file otherwise (a bare `.exs` script).

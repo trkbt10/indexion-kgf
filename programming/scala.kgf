@@ -219,7 +219,15 @@ Param -> ( Annotation / NL )* KW_val? KW_var? Modifier* param_id:Ident COLON NL*
 TypeParams -> LBRACKET NL* TypeParam ( NL* COMMA NL* TypeParam )* NL* RBRACKET
 TypeParam -> Annotation* ( Operator / KW_type )? ( Ident / TypeIdent / Operator ) TypeParams? TypeBounds?
 TypeBounds -> ( ( Operator / COLON / KW_with ) Type )+
-Type -> TypeAtom ( ( KW_with / Operator / ARROW / COMMA ) TypeAtom )*
+# A `,` is NOT a type operator. A comma-separated list of types only ever
+# occurs inside brackets (`TypeArgs`) or parens (`TypeList`), both of which
+# already spell the separator out themselves. Accepting it here made `Type`
+# greedily swallow the comma that separates one PARAMETER from the next, so
+# `(a: Long, b: String)` matched only as far as `a: Long, b` and the parameter
+# list could never reach its closing paren: the whole `ClassParams` group
+# failed, the class header ended at its name, and every member of the class was
+# re-parsed at top level and attributed to the file.
+Type -> TypeAtom ( ( KW_with / Operator / ARROW ) TypeAtom )*
 TypeAtom -> QualifiedName TypeArgs? / LPAREN NL* TypeList? NL* RPAREN TypeArgs? / LBRACE Member* RBRACE / Literal
 Literal -> Number / String / Char / BoolLit / NullLit
 TypeArgs -> LBRACKET NL* Type ( NL* COMMA NL* Type )* NL* RBRACKET
@@ -277,28 +285,63 @@ on PackageDecl {
 # Scala declarations. Default visibility is public; `private`/`protected` are
 # part of `Modifier*` and are not currently distinguished.
 #
-# Each type-like declaration publishes its id through `bind` from its HEADER
-# rule, which matches before the body is entered — events fire bottom-up, so
-# a bind on the whole declaration would happen after its own members.
+# ---------------------------------------------------------------------------
+# Enclosing-owner frames
+# ---------------------------------------------------------------------------
+# Scala's `Member` admits a nested `ClassDecl` / `TraitDecl` / `ObjectDecl` /
+# `EnumDecl`, so the enclosing owner behaves like a stack: a member belongs to
+# the type whose body it sits in, and a declaration written AFTER that body
+# belongs to whatever enclosed it. `scope push` / `scope pop` are that stack —
+# a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a type's frame re-exposes its enclosing owner.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER rule, which
+# matches before the body is entered, and closed by the declaration rule, which
+# fires after the whole body. The type's own `declares` edge is emitted from the
+# header BEFORE the push, so `current_owner` there still names the ENCLOSING
+# owner — which is both the edge's `from` and the prefix of the nested type's
+# own symbol id, giving `Outer.Inner` rather than a second file-level `Inner`.
+#
 # Members then attach to `current_owner` when there is one, and to the file
 # when there is not (a top-level def in a Scala 3 source).
 on ClassHeader {
-  bind ns "value" name "current_owner" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text))
+  let outer = $scope("value", "current_owner")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_owner" to sym_id
 }
 on TraitHeader {
-  bind ns "value" name "current_owner" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", trim($doc_text))
+  let outer = $scope("value", "current_owner")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Trait", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_owner" to sym_id
 }
 on ObjectHeader {
-  bind ns "value" name "current_owner" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Object", "doc", trim($doc_text))
+  let outer = $scope("value", "current_owner")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Object", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_owner" to sym_id
 }
 on EnumHeader {
-  bind ns "value" name "current_owner" to concat($file, "::", $id)
-  bind ns "value" name "current_enum" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
+  let outer = $scope("value", "current_owner")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_owner" to sym_id
+  bind ns "value" name "current_enum" to sym_id
 }
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened. Without the pop a def written after a nested class was still
+# attributed to that class, and so was a top-level def below the whole type.
+on ClassDecl { scope pop }
+on TraitDecl { scope pop }
+on ObjectDecl { scope pop }
+on EnumDecl { scope pop }
+
 on GivenDecl {
   edge declares from $file to concat($file, "::", $given_id) attrs obj("name", $given_id, "kind", "Given", "doc", trim($doc_text))
 }

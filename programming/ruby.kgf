@@ -109,13 +109,22 @@ DocBlock -> Comment ( NL Comment )*
 # Require declaration
 RequireDecl -> ( KW_require / KW_require_relative ) path:String
 
-# Class declaration
-ClassDecl -> doc:DocBlock? NL? KW_class id:ConstIdent ( Operator ConstIdent )? ClassBody
+# Class declaration.
+#
+# The header is a rule of its own so that it fires BEFORE the body: PEG matches
+# it to completion first, so its event — and the `scope push` in its semantics
+# — precedes every member event of the body. That frame is what attaches each
+# method and nested type to the class it belongs to instead of leaving it at
+# file level, and what keeps a `private` modifier from escaping the class it
+# was written in.
+ClassDecl -> ClassHeader ClassBody
+ClassHeader -> doc:DocBlock? NL? KW_class id:ConstIdent ( Operator ConstIdent )?
 ClassBody -> ( ClassMember )* KW_end
 ClassMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment
 
-# Module declaration
-ModuleDecl -> doc:DocBlock? NL? KW_module id:ConstIdent ModuleBody
+# Module declaration — same header/body split, for the same reason.
+ModuleDecl -> ModuleHeader ModuleBody
+ModuleHeader -> doc:DocBlock? NL? KW_module id:ConstIdent
 ModuleBody -> ( ModuleMember )* KW_end
 ModuleMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment
 
@@ -148,8 +157,8 @@ Atom -> ExprAtom / NL / Comment / HereDoc / KW_def / KW_class / KW_module / KW_e
 Other -> Atom
 
 === attrs
-on ClassDecl:   def id kind=Class doc=doc
-on ModuleDecl:  def id kind=Module doc=doc
+on ClassHeader:  def id kind=Class doc=doc
+on ModuleHeader: def id kind=Module doc=doc
 on MethodDecl:  def method_id kind=Method doc=doc
 on Param:       def param_id kind=Param
 
@@ -169,25 +178,63 @@ on RequireDecl {
   edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
 }
 
-# Visibility modifier — track current visibility state in scope.
-# Ruby's visibility modifiers (private/protected/public) apply to all
-# subsequent method definitions until the next modifier.
+# Visibility modifier — track current visibility state in the enclosing scope
+# frame. Ruby's visibility modifiers (private/protected/public) apply to all
+# subsequent method definitions until the next modifier, and only WITHIN the
+# body they were written in: the frame opened by that body's header is what
+# ends their reach at the matching `end`. Without it a trailing `private` made
+# every later declaration in the file invisible.
 on VisibilityMod {
   bind ns "value" name "current_visibility" to $visibility
 }
 
-# Class and module declarations are always public in Ruby
-on ClassDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+# ---------------------------------------------------------------------------
+# Enclosing-namespace frames
+# ---------------------------------------------------------------------------
+# A `ClassMember` may itself be a `ClassDecl` or a `ModuleDecl`, so the
+# enclosing namespace behaves like a stack: a method belongs to the class or
+# module whose body it sits in, and a declaration written AFTER that body
+# belongs to whatever enclosed it. `scope push` / `scope pop` are that stack —
+# a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a body's frame re-exposes the one around it.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER rule, which
+# matches before the body is entered, and closed by the declaration rule, which
+# fires after the whole body. The namespace's own `declares` edge is emitted
+# from the header BEFORE the push, so `current_namespace` there still names the
+# ENCLOSING namespace — which is both the edge's `from` and the prefix of the
+# nested namespace's symbol id, giving `Outer::Inner` rather than a second
+# file-level `Inner`.
+#
+# Classes and modules are always public in Ruby.
+on ClassHeader {
+  let outer = $scope("value", "current_namespace")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_namespace" to sym_id
 }
-on ModuleDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+on ModuleHeader {
+  let outer = $scope("value", "current_namespace")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Module", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_namespace" to sym_id
 }
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on ClassDecl { scope pop }
+on ModuleDecl { scope pop }
 
 # Method declarations — public unless preceded by private/protected modifier.
 # coalesce returns current_visibility if set, "public" otherwise (Ruby default).
+# A method inside a class or module body hangs off that namespace; one at file
+# level hangs off the file.
 on MethodDecl when eq(coalesce($scope("value", "current_visibility"), "public"), "public") {
-  edge declares from $file to concat($file, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+  let parent = $scope("value", "current_namespace")
+  let owner = cond(parent, parent, $file)
+  edge declares from owner to concat(owner, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", $doc_text)
 }
 
 === resolver

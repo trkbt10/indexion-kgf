@@ -94,19 +94,32 @@ Item -> NL
 DocBlock -> DocComment ( NL DocComment )*
           / DocBlockComment
 
-# Struct declaration
+# Struct / union / enum declarations.
+#
+# Each is split into a HEADER and a BODY. The header matches to completion
+# before the body is parsed, so its event — and the `scope push` in its
+# semantics — precedes every member event of the body. That frame is what lets
+# a field or enum value be declared under the type it belongs to; without it
+# the member rules read a `current_struct` / `current_enum` that nothing ever
+# bound, and no field or enum value was declared at all.
+#
+# C allows the name on EITHER side of the body: `struct Point { … };` names the
+# tag up front, while `typedef struct { … } Point;` names it only afterwards.
+# Only the tag is reachable from the header, so the trailing typedef name stays
+# on the declaration rule — which is also where the whole type is published.
 Name -> Ident / TypeIdent
-StructDecl -> doc:DocBlock? NL? KW_typedef? KW_struct id:Name? StructBody? id:Name? SEMI
+StructDecl -> StructHeader StructBody? tag:Name? SEMI
+StructHeader -> doc:DocBlock? NL? KW_typedef? KW_struct id:Name?
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> field_doc:DocBlock? Type STAR* field_id:Ident ArrayDims? SEMI / NL / LineComment / BlockComment
 
-# Union declaration
-UnionDecl -> doc:DocBlock? NL? KW_typedef? KW_union id:Name? UnionBody? id:Name? SEMI
+UnionDecl -> UnionHeader UnionBody? tag:Name? SEMI
+UnionHeader -> doc:DocBlock? NL? KW_typedef? KW_union id:Name?
 UnionBody -> LBRACE UnionMember* RBRACE
 UnionMember -> field_doc:DocBlock? Type field_id:Ident ArrayDims? SEMI / NL / LineComment / BlockComment
 
-# Enum declaration
-EnumDecl -> doc:DocBlock? NL? KW_typedef? KW_enum id:Name? EnumBody? id:Name? SEMI
+EnumDecl -> EnumHeader EnumBody? tag:Name? SEMI
+EnumHeader -> doc:DocBlock? NL? KW_typedef? KW_enum id:Name?
 EnumBody -> LBRACE EnumValue* RBRACE
 EnumValue -> value_doc:DocBlock? value_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
@@ -150,9 +163,9 @@ OpaqueGroup -> LBRACE OpaqueInner* RBRACE / LBRACKET OpaqueInner* RBRACKET / LPA
 OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN !LBRACE !RBRACE !LBRACKET !RBRACKET Atom
 
 === attrs
-on StructDecl:   def id kind=Struct doc=doc
-on UnionDecl:    def id kind=Union doc=doc
-on EnumDecl:     def id kind=Enum doc=doc
+on StructHeader: def id kind=Struct doc=doc
+on UnionHeader:  def id kind=Union doc=doc
+on EnumHeader:   def id kind=Enum doc=doc
 on TypedefDecl:  def id kind=Typedef doc=doc
 on FunctionDecl: def func_id kind=Function doc=doc
 on VarDecl:      def var_id kind=Variable doc=doc
@@ -170,38 +183,103 @@ qualifier_separators: DOT, ARROW
 vocabulary_token_kinds: DocComment, DocBlockComment, String
 
 === semantics
-# C declarations are public by default (header-visible)
-on StructDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+# C declarations are public by default (header-visible).
+#
+# ---------------------------------------------------------------------------
+# Enclosing-type frames
+# ---------------------------------------------------------------------------
+# A header opens a frame for its body's members with `scope push`, and the
+# declaration rule — which fires only once the body is complete, events being
+# bottom-up — closes it with `scope pop`. The frame is what stops one type's
+# binding from claiming the fields of the next, and what lets a struct nested
+# in another struct's body keep its own fields.
+#
+# The symbol is built from the TAG when the type has one, so `struct Point { … }`
+# publishes `Point` before its fields are parsed. `typedef struct { … } Point;`
+# names the type only after the body, so the anonymous header binds nothing and
+# the declaration rule publishes the trailing name on its own — its fields are
+# unreachable either way, since nothing names them until the body is over.
+on StructHeader when $id {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_struct" to concat($file, "::", $id)
+  bind ns "value" name "named_ahead" to "1"
+} else {
+  # Anonymous so far: the name can only arrive after the body. The doc is kept
+  # in the frame for the declaration rule, the first place the name is known.
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
 }
-on UnionDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+# A trailing typedef name (KW_typedef KW_struct BODY Name SEMI) is the first
+# place an otherwise anonymous type is named, so this is where it is published.
+# It is skipped when the header already published a tag.
+on StructDecl when cond($tag, not($scope("value", "named_ahead"))) {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Struct", "doc", $scope("value", "pending_doc"))
 }
-on EnumDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+on StructDecl { scope pop }
+
+on UnionHeader when $id {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_struct" to concat($file, "::", $id)
+  bind ns "value" name "named_ahead" to "1"
+} else {
+  # Anonymous so far: the name can only arrive after the body. The doc is kept
+  # in the frame for the declaration rule, the first place the name is known.
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
 }
+# A trailing typedef name (KW_typedef KW_union BODY Name SEMI) is the first
+# place an otherwise anonymous type is named, so this is where it is published.
+# It is skipped when the header already published a tag.
+on UnionDecl when cond($tag, not($scope("value", "named_ahead"))) {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Union", "doc", $scope("value", "pending_doc"))
+}
+on UnionDecl { scope pop }
+
+on EnumHeader when $id {
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_enum" to concat($file, "::", $id)
+  bind ns "value" name "named_ahead" to "1"
+} else {
+  # Anonymous so far: the name can only arrive after the body. The doc is kept
+  # in the frame for the declaration rule, the first place the name is known.
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
+}
+# A trailing typedef name (KW_typedef KW_enum BODY Name SEMI) is the first
+# place an otherwise anonymous type is named, so this is where it is published.
+# It is skipped when the header already published a tag.
+on EnumDecl when cond($tag, not($scope("value", "named_ahead"))) {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Enum", "doc", $scope("value", "pending_doc"))
+}
+on EnumDecl { scope pop }
 on TypedefDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc_text)
 }
 on FunctionDecl {
-  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc_text)
 }
 on VarDecl {
-  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc_text)
 }
 
-# Struct field
-on StructMember when $scope("value", "current_struct") {
+# Struct field. `StructMember` also has blank-line and comment alternatives
+# that fire an event with no `field_id` bound at all, so the name is guarded as
+# well as the enclosing struct — otherwise every newline inside a struct body
+# produced a nameless Field edge.
+on StructMember when cond($field_id, $scope("value", "current_struct")) {
   let parent = $scope("value", "current_struct")
   let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc_text)
 }
 
-# Enum value
-on EnumValue when $scope("value", "current_enum") {
+# Enum value. Guarded on the name for the same reason as `StructMember`.
+on EnumValue when cond($value_id, $scope("value", "current_enum")) {
   let parent = $scope("value", "current_enum")
   let sym_id = concat(parent, ".", $value_id)
-  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc_text)
 }
 
 === resolver

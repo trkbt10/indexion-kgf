@@ -383,108 +383,96 @@ on ExportDecl {
 }
 
 # ---------------------------------------------------------------------------
-# Enclosing-type stack
+# Enclosing-type frame
 # ---------------------------------------------------------------------------
 # A type nested in another type's body belongs to that type, and a declaration
 # written AFTER that body belongs to whatever enclosed it — so the enclosing
-# type has to behave like a stack, while `bind`/`$scope` is a FLAT map with no
-# save/restore of its own.
+# type behaves like a stack. `scope push` / `scope pop` are that stack: a bind
+# lands in the innermost frame and `$scope` searches frames innermost-first,
+# so popping a type's frame re-exposes its enclosing type's binding with no
+# bookkeeping of our own.
 #
-# The stack is kept explicitly, as a `|`-joined string in `type_stack` whose
-# FIRST entry is the innermost type. A header pushes by PREPENDING its own
-# symbol; the declaration rule (which fires after its whole body, events being
-# bottom-up) pops by dropping everything up to the first separator. Prepending
-# is what makes both ends reachable with the string builtins available:
-# `beforeFirst` reads the top, `afterFirst` drops it.
+# Events fire bottom-up, so the frame is opened by the HEADER — which matches
+# to completion before the body is parsed — and closed by the declaration rule,
+# which fires after the whole body. `current_type` holds the innermost type;
+# unbound means file level. Before this the spec read `current_class` /
+# `current_enum` that nothing ever bound, so no method, field or enum value was
+# ever declared.
 #
-# `current_type` mirrors the top of the stack so the member rules can read it
-# with a single lookup; an empty string means file level. Before this the spec
-# read `current_class` / `current_enum` that nothing ever bound, so no method,
-# field or enum value was ever declared.
-on ClassHeader {
-  let outer = $scope("value", "current_type")
-  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
-  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
-  bind ns "value" name "current_type" to sym_id
-}
-on MixinHeader {
-  let outer = $scope("value", "current_type")
-  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
-  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
-  bind ns "value" name "current_type" to sym_id
-}
-on ExtensionHeader {
-  let outer = $scope("value", "current_type")
-  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
-  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
-  bind ns "value" name "current_type" to sym_id
-}
-on EnumHeader {
-  let outer = $scope("value", "current_type")
-  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
-  bind ns "value" name "type_stack" to concat(sym_id, "|", $scope("value", "type_stack"))
-  bind ns "value" name "current_type" to sym_id
-}
-
-on ClassDecl {
-  let rest = afterFirst($scope("value", "type_stack"), "|")
-  bind ns "value" name "type_stack" to rest
-  bind ns "value" name "current_type" to beforeFirst(rest, "|")
-}
-on MixinDecl {
-  let rest = afterFirst($scope("value", "type_stack"), "|")
-  bind ns "value" name "type_stack" to rest
-  bind ns "value" name "current_type" to beforeFirst(rest, "|")
-}
-on ExtensionDecl {
-  let rest = afterFirst($scope("value", "type_stack"), "|")
-  bind ns "value" name "type_stack" to rest
-  bind ns "value" name "current_type" to beforeFirst(rest, "|")
-}
-on EnumDecl {
-  let rest = afterFirst($scope("value", "type_stack"), "|")
-  bind ns "value" name "type_stack" to rest
-  bind ns "value" name "current_type" to beforeFirst(rest, "|")
-}
-
-# ---------------------------------------------------------------------------
-# Declarations
-# ---------------------------------------------------------------------------
 # Dart has no visibility keywords: a name is library-private exactly when it
 # starts with `_`, and public otherwise. That applies to members as much as to
 # top-level declarations.
 #
-# A header has already pushed itself when its edge fires, so the type it is
-# nested in is the SECOND stack entry.
+# The type's own `declares` edge is emitted from the same header, BEFORE the
+# push, so `$scope("value", "current_type")` still names the ENCLOSING type
+# there — that is the edge's `from`. The push itself is unconditional: a
+# private type still owns its members. An UNNAMED extension
+# (`extension on Foo { … }`) binds nothing, so its transparent frame lets
+# `$scope` fall through to whatever encloses it, and the pushes and pops stay
+# balanced.
 on ClassHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
-  # This header has already pushed itself, so the enclosing type is the
-  # SECOND stack entry.
-  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let owner = $scope("value", "current_type")
   let from_id = cond(owner, owner, $file)
   edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
 }
+on ClassHeader when $id {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_type" to sym_id
+} else {
+  scope push
+}
 on MixinHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
-  # This header has already pushed itself, so the enclosing type is the
-  # SECOND stack entry.
-  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let owner = $scope("value", "current_type")
   let from_id = cond(owner, owner, $file)
   edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Mixin", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
 }
+on MixinHeader when $id {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_type" to sym_id
+} else {
+  scope push
+}
 on ExtensionHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
-  # This header has already pushed itself, so the enclosing type is the
-  # SECOND stack entry.
-  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let owner = $scope("value", "current_type")
   let from_id = cond(owner, owner, $file)
   edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Extension", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
 }
+on ExtensionHeader when $id {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_type" to sym_id
+} else {
+  scope push
+}
 on EnumHeader when cond($id, not(eq(slice($id, 0, 1), "_"))) {
-  # This header has already pushed itself, so the enclosing type is the
-  # SECOND stack entry.
-  let owner = beforeFirst(afterFirst($scope("value", "type_stack"), "|"), "|")
+  let owner = $scope("value", "current_type")
   let from_id = cond(owner, owner, $file)
   edge declares from from_id to concat(from_id, cond(owner, ".", "::"), $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text), "modifiers", trim(concat($pre_text, " ", $mods_text)))
 }
+on EnumHeader when $id {
+  let outer = $scope("value", "current_type")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_type" to sym_id
+} else {
+  scope push
+}
 
+# A declaration rule fires after its own body, which is exactly where that body
+# ends, so it closes the frame the header opened.
+on ClassDecl { scope pop }
+on MixinDecl { scope pop }
+on ExtensionDecl { scope pop }
+on EnumDecl { scope pop }
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
 on TypedefDecl when cond($id, not(eq(slice($id, 0, 1), "_"))) {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", trim($doc_text))
 }

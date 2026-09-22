@@ -132,7 +132,10 @@ DocBlock -> DocComment ( NL DocComment )*
 # Namespace declaration
 # A namespace may carry a Doxygen block like any other declaration, so it
 # captures its own doc rather than referencing a label nothing binds.
-NamespaceDecl -> doc:DocBlock? NL? KW_namespace id:Name? NamespaceBody
+# The header is a rule of its own so it fires BEFORE the body, which is what
+# lets a nested declaration be attributed to the namespace it sits in.
+NamespaceDecl -> NamespaceHeader NamespaceBody
+NamespaceHeader -> doc:DocBlock? NL? KW_namespace id:Name?
 NamespaceBody -> LBRACE NamespaceMember* RBRACE
 # A namespace body holds the same constructs as the top level, so it reuses
 # Item. The guard keeps the namespace's own closing brace out of the
@@ -140,29 +143,44 @@ NamespaceBody -> LBRACE NamespaceMember* RBRACE
 # and NamespaceDecl could never complete.
 NamespaceMember -> !RBRACE Item
 
-# Class declaration
-ClassDecl -> doc:DocBlock? NL? KW_class id:Name ( KW_final )? InheritanceClause? ClassBody SEMI
+# Class declaration.
+#
+# The header is a rule of its own so that it fires BEFORE the body: PEG matches
+# it to completion first, so its event -- and the `scope push` in its semantics
+# -- precedes every member event of the body. That frame is what attaches each
+# method, field and nested type to the type it belongs to; without it the
+# member rules read a `current_class` that nothing ever bound, and no method or
+# field was declared at all.
+ClassDecl -> ClassHeader ClassBody SEMI
+ClassHeader -> doc:DocBlock? NL? KW_class id:Name ( KW_final )? InheritanceClause?
 InheritanceClause -> COLON AccessSpec? QualifiedName ( COMMA AccessSpec? QualifiedName )*
 AccessSpec -> KW_public / KW_private / KW_protected
 ClassBody -> LBRACE ClassMember* RBRACE
 ClassMember -> AccessLabel / ConstructorDecl / DestructorDecl / MethodDecl / FieldDecl / ClassDecl / StructDecl / EnumDecl / TypedefDecl / UsingDecl / FriendDecl / NL / LineComment / BlockComment
 AccessLabel -> AccessSpec COLON
 
-# Struct declaration
-StructDecl -> doc:DocBlock? NL? KW_typedef KW_struct id:Name? StructBody id:Name SEMI
-            / doc:DocBlock? NL? KW_struct id:Name ( KW_final )? InheritanceClause? StructBody SEMI
+# Struct declaration -- same header/body split. The typedef form names the type
+# only AFTER the body, so its trailing name stays on the declaration rule.
+StructDecl -> StructTypedefHeader StructBody tag:Name SEMI
+            / StructHeader StructBody SEMI
+StructTypedefHeader -> doc:DocBlock? NL? KW_typedef KW_struct id:Name?
+StructHeader -> doc:DocBlock? NL? KW_struct id:Name ( KW_final )? InheritanceClause?
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> AccessLabel / ConstructorDecl / MethodDecl / FieldDecl / NL / LineComment / BlockComment
 
-# Union declaration
-UnionDecl -> doc:DocBlock? NL? KW_typedef KW_union id:Name? UnionBody id:Name SEMI
-           / doc:DocBlock? NL? KW_union id:Name UnionBody SEMI
+# Union declaration -- same header/body split.
+UnionDecl -> UnionTypedefHeader UnionBody tag:Name SEMI
+           / UnionHeader UnionBody SEMI
+UnionTypedefHeader -> doc:DocBlock? NL? KW_typedef KW_union id:Name?
+UnionHeader -> doc:DocBlock? NL? KW_union id:Name
 UnionBody -> LBRACE UnionMember* RBRACE
 UnionMember -> field_doc:DocBlock? Type field_id:Name SEMI / NL / LineComment / BlockComment
 
-# Enum declaration
-EnumDecl -> doc:DocBlock? NL? KW_typedef KW_enum id:Name? EnumBody id:Name SEMI
-          / doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Name ( COLON Type )? EnumBody SEMI
+# Enum declaration -- same header/body split.
+EnumDecl -> EnumTypedefHeader EnumBody tag:Name SEMI
+          / EnumHeader EnumBody SEMI
+EnumTypedefHeader -> doc:DocBlock? NL? KW_typedef KW_enum id:Name?
+EnumHeader -> doc:DocBlock? NL? KW_enum ( KW_class / KW_struct )? id:Name ( COLON Type )?
 EnumBody -> LBRACE EnumValue* RBRACE
 EnumValue -> value_doc:DocBlock? value_id:Name ( Operator Expr )? COMMA? / NL / LineComment / BlockComment
 
@@ -239,11 +257,11 @@ OpaqueGroup -> LBRACE OpaqueInner* RBRACE / LBRACKET OpaqueInner* RBRACKET / LPA
 OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN !LBRACE !RBRACE !LBRACKET !RBRACKET Atom
 
 === attrs
-on ClassDecl:       def id kind=Class doc=doc
-on StructDecl:      def id kind=Struct doc=doc
-on UnionDecl:       def id kind=Union doc=doc
-on EnumDecl:        def id kind=Enum doc=doc
-on NamespaceDecl:   def id kind=Namespace doc=doc
+on ClassHeader:     def id kind=Class doc=doc
+on StructHeader:    def id kind=Struct doc=doc
+on UnionHeader:     def id kind=Union doc=doc
+on EnumHeader:      def id kind=Enum doc=doc
+on NamespaceHeader: def id kind=Namespace doc=doc
 on FunctionDecl:    def func_id kind=Function doc=doc
 on MethodDecl:      def method_id kind=Method doc=doc
 on ConstructorDecl: def id kind=Constructor doc=doc
@@ -260,59 +278,143 @@ qualifier_separators: DOT, SCOPE, ARROW
 vocabulary_token_kinds: DocComment, DocBlockComment, String
 
 === semantics
-# C++ top-level declarations
-on NamespaceDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Namespace", "doc", $doc)
+# ---------------------------------------------------------------------------
+# Enclosing-scope frames
+# ---------------------------------------------------------------------------
+# C++ nests: a `ClassMember` may itself be a `ClassDecl`, a `StructDecl` or an
+# `EnumDecl`, and a namespace body holds the whole top level again. So the
+# enclosing scope behaves like a stack: a member belongs to the type or
+# namespace whose body it sits in, and a declaration written AFTER that body
+# belongs to whatever enclosed it. `scope push` / `scope pop` are that stack --
+# a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a body's frame re-exposes the one around it.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER rule, which
+# matches before the body is entered, and closed by the declaration rule, which
+# fires after the whole body. The declaration's own `declares` edge is emitted
+# from the header BEFORE the push, so `current_scope` there still names the
+# ENCLOSING scope -- which is both the edge's `from` and the prefix of the
+# nested declaration's symbol id, giving `Outer::Inner` rather than a second
+# file-level `Inner`.
+#
+# `current_class` is what the member rules read, and it is bound only by a
+# type header, never by a namespace: a namespace holds declarations, not
+# members, so a function inside one stays a Function.
+on NamespaceHeader when $id {
+  let outer = $scope("value", "current_scope")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Namespace", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_scope" to sym_id
+} else {
+  # An anonymous namespace still opens a body, so it opens a transparent frame:
+  # it binds nothing, `$scope` falls through to whatever encloses it, and the
+  # pushes and pops stay balanced.
+  scope push
 }
-on ClassDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", $doc)
+on NamespaceDecl { scope pop }
+
+on ClassHeader {
+  let outer = $scope("value", "current_scope")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_scope" to sym_id
+  bind ns "value" name "current_class" to sym_id
 }
-on StructDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+on StructHeader {
+  let outer = $scope("value", "current_scope")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Struct", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_scope" to sym_id
+  bind ns "value" name "current_class" to sym_id
 }
-on UnionDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+on UnionHeader {
+  let outer = $scope("value", "current_scope")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Union", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_scope" to sym_id
+  bind ns "value" name "current_class" to sym_id
 }
-on EnumDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+on EnumHeader {
+  let outer = $scope("value", "current_scope")
+  let sym_id = concat(cond(outer, outer, $file), "::", $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc_text)
+  scope push
+  bind ns "value" name "current_enum" to sym_id
 }
+
+# The typedef forms name the type only AFTER the body, so their header binds
+# nothing and the declaration rule publishes the trailing name. The members of
+# such a body are unreachable either way: nothing names the type until the body
+# is over.
+on StructTypedefHeader {
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
+}
+on UnionTypedefHeader {
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
+}
+on EnumTypedefHeader {
+  scope push
+  bind ns "value" name "pending_doc" to $doc_text
+}
+on StructDecl when $tag {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Struct", "doc", $scope("value", "pending_doc"))
+}
+on UnionDecl when $tag {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Union", "doc", $scope("value", "pending_doc"))
+}
+on EnumDecl when $tag {
+  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Enum", "doc", $scope("value", "pending_doc"))
+}
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on ClassDecl { scope pop }
+on StructDecl { scope pop }
+on UnionDecl { scope pop }
+on EnumDecl { scope pop }
 on FunctionDecl {
-  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc)
+  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc_text)
 }
 on VarDecl {
-  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc)
+  edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc_text)
 }
 on TypedefDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Typedef", "doc", $doc_text)
 }
 
 
 # Method in class
-on MethodDecl when $scope("value", "current_class") {
+on MethodDecl when cond($method_id, $scope("value", "current_class")) {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, "::", $method_id)
-  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc)
+  edge declares from parent to sym_id attrs obj("name", $method_id, "kind", "Method", "doc", $doc_text)
 }
 
 # Constructor
-on ConstructorDecl when $scope("value", "current_class") {
+on ConstructorDecl when cond($id, $scope("value", "current_class")) {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, "::", $id)
-  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Constructor", "doc", $doc)
+  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Constructor", "doc", $doc_text)
 }
 
 # Field in class
-on FieldDecl when $scope("value", "current_class") {
+on FieldDecl when cond($field_id, $scope("value", "current_class")) {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, "::", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $doc_text)
 }
 
 # Enum value
-on EnumValue when $scope("value", "current_enum") {
+on EnumValue when cond($value_id, $scope("value", "current_enum")) {
   let parent = $scope("value", "current_enum")
   let sym_id = concat(parent, "::", $value_id)
-  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc_text)
 }
 
 === resolver

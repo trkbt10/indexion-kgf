@@ -3,12 +3,12 @@ language: python
 sources: .py, .pyi
 
 === lex
-# Indentation handling: the lexer cannot count indentation depth, so it only
-# distinguishes an indented line start (NL_INDENT) from a blank or column-0
-# line start (NL). Every grammar rule that walks a block relies on that single
-# bit: a block continues while lines start with NL_INDENT and ends at the first
-# NL followed by a non-indented token. Nesting depth is invisible, see the
-# grammar notes on suites for what that means.
+# Indentation handling. The lexer is regex-only and cannot compare one line's
+# indentation with the previous line's, so it only distinguishes an indented
+# line start (NL_INDENT) from a blank or column-0 line start (NL). Depth comes
+# from the LAYOUT directive at the end of this section: the engine's post-lex
+# pass reads the whitespace each newline token carries and injects INDENT /
+# DEDENT tokens, which the grammar uses to bracket every suite exactly.
 TOKEN NL_INDENT /\r?\n[ \t]+/
 TOKEN NL /\r?\n/
 SKIP /[ \t]+/
@@ -79,6 +79,14 @@ TOKEN COLON    /:/
 TOKEN COMMA    /,/
 TOKEN DOT      /\./
 
+# Layout. Both newline kinds carry a line's leading whitespace (NL carries
+# none, i.e. column 0), so both are listed. INDENT and DEDENT are synthetic:
+# they have no TOKEN rule because no source text matches them; the layout pass
+# is what puts them in the stream. Comment-only lines carry no layout (Python
+# lets a comment sit at any column), and inside a bracket — a flow collection,
+# a multi-line call or parameter list — indentation is not significant at all.
+LAYOUT newline=NL_INDENT,NL indent=INDENT dedent=DEDENT comment=Comment open=LPAREN,LBRACKET,LBRACE close=RPAREN,RBRACKET,RBRACE
+
 === grammar
 Module -> ModuleDoc? Item*
 
@@ -89,11 +97,14 @@ ModuleDoc -> ( Comment NL* )* doc:Docstring
 # Every top-level line is one of these. `Other` accepts any single token so
 # the module rule never stops early: whatever the declaration rules cannot
 # match is skipped one token at a time and parsing resumes at the next line.
-Item -> NL
-     / NL_INDENT
+# `Suite` appears here because a module-level compound statement (`if
+# __name__ == "__main__":`) opens an indented block whose INDENT/DEDENT must
+# be consumed like any other.
+Item -> LineBreak
      / Comment
      / FunctionDef
      / ClassDef
+     / Suite
      / Statement
      / Other
 
@@ -116,6 +127,29 @@ NameEntry -> Ident ( KW_as Ident )?
 QN -> Ident ( DOT Ident )*
 
 # ---------------------------------------------------------------------------
+# Suites — the indented block that a `:` opens
+# ---------------------------------------------------------------------------
+# The engine's layout pass (declared by the LAYOUT directive in `=== lex`)
+# inserts an INDENT after the newline that opens a deeper line and a DEDENT
+# for every level a shallower line closes. A suite is therefore exactly
+# `INDENT ... DEDENT`, and nesting is exact at any depth: whatever a nested
+# def, class or compound statement contains is inside ITS OWN INDENT/DEDENT
+# pair, so it can never be mistaken for a sibling of its parent.
+#
+# SuiteOpen skips the line breaks and comment-only lines between the header
+# and the first body line; the layout pass gives those no INDENT, so they sit
+# before it. A suite always ends with DEDENT, including the one the pass emits
+# at end of input for a body that runs to the last line of the file.
+SuiteOpen -> ( LineBreak / Comment )* INDENT
+LineBreak -> NL / NL_INDENT
+
+# A function body: statements, nested declarations and nested blocks. Nested
+# defs and classes are consumed WITHOUT being declared (a local function is
+# not part of the module's public surface), and their own bodies go with them.
+Suite -> SuiteOpen BodyItem* DEDENT
+BodyItem -> LineBreak / Comment / Suite / InnerDef / InnerClass / Statement Comment?
+
+# ---------------------------------------------------------------------------
 # Declarations
 # ---------------------------------------------------------------------------
 # A decorator line: `@name`, `@name(args...)`, possibly followed by a comment,
@@ -125,48 +159,45 @@ PropertyDecoratorLine -> PropertyDecorator Group? Comment? Ws*
 
 # The docstring is the first statement of the body, so it is captured on the
 # declaration itself (right after the newline that opens the body, after any
-# comment lines): `$doc` is then a plain label of FunctionDef / ClassDef /
-# MethodDef and needs no scope plumbing.
-#
-# Suites and nesting: NL_INDENT carries no depth, so a body is simply the run
-# of indented lines that follows. Inside a top-level function every `def` or
-# `class` on an indented line is necessarily nested and is consumed as
-# InnerDef / InnerClass without declaring anything. Inside a class body an
-# indented `def` is ambiguous (a sibling method or a function nested in the
-# previous method); it is always treated as a member of the class, so a
-# method body stops in front of it (`!MemberStart`).
-FunctionDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident Params ReturnHint? COLON Comment? ( BlockOpen doc:Docstring? FnLineContent? FnLine* / SimpleBody )
-FnLine -> NL* NL_INDENT FnLineContent? / Comment
-FnLineContent -> Comment / InnerDef / InnerClass / Statement Comment?
-InnerDef -> ( DecoratorLine / PropertyDecoratorLine )* KW_async? KW_def Ident Params ReturnHint? COLON Comment? ( BlockOpen Docstring? FnLineContent? FnLine* / SimpleBody )
-InnerClass -> DecoratorLine* KW_class Ident Bases? COLON Comment? ( BlockOpen Docstring? FnLineContent? FnLine* / SimpleBody )
+# comment lines). The suite is spelled out inline rather than delegated to a
+# rule, because a label bound inside a referenced rule does not leak to the
+# caller: `doc:` has to sit in the declaration's own expression for `$doc` to
+# reach its semantics block.
+FunctionDef -> decorators:DecoratorLine* KW_async? KW_def id:Ident Params ReturnHint? COLON Comment? ( SuiteOpen doc:Docstring? BodyItem* DEDENT / SimpleBody )
+InnerDef -> ( DecoratorLine / PropertyDecoratorLine )* KW_async? KW_def Ident Params ReturnHint? COLON Comment? ( Suite / SimpleBody )
+InnerClass -> DecoratorLine* KW_class Ident Bases? COLON Comment? ( Suite / SimpleBody )
 
-# ClassHeader is a separate rule so it fires before the body: its semantics
-# bind the enclosing class for the MethodDef events that follow (events fire
-# bottom-up, children before parents).
-ClassDef -> ClassHeader COLON Comment? ( BlockOpen doc:Docstring? MemberContent? ClassMember* / SimpleBody )
+# A class. ClassHeader fires FIRST, before the body is parsed (a rule's event
+# is emitted when the rule completes, and the header completes at the `:`),
+# and pushes the scope its members resolve their parent from. ClassDef fires
+# LAST, after every event inside the class, and pops it. Together the two make
+# nesting exact at any depth: a class inside a class body pushes its own
+# scope, its members bind to it, and its pop restores the enclosing class for
+# the members that follow it.
+ClassDef -> ClassHeader COLON Comment? ( ClassSuite / ClassInlineBody )
 ClassHeader -> decorators:DecoratorLine* KW_class id:Ident Bases?
 Bases -> Group
-ClassMember -> NL* NL_INDENT MemberContent? / Comment
-MemberContent -> Comment / MethodDef / NestedClass / Statement Comment?
+ClassSuite -> SuiteOpen doc:Docstring? Member* DEDENT
+# Spelled out rather than `-> SimpleBody`: a rule whose whole body is a single
+# reference to another rule is an alias and emits no event of its own, so it
+# could not carry the declaration below.
+ClassInlineBody -> Statement Comment?
+Member -> LineBreak / Comment / Suite / MethodDef / NestedClassDef / Statement Comment?
 
 # A method's decorators may include the property family; `prop` is bound only
-# when one does, which is what classifies the member as a Property.
-MethodDef -> decorators:( DecoratorLine / prop:PropertyDecoratorLine )* KW_async? KW_def id:Ident Params ReturnHint? COLON Comment? ( BlockOpen doc:Docstring? MethodLineContent? MethodLine* / SimpleBody )
-MethodLine -> NL* NL_INDENT !MemberStart MethodLineContent? / Comment
-MethodLineContent -> Comment / Statement Comment?
-MemberStart -> Decorator / PropertyDecorator / KW_async / KW_def / KW_class
+# when one does, which is what classifies the member as a Property. A method
+# body is an ordinary Suite, so a `def` nested inside it is an InnerDef — not
+# a sibling method of the class.
+MethodDef -> decorators:( DecoratorLine / prop:PropertyDecoratorLine )* KW_async? KW_def id:Ident Params ReturnHint? COLON Comment? ( SuiteOpen doc:Docstring? BodyItem* DEDENT / SimpleBody )
 
-# A class nested in a class body is declared under its parent. Its body lines
-# are consumed like a method body, so its own methods (if any) are attributed
-# to the enclosing class — the depth-blind tokenizer cannot tell them apart.
-NestedClass -> decorators:DecoratorLine* KW_class id:Ident Bases? COLON Comment? ( BlockOpen doc:Docstring? MethodLineContent? MethodLine* / SimpleBody )
+# A class nested in a class body is declared under its parent and is itself a
+# class scope, so its own methods are declared under IT and the members that
+# follow it in the outer body go back to the outer class.
+NestedClassDef -> NestedClassHeader COLON Comment? ( ClassSuite / NestedClassInlineBody )
+NestedClassHeader -> decorators:DecoratorLine* KW_class id:Ident Bases?
+NestedClassInlineBody -> Statement Comment?
 
-# The newline that opens an indented body, skipping comment-only lines so the
-# docstring that follows them is still captured. BlockOpen consumes the first
-# line's NL_INDENT, which is why every body rule accepts one line of content
-# directly after the optional docstring before the NL_INDENT-led line loop.
-BlockOpen -> NL* NL_INDENT ( Comment NL* NL_INDENT )*
+# A one-line body: `def f(): return 1`. No newline, so no INDENT either.
 SimpleBody -> Statement Comment?
 
 # Parameters: `self` / `cls`, `*args`, `**kwargs`, the bare `*` keyword-only
@@ -196,7 +227,8 @@ Assignment -> id:Ident ( TypeHint ( EQ expr:Expr )? / EQ expr:Expr )
 
 # Any other statement: a run of atoms up to the end of the line. Compound
 # statement headers (`if x:`, `for t in items:`, `with f() as g:`) are plain
-# atom runs too; their bodies are the indented lines that follow.
+# atom runs too; the Suite alternative that follows them in BodyItem / Member
+# / Item consumes the indented block they open.
 ExprStmt -> Atom+
 Expr -> Atom+
 
@@ -210,14 +242,24 @@ Inner -> Atom / Ws / KW_def / KW_class / Decorator / PropertyDecorator
 Ws -> NL_INDENT / NL / Comment
 
 # Catch-all for the module level: one token of any kind, including a bracket
-# whose partner is missing (an Atom only accepts balanced groups).
-Other -> Atom / KW_def / KW_class / Decorator / PropertyDecorator / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE
+# whose partner is missing (an Atom only accepts balanced groups) and a stray
+# DEDENT left by a file whose indentation the layout pass could not pair up.
+Other -> Atom / KW_def / KW_class / Decorator / PropertyDecorator / LPAREN / RPAREN / LBRACKET / RBRACKET / LBRACE / RBRACE / INDENT / DEDENT
 
 === attrs
 on FunctionDef:  def id kind=Function doc=doc
-on ClassHeader:  def id kind=Class
+# A class header opens a scope its members bind their parent in; the matching
+# ClassDef / NestedClassDef pops it. Attrs are evaluated before the rule's
+# semantics block, and a rule's event fires after every event inside it, so
+# the push happens before any member is evaluated and the pop after all of
+# them.
+on ClassHeader:  def id kind=Class; scope push=class
+on NestedClassHeader: def id kind=Class; scope push=class
+# ClassDef / NestedClassDef are the last events of a class, so their pop
+# restores the enclosing scope only once everything inside has been evaluated.
+on ClassDef:          scope pop=class
+on NestedClassDef:    scope pop=class
 on MethodDef:    def id kind=Method doc=doc
-on NestedClass:  def id kind=Class doc=doc
 on Assignment:   def id kind=Variable
 on Param:        def id kind=Param
 on ModuleDoc:    module_doc doc=doc
@@ -263,9 +305,13 @@ on FunctionDef {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc), "decorators", trim($decorators_text))
 }
 
-# The header fires before the class body, so it publishes the class for the
-# MethodDef / NestedClass events that follow; ClassDef itself fires after the
-# body and owns the docstring.
+# A class header fires before its body is parsed (a rule's event is emitted
+# when the rule completes, and the header completes at the `:`), so it is
+# where the class is published for the members that follow. Its `scope
+# push=class` attribute put a fresh scope on the stack first, so the bindings
+# below belong to THIS class; a class nested in this one pushes another scope
+# over them and pops it again, which restores this class for the members that
+# come after the nested one.
 on ClassHeader {
   let sym_id = concat($file, "::", $id)
   bind ns "value" name "current_class" to sym_id
@@ -273,24 +319,60 @@ on ClassHeader {
   bind ns "value" name "current_class_decorators" to trim($decorators_text)
 }
 
-on ClassDef {
+# A class nested in another class body. Its `scope push=class` attribute has
+# already run, so the scope on top is empty and `$scope` still sees the
+# ENCLOSING class through the stack below it — that is the parent the nested
+# class is declared under, and the prefix of its symbol id. Binding
+# `current_class` writes into the new top scope, so the nested class's own
+# members resolve to it, and the matching `scope pop=class` on NestedClassDef
+# restores the enclosing class for the members that follow.
+on NestedClassHeader {
+  let parent = $scope("value", "current_class")
+  let sym_id = concat(parent, ".", $id)
+  bind ns "value" name "current_class" to sym_id
+  bind ns "value" name "current_class_name" to $id
+  bind ns "value" name "current_class_decorators" to trim($decorators_text)
+  bind ns "value" name "current_class_owner" to parent
+}
+
+# ClassSuite carries the class docstring and completes while the class scope
+# is still open, so it is where the Class declaration is emitted — for a
+# top-level class and a nested one alike, since both bound the same three
+# names. `current_class_owner` is bound only by NestedClassHeader; without it
+# the class belongs to the file.
+on ClassSuite when $scope("value", "current_class") {
   let sym_id = $scope("value", "current_class")
   let name = $scope("value", "current_class_name")
   let decorators = $scope("value", "current_class_decorators")
-  edge declares from $file to sym_id attrs obj("name", name, "kind", "Class", "doc", trim($doc), "decorators", decorators)
+  let owner = $scope("value", "current_class_owner")
+  let from = cond(owner, owner, $file)
+  edge declares from from to sym_id attrs obj("name", name, "kind", "Class", "doc", trim($doc), "decorators", decorators)
+}
+
+# A class whose whole body is on the header line (`class E: pass`) has no
+# suite, so no ClassSuite event fires for it and it has no docstring. The
+# inline-body rule is the one that fires in that case, and it is a rule of its
+# own precisely so it can carry the declaration.
+on ClassInlineBody {
+  let sym_id = $scope("value", "current_class")
+  let name = $scope("value", "current_class_name")
+  let decorators = $scope("value", "current_class_decorators")
+  edge declares from $file to sym_id attrs obj("name", name, "kind", "Class", "decorators", decorators)
+}
+
+on NestedClassInlineBody {
+  let sym_id = $scope("value", "current_class")
+  let name = $scope("value", "current_class_name")
+  let decorators = $scope("value", "current_class_decorators")
+  let owner = $scope("value", "current_class_owner")
+  edge declares from owner to sym_id attrs obj("name", name, "kind", "Class", "decorators", decorators)
 }
 
 on MethodDef when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")
   let sym_id = concat(parent, ".", $id)
-  let kind = cond($prop, "Property", "Method")
+  let kind = cond($prop_text, "Property", "Method")
   edge declares from parent to sym_id attrs obj("name", $id, "kind", kind, "doc", trim($doc), "decorators", trim($decorators_text))
-}
-
-on NestedClass when $scope("value", "current_class") {
-  let parent = $scope("value", "current_class")
-  let sym_id = concat(parent, ".", $id)
-  edge declares from parent to sym_id attrs obj("name", $id, "kind", "Class", "doc", trim($doc), "decorators", trim($decorators_text))
 }
 
 === resolver

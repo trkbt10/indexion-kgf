@@ -287,9 +287,20 @@ on FuncDecl when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
 
 # The header fires before the body, so it both declares the type and publishes
 # it for the member rules that follow.
+#
+# The publication is confined to a scope frame: `scope push` opens it here and
+# `TypeSpec` — the rule that spans the header AND the struct/interface body, so
+# it fires only once that body is complete — closes it with `scope pop`. A
+# struct type nests (`type Outer struct { Inner struct { … } }`), and without
+# the frame the inner anonymous struct's binding would outlive it and claim the
+# fields written after it; a stale binding also outlived the whole declaration,
+# so a field of a LATER anonymous struct was attributed to the previous named
+# type.
 on TypeHeader {
+  scope push
   bind ns "value" name "current_type" to concat($file, "::", $id)
 }
+on TypeSpec { scope pop }
 
 on TypeHeader when cond($id, eq(slice($id, 0, 1), toUpper(slice($id, 0, 1)))) {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))

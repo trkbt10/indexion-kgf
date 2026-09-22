@@ -107,20 +107,30 @@ FnDecl -> doc:DocBlock? NL? vis:KW_pub? KW_export? KW_extern? KW_inline? KW_fn i
 ParamList -> Param ( COMMA Param )*
 Param -> KW_comptime? param_id:Name COLON ( KW_anytype / Type )
 
-# Struct declaration
-StructDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_packed? KW_struct StructBody SEMI?
+# Struct declaration.
+#
+# The header is a rule of its own so that it fires BEFORE the body: PEG matches
+# it to completion first, so its event -- and the `scope push` in its semantics
+# -- precedes every member event of the body. That frame is what attaches each
+# field and nested type to the container it belongs to; without it the member
+# rules read a `current_struct` / `current_enum` that nothing ever bound, and
+# no field or enum value was declared at all.
+StructDecl -> StructHeader StructBody SEMI?
+StructHeader -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_packed? KW_struct
 StructBody -> LBRACE StructMember* RBRACE
 StructMember -> StructDecl / EnumDecl / UnionDecl / FnDecl / ConstDecl / VarDecl / FieldDecl / NL / LineComment / DocComment
 FieldDecl -> field_doc:DocBlock? field_id:Name COLON Type ( EQ Expr )? COMMA?
 # KW_packed is defined in lex section
 
-# Enum declaration
-EnumDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_enum EnumBody SEMI?
+# Enum declaration -- same header/body split.
+EnumDecl -> EnumHeader EnumBody SEMI?
+EnumHeader -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_enum
 EnumBody -> LBRACE EnumMember* RBRACE
 EnumMember -> value_doc:DocBlock? value_id:Name ( EQ Expr )? COMMA? / NL / LineComment
 
-# Union declaration
-UnionDecl -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_union UnionBody SEMI?
+# Union declaration -- same header/body split.
+UnionDecl -> UnionHeader UnionBody SEMI?
+UnionHeader -> doc:DocBlock? NL? vis:KW_pub? KW_const id:Name EQ KW_extern? KW_union
 UnionBody -> LBRACE UnionMember* RBRACE
 UnionMember -> field_doc:DocBlock? field_id:Name COLON Type COMMA? / NL / LineComment
 
@@ -158,9 +168,9 @@ OpaqueInner -> OpaqueGroup / !LPAREN !RPAREN !LBRACE !RBRACE !LBRACKET !RBRACKET
 on FnDecl:      def id kind=Function doc=doc
 on ConstDecl:   def id kind=Const doc=doc
 on VarDecl:     def id kind=Variable doc=doc
-on StructDecl:  def id kind=Struct doc=doc
-on EnumDecl:    def id kind=Enum doc=doc
-on UnionDecl:   def id kind=Union doc=doc
+on StructHeader: def id kind=Struct doc=doc
+on EnumHeader:   def id kind=Enum doc=doc
+on UnionHeader:  def id kind=Union doc=doc
 on FieldDecl:   def field_id kind=Field doc=field_doc
 on EnumMember:  def value_id kind=EnumValue doc=value_doc
 on Param:       def param_id kind=Param
@@ -175,36 +185,87 @@ vocabulary_token_kinds: DocComment, String
 === semantics
 # Zig public declarations (vis:KW_pub? in grammar)
 on FnDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc_text)
 }
 on ConstDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc_text)
 }
 on VarDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc)
-}
-on StructDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
-}
-on EnumDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
-}
-on UnionDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Union", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc_text)
 }
 
+# ---------------------------------------------------------------------------
+# Enclosing-container frames
+# ---------------------------------------------------------------------------
+# A `StructMember` may itself be a `StructDecl`, an `EnumDecl` or a
+# `UnionDecl`, so the enclosing container behaves like a stack: a field belongs
+# to the container whose body it sits in, and a declaration written AFTER that
+# body belongs to whatever enclosed it. `scope push` / `scope pop` are that
+# stack -- a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a container's frame re-exposes the one around it.
+#
+# Events fire bottom-up, so the frame is opened by the HEADER rule, which
+# matches before the body is entered, and closed by the declaration rule, which
+# fires after the whole body. The container's own `declares` edge is emitted
+# from the header BEFORE the push, so `current_container` there still names the
+# ENCLOSING container -- which is both the edge's `from` and the prefix of the
+# nested container's symbol id, giving `Outer.Inner` rather than a second
+# file-level `Inner`.
+#
+# The push is unconditional even for a non-`pub` container: an unpublished type
+# still owns its fields, and the pushes and pops have to stay balanced.
+on StructHeader when $vis {
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc_text)
+}
+on StructHeader {
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_container" to sym_id
+  bind ns "value" name "current_struct" to sym_id
+}
+on EnumHeader when $vis {
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc_text)
+}
+on EnumHeader {
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_container" to sym_id
+  bind ns "value" name "current_enum" to sym_id
+}
+on UnionHeader when $vis {
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Union", "doc", $doc_text)
+}
+on UnionHeader {
+  let outer = $scope("value", "current_container")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  scope push
+  bind ns "value" name "current_container" to sym_id
+  bind ns "value" name "current_struct" to sym_id
+}
+
+# A declaration rule fires after its own body, so it closes the frame its
+# header opened.
+on StructDecl { scope pop }
+on EnumDecl { scope pop }
+on UnionDecl { scope pop }
+
 # Struct field
-on FieldDecl when $scope("value", "current_struct") {
+on FieldDecl when cond($field_id, $scope("value", "current_struct")) {
   let parent = $scope("value", "current_struct")
   let sym_id = concat(parent, ".", $field_id)
-  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc)
+  edge declares from parent to sym_id attrs obj("name", $field_id, "kind", "Field", "doc", $field_doc_text)
 }
 
 # Enum value
-on EnumMember when $scope("value", "current_enum") {
+on EnumMember when cond($value_id, $scope("value", "current_enum")) {
   let parent = $scope("value", "current_enum")
   let sym_id = concat(parent, ".", $value_id)
-  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc)
+  edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc_text)
 }
 
 === resolver

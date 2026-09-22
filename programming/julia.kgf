@@ -270,10 +270,22 @@ on UsingDecl {
 # The module HEADER carries the declares edge and the bind, not `ModuleDecl`:
 # events fire bottom-up, so a bind on the whole declaration would happen
 # after its own members had already been reduced.
+# A `ModuleMember` may itself be a `ModuleDecl`, and a `StructDecl` opens a
+# body of its own, so both open a scope frame: `scope push` / `scope pop`
+# bracket a body's members in a frame of their own, a bind lands in the
+# innermost frame and `$scope` searches frames innermost-first. Popping the
+# frame at the declaration rule — which fires after the whole body — re-exposes
+# whatever enclosed it, so a struct written after a nested module no longer
+# belongs to that module and a field written after a nested struct no longer
+# belongs to that struct.
 on ModuleHeader {
-  bind ns "value" name "current_module" to concat($file, "::", $id)
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", trim($doc_text))
+  let outer = $scope("value", "current_module")
+  let sym_id = concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id)
+  edge declares from cond(outer, outer, $file) to sym_id attrs obj("name", $id, "kind", "Module", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_module" to sym_id
 }
+on ModuleDecl { scope pop }
 on FunctionDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc_text))
 }
@@ -284,9 +296,11 @@ on MacroDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Macro", "doc", trim($doc_text))
 }
 on StructHeader {
-  bind ns "value" name "current_struct" to concat($file, "::", $id)
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", trim($doc_text))
+  scope push
+  bind ns "value" name "current_struct" to concat($file, "::", $id)
 }
+on StructDecl { scope pop }
 on AbstractDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "AbstractType", "doc", trim($doc_text))
 }

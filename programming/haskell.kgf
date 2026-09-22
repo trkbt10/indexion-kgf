@@ -288,14 +288,22 @@ on NewtypeDecl {
 on TypeDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))
 }
-# The class HEADER carries the declares edge and the `bind`, not `ClassDecl`.
-# Events fire bottom-up, so `ClassDecl` runs after its members; a header
-# sub-rule that matches before the body is entered is the only place a bind
-# is in scope for `MethodSig`.
+# The class HEADER carries the declares edge and opens the scope frame, not
+# `ClassDecl`. Events fire bottom-up, so `ClassDecl` runs after its members; a
+# header sub-rule that matches before the body is entered is the only place a
+# binding is in scope for `MethodSig`.
+#
+# The binding lives in a frame of its own: `scope push` opens it here and
+# `ClassDecl` — which fires only once the whole class body is complete — closes
+# it with `scope pop`. Without the pop the class stayed "current" for the rest
+# of the file, so a `MethodSig` belonging to a LATER class, or none at all, was
+# attributed to it.
 on ClassHeader {
+  scope push
   bind ns "value" name "current_class" to concat($file, "::", $id)
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Class", "doc", trim($doc_text))
 }
+on ClassDecl { scope pop }
 # One edge per function: the rule matches the signature plus its equations as
 # a single declaration, so a documented `f :: T` / `f x = ...` pair no longer
 # produces two identical declares edges.

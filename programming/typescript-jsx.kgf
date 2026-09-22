@@ -336,6 +336,22 @@ on ImportDefault {
 # Child rules fire before parent (bottom-up), so FunctionDecl etc. bind
 # their id/kind/doc, then ExportDecl fires and emits the declares edge
 # with its own doc (from the preceding JSDoc) merged in.
+#
+# ---------------------------------------------------------------------------
+# Enclosing-type frames
+# ---------------------------------------------------------------------------
+# `scope push` / `scope pop` bracket a type's members in a frame of their own:
+# a bind lands in the innermost frame and `$scope` searches frames
+# innermost-first, so popping a type's frame re-exposes whatever enclosed it.
+# Events fire bottom-up, so the frame is opened by the HEADER — which matches
+# to completion before the body is parsed — and closed by the declaration rule,
+# which fires after the whole body.
+#
+# The `child_decl_*` bindings are deliberately written BEFORE the push: they
+# are read by a LATER SIBLING rule (`ExportDecl`, which wraps the declaration
+# and fires after it has popped), so they must survive the pop and belong in
+# the OUTER frame. Only `current_class` / `current_interface` / `current_enum`
+# — read by the members INSIDE the body — go in the pushed frame.
 
 on FunctionDecl {
   let sym_id = concat($file, "::", $id)
@@ -353,6 +369,7 @@ on ClassHeader {
   bind ns "value" name "child_decl_kind" to "Class"
   bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Class", "doc", $doc)
+  scope push
   bind ns "value" name "current_class" to sym_id
 }
 
@@ -363,6 +380,7 @@ on InterfaceHeader {
   bind ns "value" name "child_decl_kind" to "Interface"
   bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Interface", "doc", $doc)
+  scope push
   bind ns "value" name "current_interface" to sym_id
 }
 
@@ -406,6 +424,7 @@ on EnumHeader {
   bind ns "value" name "child_decl_kind" to "Enum"
   bind ns "value" name "child_decl_doc" to $doc
   edge declares from $file to sym_id attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  scope push
   bind ns "value" name "current_enum" to sym_id
 }
 
@@ -429,6 +448,14 @@ on PropertyDecl when $scope("value", "current_class") {
   let sym_id = concat(parent, ".", $id)
   edge declares from parent to sym_id attrs obj("name", $id, "kind", "Property", "doc", $doc)
 }
+
+# Each declaration rule fires after its own body, so it closes the frame its
+# header opened. Without the pop a member written after a nested declaration —
+# or a top-level declaration written after the type — was still attributed to
+# that type.
+on ClassDecl { scope pop }
+on InterfaceDecl { scope pop }
+on EnumDecl { scope pop }
 
 on EnumMember when $id {
   let parent = $scope("value", "current_enum")
