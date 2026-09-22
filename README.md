@@ -37,7 +37,55 @@ build.gradle.kts, Cargo.toml, composer.json, .csproj, deno.json, Gemfile, go.mod
 kgf 0.6
 language: <language-name>
 sources: <file-extensions>
+extends: <base-language-name>    # optional
 ```
+
+### Spec Inheritance (`extends:`)
+
+Many specs describe a dialect of another: a wiki page is Markdown, TSX is
+TypeScript. Rather than copying the base spec, declare `extends:` and write
+only what differs.
+
+```
+kgf 0.6
+language: sdd-user-story
+sources: .md
+extends: markdown
+
+=== features
+...markdown's features, plus this spec's own...
+
+=== semantics
+...markdown's blocks, plus this spec's own...
+```
+
+`extends:` names the base by its `language:`, not by a file path, so the base
+may live in any subdirectory of the same spec set. Inheritance is resolved
+after the whole directory is loaded, so declaration order and directory layout
+do not matter.
+
+**Section-level override.** For each `=== section`, the derived spec's text
+wins *whole* if the derived spec declares that section at all; the base's is
+used otherwise. Nothing is merged *within* a section:
+
+| In the derived spec | Result |
+|---|---|
+| section omitted | the base's section is used unchanged |
+| section declared with content | the base's section is replaced entirely |
+| section declared, empty body | the base's section is replaced with nothing |
+
+A derived `=== grammar` therefore replaces the base grammar rather than adding
+rules to it, and a derived `=== semantics` replaces *every* `on` block of the
+base. When a derived spec needs the base's blocks plus its own, it repeats the
+base's blocks in its own section: the result of a merge can be read straight
+off the two files.
+
+`language:` and `sources:` are never inherited. Chains are allowed
+(`A extends B extends C`); each section comes from the nearest ancestor that
+declares it. A cycle, or an `extends:` naming a spec that is not present, is an
+error: loading falls back to the spec's own sections and `indexion kgf check`
+reports it. `kgf check` on a derived spec validates the *resolved* spec, and
+`kgf list` shows the base in its `Extends` column.
 
 ### Sections
 
