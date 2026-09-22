@@ -137,6 +137,8 @@ ParagraphToken -> JpJoshi / JpKatakana / JpKanji / JpHiragana
 === attrs
 
 === features
+# Headings and paragraphs are prose structure, not documentable API.
+document_symbol_kinds:
 content_type: document
 # Mark this spec as an overlay so it does NOT steal `.md` / `.txt` from
 # the general-purpose markdown / plaintext specs in the global registry.

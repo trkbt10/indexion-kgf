@@ -287,7 +287,8 @@ AnyKeyword -> KW_kgf / KW_language / KW_sources / KW_extends
 === features
 identifier_kinds: Ident
 vocabulary_token_kinds: Comment, StringLit, Ident
-document_symbol_kinds: Rule, Token, Semantics
+# A spec's tokens, rules and blocks are structure, not documentable API.
+document_symbol_kinds:
 reference_token_kinds: Ident
 
 === semantics

@@ -278,6 +278,8 @@ on ParticipantLine: def id=pName_text kind=Participant
 on EdgeLine:       ref srcNode_text ref dstNode_text
 
 === features
+# Diagram elements are structure, not documentable API.
+document_symbol_kinds:
 content_type: diagram
 identifier_kinds: Ident
 coverage_token_kinds: Ident, Text, StringLit

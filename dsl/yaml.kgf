@@ -172,6 +172,8 @@ on Mapping: scope pop=key
 on HeadMapping: scope pop=key
 
 === features
+# Keys are data structure, not documentable API.
+document_symbol_kinds:
 content_type: config
 identifier_kinds: BareWord
 vocabulary_token_kinds: BareWord, StringLit, Comment
