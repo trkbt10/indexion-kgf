@@ -254,12 +254,16 @@ qualifier_separators: DOT
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependencies. `$path` carries the full dotted path.
+# Import dependencies. `ModulePath` is `A.B.C` — several tokens — so the full
+# dotted path lives in `$path_text`; `$path` alone would keep only the last
+# segment and turn `open Core.Std` into a dependency on `Std`.
 on OpenDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  let mod = trim($path_text)
+  edge moduleDependsOn from $file to $resolve(mod) attrs obj("via", mod, "dep_kind", "value")
 }
 on IncludeDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  let mod = trim($path_text)
+  edge moduleDependsOn from $file to $resolve(mod) attrs obj("via", mod, "dep_kind", "value")
 }
 
 # OCaml top-level declarations. Visibility is controlled by the companion
@@ -304,8 +308,13 @@ on TypeHeader {
   bind ns "value" name "current_type" to concat($file, "::", $id)
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))
 }
+# A `let` inside a `struct ... end` is a member of that module, so it attaches
+# to the id `ModuleHeader` published rather than hanging off the file. At the
+# top level no module frame is open and `outer` is empty, which is what keeps
+# a file-level `let` on the file.
 on LetDecl {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc_text))
+  let outer = $scope("value", "current_module")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc_text))
 }
 on ValDecl {
   edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Val", "doc", trim($doc_text))

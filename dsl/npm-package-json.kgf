@@ -1,7 +1,23 @@
 
 kgf 0.6
 language: npm-package-json
-sources: package.json
+
+# The npm view of a package.json: the fields that make the file a *package* —
+# `main`/`types`/`typings`/`exports` entry points, `workspaces` globs, and
+# dependencies split by `dep_kind` (runtime/dev/peer).
+#
+# `project/package-json.kgf` reads the same file for its *project* metadata
+# (description, license, repository, keywords) and is the single owner of the
+# `package.json` pattern. Neither spec's extraction is a superset of the
+# other's and they share no section verbatim, so there is nothing to inherit
+# with `extends:`; what they must not do is contest the pattern, because the
+# loser of that contest analyses nothing while still looking like it might.
+#
+# This spec therefore claims no `sources:` and declares `detection_scope:
+# overlay`, so it is never auto-selected and never shadows the owner. It stays
+# registered for two reasons: `--spec=npm-package-json` still reaches it, and
+# its `=== features` (`identity_edge`, `entry_edges`) are read across all
+# registered specs when docgen builds its cluster metadata.
 
 === lex
 SKIP        /\s+/
@@ -144,6 +160,7 @@ on ExportsField {
 # A package.json is a single package's manifest. Its `name` is the cluster
 # identity (e.g. `@indexion/api-client`), and `main`/`types`/`typings`/`exports`
 # declare the files that serve as the cluster's entry points.
+detection_scope: overlay
 manifest_role: package
 identity_edge: packageName
 entry_edges: mainEntry, typesEntry

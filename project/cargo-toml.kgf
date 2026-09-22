@@ -129,6 +129,11 @@ on TableMark: note fieldKey payload=header
 on Pair:  note fieldKey payload=key
 
 === semantics
+# `Value` is `Scalar / InlineTable / ArrayValue`, so it can span many tokens
+# and the bare `$value` keeps only the last one — for an inline table that is
+# the closing brace. Every read below is of a scalar in practice, where the
+# accumulated `$value_text` is the same single token, so reading `_text`
+# throughout is both correct for the scalar case and truthful about the rest.
 # TableMark fires before the Pair events of the lines it introduces, so the
 # current table header is available to every Pair through the scope map.
 # `$header` still carries its brackets (e.g. "[dev-dependencies]"), which is
@@ -150,25 +155,25 @@ on KeyPath {
 # `when` takes one expression and there is no infix `and`, so a two-part guard
 # is a nested cond(): cond(A, B, "") is true only when A and B both are.
 on Pair when cond(eq($scope("value", "table"), "[package]"), eq($key_text, "name"), "") {
-  edge projectName from $file to stripQuotes($value) attrs obj("raw", $value)
+  edge projectName from $file to stripQuotes($value_text) attrs obj("raw", $value_text)
 }
 on Pair when cond(eq($scope("value", "table"), "[package]"), eq($key_text, "version"), "") {
-  edge projectVersion from $file to stripQuotes($value) attrs obj("raw", $value)
+  edge projectVersion from $file to stripQuotes($value_text) attrs obj("raw", $value_text)
 }
 on Pair when cond(eq($scope("value", "table"), "[package]"), eq($key_text, "description"), "") {
-  edge projectDescription from $file to stripQuotes($value)
+  edge projectDescription from $file to stripQuotes($value_text)
 }
 on Pair when cond(eq($scope("value", "table"), "[package]"), eq($key_text, "license"), "") {
-  edge projectLicense from $file to stripQuotes($value)
+  edge projectLicense from $file to stripQuotes($value_text)
 }
 on Pair when cond(eq($scope("value", "table"), "[package]"), eq($key_text, "repository"), "") {
-  edge projectRepository from $file to stripQuotes($value)
+  edge projectRepository from $file to stripQuotes($value_text)
 }
 
 # `keywords = ["a", "b", "c"]` in [package]: one edge per array element,
 # recognised by the key that KeyPath published before the array was walked.
 on ArrayItem when cond(eq($scope("value", "table"), "[package]"), eq($scope("value", "key"), "keywords"), "") {
-  edge projectKeyword from $file to stripQuotes($value)
+  edge projectKeyword from $file to stripQuotes($value_text)
 }
 
 # Dependencies. Every table whose header ends in `dependencies]` is a

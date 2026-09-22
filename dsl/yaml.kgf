@@ -3,13 +3,27 @@ language: yaml
 sources: .yml, .yaml
 
 === lex
-SKIP /[ \t]+/
+# Indentation. A regex cannot compare one line's indentation with the
+# previous line's, so the lexer only distinguishes an indented line start
+# (NL_INDENT) from a blank or column-0 one (NL); the LAYOUT directive at the
+# end of this section turns that into exact depth. NL_INDENT must precede NL:
+# the first matching rule wins, and a bare NL would leave the indentation to
+# the whitespace SKIP, where the layout pass could never see it.
+TOKEN NL_INDENT /\r?\n[ \t]+/
 TOKEN NL /\r?\n/
+SKIP /[ \t]+/
 TOKEN Comment /#[^\r\n]*/
 # Document markers, which start a line of their own.
 TOKEN DocStart /^---/
 TOKEN DocEnd /^\.\.\./
 TOKEN Dash /-/
+# The colon that ends a mapping key, as YAML defines it: one followed by
+# whitespace or by the end of the line. Every other colon is an ordinary
+# character of a plain scalar — `image: node:20`, `- ./a.yaml:/etc/a.yaml`,
+# `url: https://host/p` — so it lexes as Colon and can never make the text
+# before it look like a key. Listed before Colon, which it is a longer,
+# more specific case of.
+TOKEN KeyColon /:(?=[ \t]|\r?\n|$)/
 TOKEN Colon /:/
 TOKEN StringLit /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
 TOKEN NumberLit /-?[0-9]+(\.[0-9]+)?/
@@ -21,66 +35,166 @@ TOKEN RBRACKET /\]/
 TOKEN LBRACE /\{/
 TOKEN RBRACE /\}/
 TOKEN Comma /,/
-# Block scalar headers (`|`, `>`, with the `-`/`+` chomping indicator and an
-# optional indentation digit) and the anchor / alias / tag / merge sigils.
-# Without these the lexer dropped the characters silently, so a workflow
-# step whose `run:` is a block scalar lexed as a different document than the
-# one on disk.
 TOKEN BlockScalar /[|>][-+]?[0-9]?(?=\s*(#[^\r\n]*)?\r?\n)/
 TOKEN Anchor /&[^\s,\[\]{}]+/
 TOKEN Alias /\*[^\s,\[\]{}]+/
 TOKEN Tag /!{1,2}[^\s,\[\]{}]*/
 TOKEN Question /\?/
-# A plain scalar word. Kept last so every sigil above wins at its own
-# position; it stops at whitespace and at the flow / structure punctuation.
 TOKEN BareWord /[^\s:,\[\]{}#&*!?|>'"-][^\s:,\[\]{}#]*|[^\s:,\[\]{}#]/
 
-=== grammar
-# Every token kind is reachable from Doc: a YAML file that uses a flow
-# sequence, a block scalar or an anchor must still be consumed to the end,
-# or every mapping below it is lost.
-Doc -> Item*
-Item -> DocStart / DocEnd / Mapping / ListItem / Comment / NL / Other
+# Layout. Both newline kinds carry a line's leading whitespace (NL carries
+# none, i.e. column 0), so both are listed. INDENT and DEDENT are synthetic:
+# no source text matches them, so they have no TOKEN rule; the layout pass is
+# what puts them in the stream. A comment may sit at any column in YAML, so a
+# comment-only line carries no layout. Inside a flow collection indentation
+# is not significant at all, so the flow brackets suppress the pass.
+LAYOUT newline=NL_INDENT,NL indent=INDENT dedent=DEDENT comment=Comment open=LBRACKET,LBRACE close=RBRACKET,RBRACE
 
-# `key: value`, where the value may be a scalar, a flow collection, a block
-# scalar header (the indented body that follows is read as further Items) or
-# nothing at all (the value is the indented block below).
-Mapping -> key:MapKey Colon value:YamlValue? Trailer? NL?
+=== grammar
+Doc -> TopNode*
+
+# At the top level a stray DEDENT — left by a file whose indentation the
+# layout pass could not pair up, or by a first line that is itself indented —
+# costs only itself. Inside a Block it must NOT be matchable, or the greedy
+# Node* would swallow the DEDENT that closes the block.
+TopNode -> Node / INDENT / DEDENT
+
+# A node at the current level. `Block` (INDENT ... DEDENT) appears here as
+# well as under a key, because a stray indented run — the body of a block
+# scalar, or a file whose first line is indented — must still be consumed.
+Node -> LineBreak / Comment / DocMarker / Entry / Mapping / Block / Other
+LineBreak -> NL_INDENT / NL
+DocMarker -> DocStart / DocEnd
+
+# `key: value`. The value may be on the same line (a scalar, a flow
+# collection or an alias), or it may be the indented block that follows, or
+# both may be absent (`key:` alone with nothing under it). Key fires before
+# the block is parsed, so it is where the key is pushed for the nested keys
+# below it; Mapping fires after everything inside, and pops it again.
+Mapping -> Key MapValue?
+
+# What follows a key. A block scalar consumes its own indented body and so
+# ends on a LATER line; nothing on the key's line can follow it, and in
+# particular no Trailer may be tried afterwards — a greedy `(!LineBreak
+# Other)+` there would reach past the body's closing DEDENT and eat the NEXT
+# key. Every other value stays on the key's line, so a trailing comment or
+# anchor and then the indented block below it are both still possible.
+MapValue -> BlockScalarValue / inline:InlineValue? Trailer? Block? / Block
+
+# The head `key: value` of a sequence entry. It is a Mapping in every respect
+# EXCEPT that it takes no Block of its own: the lines that follow it on the
+# entry belong to the ENTRY, not under this key, and the entry's own Block is
+# where they are consumed. A key whose value really is an indented block
+# (`- with:` followed by deeper lines) is still exact, because those lines
+# indent past the entry's continuation column and so arrive as a Block nested
+# inside the entry's Block, where the Mapping that Node* finds there takes it.
+HeadMapping -> Key ( BlockScalarValue / inline:InlineValue? Trailer? )?
+
+# A confirmed key: the name AND the colon that makes it one. The colon is part
+# of THIS rule, not of Mapping, because a PEG alternative that fails is
+# backtracked but the events its inner rules already emitted are not. A rule
+# that completed on the name alone would therefore declare `- alpha` — a
+# sequence item, not a key — and, worse, would push a scope that the mapping
+# it was rejected from never pops, so every sibling after it would be nested
+# one level too deep. Completing only once the colon is seen makes the event
+# fire exactly when a key really exists.
+Key -> name:MapKey KeyColon
 
 # A key may be quoted, and an unquoted key may contain spaces and dashes
 # (`runs-on`, `on push`), so it is a run of words up to the colon.
-MapKey -> StringLit / BareWord ( !Colon BareWord )*
+MapKey -> StringLit / BareWord ( !KeyColon BareWord )*
 
-# `- item`, `- key: value` (a mapping nested in a sequence entry) and a bare
-# `-` opening an indented block.
-ListItem -> Dash ( Mapping / value:YamlValue Trailer? )? NL?
+# `- item`, `- key: value`, and a bare `-` opening an indented block. In
+# YAML's compact notation the `- ` itself counts as indentation, so the pairs
+# that follow the first one on the entry's own lines arrive INSIDE an
+# INDENT/DEDENT pair even though they are the head mapping's SIBLINGS. Block
+# is therefore part of the entry, not nested under the head mapping's key.
+Entry -> Dash EntryHead? Block?
+EntryHead -> HeadMapping / InlineValue Trailer?
 
-YamlValue -> FlowSeq / FlowMap / BlockScalar / StringLit / NumberLit
-           / KW_true / KW_false / Alias / Anchor / Tag / ScalarRun
+# A block: everything the layout pass bracketed one level deeper.
+#
+# BlockOpen skips the line breaks and comment-only lines between the header
+# and the first body line. YAML lets a comment sit at any column, so the
+# layout pass gives those lines no layout of their own and the INDENT lands
+# AFTER them; without the skip a comment between `jobs:` and its first job
+# would hide the whole block, and every key under it would be read as a
+# sibling of `jobs` instead of a child.
+Block -> BlockOpen Node* DEDENT
+BlockOpen -> ( LineBreak / Comment )* INDENT
+
+InlineValue -> FlowSeq / FlowMap / StringLit / NumberLit
+             / KW_true / KW_false / Alias / Anchor / Tag / ScalarRun
+
+# `|` / `>` and the indented lines that follow. The body is text, not
+# structure: a shell script under `run: |` may contain colons, dashes and
+# braces that mean nothing to YAML. Its lines are always indented deeper than
+# the key, so the layout pass has already bracketed them — BlockBody consumes
+# that bracket whole, without letting any rule inside look for mappings.
+BlockScalarValue -> BlockScalar Comment? BlockBody?
+BlockBody -> BlockOpen BlockText* DEDENT
+BlockText -> INDENT BlockText* DEDENT / LineBreak / Other
 
 # An unquoted scalar runs to the end of the line; it may contain colons
 # (`image: node:20`), slashes and punctuation.
-ScalarRun -> ( !NL !Comment ScalarPart )+
-ScalarPart -> BareWord / NumberLit / Colon / Dash / Comma / Question
+ScalarRun -> ( !LineBreak !Comment ScalarPart )+
+ScalarPart -> BareWord / NumberLit / Colon / KeyColon / Dash / Comma / Question
             / StringLit / KW_true / KW_false
 
 # Anything after the value on the same line: a trailing comment, or the
 # anchor/tag that may follow a key.
-Trailer -> ( !NL Other )+
+Trailer -> ( !LineBreak Other )+
 
-FlowSeq -> LBRACKET ( !RBRACKET !NL FlowItem )* RBRACKET
-FlowMap -> LBRACE ( !RBRACE !NL FlowItem )* RBRACE
-FlowItem -> FlowSeq / FlowMap / Other
+# Flow collections suppress layout (the LAYOUT `open`/`close` kinds), so they
+# contain no INDENT/DEDENT and may span lines freely.
+FlowSeq -> LBRACKET ( !RBRACKET FlowItem )* RBRACKET
+FlowMap -> LBRACE ( !RBRACE FlowItem )* RBRACE
+FlowItem -> FlowSeq / FlowMap / LineBreak / Other
 
-# Any single token kind except NL, so the Item loop always makes progress.
-Other -> Comment / DocStart / DocEnd / Dash / Colon / StringLit / NumberLit
+# Any single token except a line break, so the Node loop always makes
+# progress. INDENT and DEDENT are deliberately NOT here: `Other` is reached
+# from inside a Block, and a greedy `Node*` that could match a DEDENT would
+# swallow the one closing its own block and then fail, collapsing the whole
+# nesting. A stray layout token is handled at the top level, by TopNode.
+Other -> Comment / DocStart / DocEnd / Dash / Colon / KeyColon / StringLit / NumberLit
        / KW_true / KW_false / LBRACKET / RBRACKET / LBRACE / RBRACE / Comma
        / BlockScalar / Anchor / Alias / Tag / Question / BareWord
+
+=== attrs
+# Key completes at the colon, before the block under it is parsed, so its
+# push is in place for every nested key; the enclosing Mapping completes after
+# all of them and pops it. Together they make the path exact at any depth.
+on Key: scope push=key
+on Mapping: scope pop=key
+# A sequence entry's head key is popped by the entry, once the entry's own
+# continuation lines — the head's siblings — have been evaluated under the
+# enclosing path rather than under the head key.
+on HeadMapping: scope pop=key
 
 === features
 content_type: config
 identifier_kinds: BareWord
 vocabulary_token_kinds: BareWord, StringLit, Comment
+# NL is insignificant by default; YAML additionally emits NL_INDENT for
+# indented line starts, which grep should skip the same way.
+insignificant_token_kinds: NL_INDENT
+
+=== semantics
+# A key's dotted path. `scope push=key` has already run, so the scope on top
+# is empty and `$scope` still sees the ENCLOSING key through the stack below
+# it — that is this key's parent, and the prefix of its path. Binding `path`
+# writes into the new top scope, so the keys nested under this one resolve to
+# it, and the matching `scope pop=key` on Mapping restores the enclosing key
+# for the siblings that follow.
+on Key {
+  let name = trim(stripQuotes($name_text))
+  let parent = $scope("value", "path")
+  let path = cond(parent, concat(parent, ".", name), name)
+  bind ns "value" name "path" to path
+  bind ns "value" name "name" to name
+  bind ns "value" name "parent" to cond(parent, parent, "")
+  edge declares from $file to concat($file, "::", path) attrs obj("name", name, "kind", "Key", "path", path, "parent", cond(parent, parent, ""))
+}
 
 === resolver
 relative_prefixes:

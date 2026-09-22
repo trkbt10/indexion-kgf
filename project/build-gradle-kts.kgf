@@ -134,11 +134,16 @@ on Assignment: note fieldKey payload=target
 === semantics
 # `group = "..."` / `version = "..."` at any level. A build script sets these
 # on the project object, so the assignment target name is what identifies them.
+#
+# `value` is bound to `Expr`, which is `Term ( op Term )*` and so can span
+# many tokens; the bare `$value_text` would keep only the last one and turn
+# `version = "1.0" + suffix` into `suffix`. `$value_text` is the expression as
+# written, and for the ordinary single-literal case it is that same literal.
 on Assignment when eq($target_text, "group") {
-  edge projectGroup from $file to stripQuotes($value) attrs obj("raw", $value)
+  edge projectGroup from $file to stripQuotes($value_text) attrs obj("raw", $value_text)
 }
 on Assignment when eq($target_text, "version") {
-  edge projectVersion from $file to stripQuotes($value) attrs obj("raw", $value)
+  edge projectVersion from $file to stripQuotes($value_text) attrs obj("raw", $value_text)
 }
 
 # Dependency declarations. Every Gradle configuration is a method taking the

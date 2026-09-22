@@ -120,13 +120,13 @@ RequireDecl -> ( KW_require / KW_require_relative ) path:String
 ClassDecl -> ClassHeader ClassBody
 ClassHeader -> doc:DocBlock? NL? KW_class id:ConstIdent ( Operator ConstIdent )?
 ClassBody -> ( ClassMember )* KW_end
-ClassMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment
+ClassMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment / Expr / Statement
 
 # Module declaration — same header/body split, for the same reason.
 ModuleDecl -> ModuleHeader ModuleBody
 ModuleHeader -> doc:DocBlock? NL? KW_module id:ConstIdent
 ModuleBody -> ( ModuleMember )* KW_end
-ModuleMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment
+ModuleMember -> MethodDecl / AttrDecl / IncludeDecl / ClassDecl / ModuleDecl / VisibilityMod / NL / Comment / Expr / Statement
 
 # Method declaration
 MethodDecl -> doc:DocBlock? NL? KW_def ( KW_self DOT )? method_id:Ident Params? MethodBody

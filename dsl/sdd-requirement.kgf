@@ -1,98 +1,17 @@
-
 kgf 0.6
 language: sdd-requirement
 sources: .md, .markdown, .mdx
+extends: markdown
 
-=== lex
-SKIP        /(\s+)+/
-TOKEN HEADING     /^(?:#{1,6})(?=\s)/
-TOKEN CODE_FENCE  /^```([A-Za-z0-9_-]*)/
-TOKEN INLINE_CODE /`([^`\n]+)`/
-# An HTML tag name, opening or closing. The lookahead keeps a bare `<`
-# followed by prose (`a < b`) out of this token. It is written as two
-# alternatives rather than one lookahead over an alternation
-# (`(?=\s|\/?>)`), because an alternation *inside* a lookahead never
-# matches in this lexer: with that form TAG_OPEN could never fire and every
-# `<p ...>` degraded to LT + TEXT, which made raw HTML look like an autolink.
-TOKEN TAG_OPEN    /<\/?[A-Za-z][A-Za-z0-9-]*(?=\s)|<\/?[A-Za-z][A-Za-z0-9-]*(?=\/?>)/
-TOKEN TAG_CLOSE   /\/?>/
-TOKEN ATTR_NAME   /\b[A-Za-z_:][A-Za-z0-9_:-]*(?=\s*=)/
-TOKEN EQ          /=/
-TOKEN ATTR_VALUE  /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
-TOKEN LBRACK     /\[/
-TOKEN RBRACK     /\]/
-TOKEN LPAREN     /\(/
-TOKEN RPAREN     /\)/
-TOKEN BANG       /!/
-TOKEN PIPE       /\|/
-TOKEN LT         /</
-TOKEN GT         />/
-TOKEN HASH       /#/
-TOKEN TEXT       /[^()\[\]<>|\s]+/
-TOKEN QTEXT      /"([^"\\]|\\.)*"/
-
-=== grammar
-# The start rule must consume every token of a real Markdown document: the
-# link forms this spec extracts are islands in a sea of prose, headings,
-# code fences and raw HTML. Every alternative ends in `Other`, which accepts
-# any single token kind declared in `=== lex`, so the loop never stops early
-# and the link rules keep firing all the way to the end of the file.
-# Structural (multi-token) rules come first so `Other` only ever sees what
-# none of them could match.
-Doc        -> ( CodeBlock / InlineImage / InlineLink / WikiLink / AngleLink / HtmlTag / Other )*
-
-# A fenced code block, consumed whole: nothing inside it is Markdown, so the
-# link rules must not see its tokens. Shell usage lines such as
-# `todo add <title...>` would otherwise be extracted as dependencies.
-# The closing fence is optional so an unterminated block still parses.
-CodeBlock  -> CODE_FENCE CodeToken* CODE_FENCE?
-CodeToken  -> !CODE_FENCE Other
-
-# Any token kind of `=== lex`, one at a time. Listed longest-lived first for
-# readability only; each alternative is a single token, so order is free.
-Other      -> TEXT / HEADING / CODE_FENCE / INLINE_CODE / TAG_OPEN / TAG_CLOSE
-            / ATTR_NAME / ATTR_VALUE / EQ / QTEXT
-            / LBRACK / RBRACK / LPAREN / RPAREN / BANG / PIPE / LT / GT / HASH
-
-# `[label](target)` and `![alt](target)`. The path is bound on the link rule
-# itself (not only on the nested Target rules), because labels do not
-# propagate from a child rule to its parent: without these captures the
-# semantics below would resolve an unbound path.
-InlineLink -> LBRACK label:TextLike RBRACK LPAREN path:LinkPath frag:Fragment? Title? RPAREN
-InlineImage-> BANG LBRACK alt:TextLike RBRACK LPAREN path:LinkPath frag:Fragment? Title? RPAREN
-
-# `<https://example.com>`. The closing `>` lexes as TAG_CLOSE, never as GT:
-# TAG_CLOSE (`/\/?>/`) is defined before GT and the lexer takes the first
-# match in definition order. Accept both so the rule can actually fire.
-AngleLink  -> LT path:TEXT AngleEnd
-
-# `[[page#anchor|alias]]`. A bare `#` only lexes as HASH when it starts a
-# token; inside `page#anchor` the whole run is one TEXT, so the fragment is
-# part of `wpath` there. Both shapes are accepted.
-WikiLink   -> LBRACK LBRACK wpath:TEXT ( HASH frag:TEXT )? ( PIPE alias:TextLike )? RBRACK RBRACK
-
-# Raw HTML embedded in Markdown: `<img src="...">`. Consumed as a unit so the
-# attribute tokens are not mistaken for link syntax.
-HtmlTag    -> TAG_OPEN HtmlAttr* AngleEnd
-HtmlAttr   -> ATTR_NAME EQ ATTR_VALUE / ATTR_NAME / TEXT
-
-# A link target: either `<path>` (angle-wrapped, for paths containing spaces
-# or parentheses) or a bare path.
-LinkPath   -> LT TEXT AngleEnd / TEXT
-Fragment   -> HASH TEXT
-# The optional link title: `[x](p "Title")`. QTEXT is the quoted form the
-# lexer produces at a token start; ATTR_VALUE covers the same text when the
-# preceding token made it look like an attribute value.
-Title      -> QTEXT / ATTR_VALUE
-AngleEnd   -> GT / TAG_CLOSE
-
-TextLike   -> ( TEXT / INLINE_CODE )*
-
-=== attrs
-on InlineLink:  import module=path
-on InlineImage: import module=path
-on AngleLink:   import module=path
-on WikiLink:    import module=wpath
+# An SDD requirement document is Markdown: its lex, grammar, attrs and
+# resolver are Markdown's, inherited through `extends:`. Only the two
+# sections that genuinely differ are declared here.
+#
+# `=== semantics` is an override, not an addition — a derived section
+# replaces the base's whole. Markdown's `on DocumentSection` block is
+# therefore repeated verbatim below, ahead of this spec's own blocks, so
+# the generic document notes (headings, section refs, literals, tables)
+# keep firing for requirement documents too.
 
 === features
 content_type: document
@@ -169,10 +88,3 @@ on AngleLink {
 on WikiLink {
   edge moduleDependsOn from $file to $resolve($wpath) attrs obj("via", $wpath, "dep_kind", "value")
 }
-
-=== resolver
-relative_prefixes: ./, ../, /, http://, https://, mailto:, ftp://, data:
-exts: .md, .markdown, .mdx, .html, .png, .jpg, .jpeg, .gif, .svg, .pdf
-indexes: /README.md, /index.md
-bare_prefix: url:
-module_path_style: slash

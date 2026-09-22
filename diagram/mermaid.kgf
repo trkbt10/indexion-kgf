@@ -273,9 +273,9 @@ on MindmapDecl:    def id=diagramType kind=Diagram
 on GitGraphDecl:   def id=diagramType kind=Diagram
 on JourneyDecl:    def id=diagramType kind=Diagram
 on TimelineDecl:   def id=diagramType kind=Diagram
-on SubgraphLine:   def id=sgName kind=Subgraph
-on ParticipantLine: def id=pName kind=Participant
-on EdgeLine:       ref srcNode ref dstNode
+on SubgraphLine:   def id=sgName_text kind=Subgraph
+on ParticipantLine: def id=pName_text kind=Participant
+on EdgeLine:       ref srcNode_text ref dstNode_text
 
 === features
 content_type: diagram
@@ -308,7 +308,7 @@ on EdgeLine {
 }
 
 on ClickLine when $clickDest {
-  let target = $clickTarget
+  let target = $clickTarget_text
   let dest = $clickDest
   edge moduleDependsOn from $file to $resolve(dest) attrs obj("via", dest, "dep_kind", "click")
 }

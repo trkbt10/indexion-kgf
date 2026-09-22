@@ -38,6 +38,7 @@ TOKEN SectionMark /[=]{3,}/
 KEYWORD KW_kgf /kgf(?![a-zA-Z0-9_])/
 KEYWORD KW_language /language(?=[ \t]*:)/
 KEYWORD KW_sources /sources(?=[ \t]*:)/
+KEYWORD KW_extends /extends(?=[ \t]*:)/
 
 # Lex-section rule introducers.
 KEYWORD KW_TOKEN /TOKEN(?![a-zA-Z0-9_])/
@@ -133,7 +134,7 @@ Spec -> NL* Header Section*
 # has no sources line) or present with an empty value.
 Header -> KW_kgf version:Number NL HeaderLine*
 
-HeaderLine -> LanguageLine / SourcesLine / CommentLine / BlankLine
+HeaderLine -> LanguageLine / SourcesLine / ExtendsLine / CommentLine / BlankLine
 
 # The language name is free-form text, not an identifier: `go-mod`,
 # `typescript-jsx`, `moon-mod-toml` and `sdd-requirement` all contain dashes,
@@ -147,6 +148,10 @@ LanguageLine -> KW_language Colon lang:LangAtom+ NL
 LangAtom -> Ident / Number / Dash / Dot / Slash / AnyKeyword
 
 SourcesLine -> KW_sources Colon SourceList? NL
+
+# `extends: <base-language>` names the spec whose sections this one inherits;
+# the name has the same free-form shape as `language:`.
+ExtendsLine -> KW_extends Colon base:LangAtom+ NL
 
 SourceList -> SourceItem ( Comma SourceItem )*
 
@@ -272,7 +277,7 @@ LineAtom -> Ident / Number / StringLit / Regex / Variable
 # `file`. Each such context therefore admits the whole keyword set, and
 # listing it once here keeps the three consumers (SectionName, LangAtom,
 # LineAtom) from drifting apart as keywords are added.
-AnyKeyword -> KW_kgf / KW_language / KW_sources
+AnyKeyword -> KW_kgf / KW_language / KW_sources / KW_extends
             / KW_TOKEN / KW_KEYWORD / KW_SKIP / KW_skip_value
             / KW_on / KW_when / KW_else / KW_edge / KW_bind / KW_note
             / KW_let / KW_for / KW_in / KW_module

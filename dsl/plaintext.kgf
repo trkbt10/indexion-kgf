@@ -4,12 +4,22 @@ sources: .txt, .text, .rst, .adoc
 
 === lex
 SKIP /[ \t]+/
-TOKEN NL /\r?\n+/
+# A run of line breaks is one NL token, so a blank line does not become two.
+# The `+` has to repeat the whole `\r\n` pair, not just the `\n`: with
+# `/\r?\n+/` a CRLF blank line (`\r\n\r\n`) matched only the first pair and
+# stopped at the second `\r`, handing the grammar two NL tokens in a row and
+# ending the parse at the first paragraph of every CRLF file.
+TOKEN NL /(\r?\n)+/
 TOKEN Text /[^\r\n]+/
 
 === grammar
+# A document is a run of blocks, and a block is a line of text with the line
+# break that ends it. The trailing NL is optional so the last line of a file
+# that does not end in a newline still parses; the bare `NL` alternative
+# accepts a leading or repeated break that no text precedes, so a file that
+# opens with a blank line is read to its end rather than stopping at line 1.
 Doc -> Block*
-Block -> Text NL?
+Block -> Text NL? / NL
 
 === attrs
 

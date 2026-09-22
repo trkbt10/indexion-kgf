@@ -183,15 +183,27 @@ qualifier_separators: DOT
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Zig public declarations (vis:KW_pub? in grammar)
+# Zig public declarations (vis:KW_pub? in grammar).
+#
+# In Zig a container body holds methods and constants as well as fields --
+# `pub fn complete(self: *Task) void` inside `const Task = struct { ... }` is a
+# method of `Task`, not a file-level function. `StructHeader` / `EnumHeader` /
+# `UnionHeader` already publish `current_container` for exactly this, and the
+# fields read it; these three did not, so every method and container constant
+# was declared a second time at file level under a bare name. `outer` is empty
+# at the top level, which is what keeps a genuinely file-level declaration on
+# the file.
 on FnDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc_text)
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Function", "doc", $doc_text)
 }
 on ConstDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc_text)
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Const", "doc", $doc_text)
 }
 on VarDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc_text)
+  let outer = $scope("value", "current_container")
+  edge declares from cond(outer, outer, $file) to concat(cond(outer, outer, $file), cond(outer, ".", "::"), $id) attrs obj("name", $id, "kind", "Variable", "doc", $doc_text)
 }
 
 # ---------------------------------------------------------------------------

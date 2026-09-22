@@ -2,6 +2,14 @@
 kgf 0.6
 language: reltext
 
+=== features
+# A toy spec: a format-specific experiment, selected explicitly
+# (`--spec=reltext`) rather than by extension. It never claimed one — its
+# `.rel` fixtures are passed by name — and `detection_scope: overlay` says so
+# in the same terms as its siblings, which had to give theirs up because
+# several of them claimed the same `.b64`, `.hex` and `.txt`.
+detection_scope: overlay
+
 === lex
 SKIP        /(\s+)+/
 TOKEN ARROW     /->/
@@ -22,7 +30,6 @@ on Line {
 }
 
 === resolver
-sources:
 relative_prefixes: ./, ../, /, http://, https://, url:, npm:, pip:
 exts:
 indexes:

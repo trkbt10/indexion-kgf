@@ -152,8 +152,8 @@ Atom -> BlockAtom / KW_function / KW_end / KW_do / KW_then / KW_repeat / KW_unti
 Other -> Atom
 
 === attrs
-on FunctionDecl:      def id kind=Function doc=doc
-on AssignmentDecl:    def id kind=Variable doc=doc
+on FunctionDecl:      def id=id_text kind=Function doc=doc
+on AssignmentDecl:    def id=id_text kind=Variable doc=doc
 on Param:             def param_id kind=Param
 
 === features

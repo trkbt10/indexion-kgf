@@ -342,41 +342,20 @@ vocabulary_token_kinds: DocComment, String
 # file's directory. A Kotlin import names a package path from the root of the
 # source tree (`com.example.service.GreetingService` ->
 # `com/example/service/GreetingService.kt`), so resolving it relative to the
-# importer — which is what a plain `$resolve` does — can never find a sibling
-# package: every intra-project import fell back to the `maven:` prefix and the
-# graph had no edge between two files of the same project.
+# importer can never find a sibling package: every intra-project import fell
+# back to the `maven:` prefix and the graph had no edge between two files of
+# the same project.
 #
-# The root is found by walking up for the build manifest, and the source root
-# is that directory plus the conventional Gradle layout. A Gradle module may
-# keep Kotlin sources under either `src/main/kotlin` or `src/main/java`, so
-# both are probed, Kotlin first; `$resolveFrom` then runs the spec's own chain
-# (`module_path_style: dot` turns the dots into slashes, `ext: .kt, .kts` adds
-# the extension) against that base. When nothing matches — `mu.KotlinLogging`,
-# `org.springframework.…` — the chain's `fallback: maven:` still applies, so
-# external imports keep their prefixed form.
-#
-# Note the source root is spelled out inline rather than bound with `let`: the
-# semantics engine resolves the built-in variables `root`, `file` and
-# `language` BEFORE locals, so a local named `root` is silently shadowed by
-# `$root` (empty in the docgen pipeline) and the whole probe misses.
-#
-# Nothing here names a language or a fixture path: the manifests and the
-# layout come from this spec, and the dot-to-slash conversion and the
-# extensions from the `=== resolver` section below.
+# That anchoring now lives in the `=== resolver` section, as a `source_roots`
+# step naming both layouts a Gradle module may use and the manifests that mark
+# the module's root — which is where a fact about this ecosystem's project
+# layout belongs, and which also expresses the Kotlin-then-Java probe order
+# directly rather than through a miss test on the fallback prefix. So this rule
+# is a plain `$resolve` again: the chain does the anchoring, and when nothing
+# matches — `mu.KotlinLogging`, `org.springframework.…` — the same chain's
+# `fallback: maven:` keeps external imports in their prefixed form.
 on ImportDecl {
-  # The project root is the directory holding the Gradle manifest. Each is
-  # tried in turn; `$findAncestor` returns "" when a marker is absent, and the
-  # final "." keeps the base project-relative — `concat("", "/src/main/kotlin")`
-  # would start with a slash, which the resolver reads as a filesystem-ABSOLUTE
-  # path, sending the probe outside the project.
-  let proj = cond($findAncestor("build.gradle.kts"), $findAncestor("build.gradle.kts"), cond($findAncestor("build.gradle"), $findAncestor("build.gradle"), cond($findAncestor("settings.gradle.kts"), $findAncestor("settings.gradle.kts"), ".")))
-  # A Gradle module may keep Kotlin sources under either `src/main/kotlin` or
-  # `src/main/java`, so both are probed, Kotlin first. A miss is recognised by
-  # the chain's own `fallback: maven:` prefix, which is exactly what the second
-  # probe — and, if it misses too, the final edge — falls back to.
-  let kt = $resolveFrom(concat(proj, "/src/main/kotlin"), $path_text)
-  let jv = $resolveFrom(concat(proj, "/src/main/java"), $path_text)
-  edge moduleDependsOn from $file to cond(startsWith(kt, "maven:"), jv, kt) attrs obj("via", $path_text, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
 # Kotlin's default visibility is public, so a declaration is published unless
@@ -498,6 +477,13 @@ resolve:
   - manifest: build.gradle @ dependencies
   - manifest: build.gradle.kts @ dependencies
   - marker: build.gradle, build.gradle.kts, settings.gradle, settings.gradle.kts
+  # An import names a package path from the root of the SOURCE TREE, not from
+  # the importing file, so resolution is anchored there. A Gradle module may
+  # keep Kotlin sources under either `src/main/kotlin` or `src/main/java`, so
+  # both are roots and they are tried in that order. The markers are how the
+  # module's own directory is found — in a multi-module build that is the
+  # module's manifest, not the repository's.
+  - source_roots: src/main/kotlin, src/main/java @ build.gradle.kts, build.gradle, settings.gradle.kts, settings.gradle
   - index: /src/main/kotlin, /src/main/java
   - ext: .kt, .kts
   - fallback: maven:

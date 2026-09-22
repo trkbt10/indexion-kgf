@@ -23,7 +23,7 @@ TOKEN LBRACK     /\[/
 TOKEN RBRACK     /\]/
 TOKEN LPAREN     /\(/
 TOKEN RPAREN     /\)/
-TOKEN BANG       /!/ 
+TOKEN BANG       /!/
 TOKEN PIPE       /\|/
 TOKEN LT         /</
 TOKEN GT         />/
@@ -54,12 +54,20 @@ Other      -> TEXT / HEADING / CODE_FENCE / INLINE_CODE / TAG_OPEN / TAG_CLOSE
             / ATTR_NAME / ATTR_VALUE / EQ / QTEXT
             / LBRACK / RBRACK / LPAREN / RPAREN / BANG / PIPE / LT / GT / HASH
 
-# `[label](target)` and `![alt](target)`. The path is bound on the link rule
-# itself (not only on the nested Target rules), because labels do not
-# propagate from a child rule to its parent: without these captures the
-# semantics below would resolve an unbound path.
-InlineLink -> LBRACK label:TextLike RBRACK LPAREN path:LinkPath frag:Fragment? Title? RPAREN
-InlineImage-> BANG LBRACK alt:TextLike RBRACK LPAREN path:LinkPath frag:Fragment? Title? RPAREN
+# `[label](target)` and `![alt](target)`. The target is bound here, on the
+# link rule itself, because labels do not propagate from a child rule to its
+# parent: without these captures the semantics below would resolve an unbound
+# path.
+#
+# `path` binds a single TEXT rather than a `LinkPath` rule covering both the
+# bare `p` and angle-wrapped `<p>` forms. A label bound to a *multi-token*
+# rule yields only that rule's last token, so `path:LinkPath` resolved
+# `[x](<p>)` to the closing `>` and emitted a `url:>` edge for it. The
+# optional `LT`/`AngleEnd` around `path` accept the angle-wrapped form
+# without putting a rule between the label and its token, which both fixes
+# that edge and clears the multi-token-label warning `kgf check` reported.
+InlineLink -> LBRACK label:TextLike RBRACK LPAREN LT? path:TEXT AngleEnd? frag:Fragment? Title? RPAREN
+InlineImage-> BANG LBRACK alt:TextLike RBRACK LPAREN LT? path:TEXT AngleEnd? frag:Fragment? Title? RPAREN
 
 # `<https://example.com>`. The closing `>` lexes as TAG_CLOSE, never as GT:
 # TAG_CLOSE (`/\/?>/`) is defined before GT and the lexer takes the first
@@ -76,9 +84,6 @@ WikiLink   -> LBRACK LBRACK wpath:TEXT ( HASH frag:TEXT )? ( PIPE alias:TextLike
 HtmlTag    -> TAG_OPEN HtmlAttr* AngleEnd
 HtmlAttr   -> ATTR_NAME EQ ATTR_VALUE / ATTR_NAME / TEXT
 
-# A link target: either `<path>` (angle-wrapped, for paths containing spaces
-# or parentheses) or a bare path.
-LinkPath   -> LT TEXT AngleEnd / TEXT
 Fragment   -> HASH TEXT
 # The optional link title: `[x](p "Title")`. QTEXT is the quoted form the
 # lexer produces at a token start; ATTR_VALUE covers the same text when the

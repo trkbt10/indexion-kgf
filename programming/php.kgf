@@ -136,7 +136,7 @@ TraitAdaptation -> Ident ( KW_as / Ident ) Modifier* Ident? SEMI
 EnumDecl -> EnumHeader EnumBody
 EnumHeader -> doc:DocComment? NL? KW_enum id:TypeIdent ( COLON Type )? ImplementsClause? NL?
 EnumBody -> LBRACE EnumMember* RBRACE
-EnumMember -> case_doc:DocComment? KW_case case_id:Ident ( Operator Expr )? SEMI / MethodDecl / NL / LineComment / BlockComment
+EnumMember -> case_doc:DocComment? NL? KW_case case_id:( Ident / TypeIdent ) ( Operator Expr )? SEMI / MethodDecl / NL / LineComment / BlockComment
 
 # Function declaration
 FunctionDecl -> doc:DocComment? NL? Modifier* KW_function id:Ident LPAREN ParamList? RPAREN ( COLON Type )? NL? ( Body / SEMI )
@@ -199,7 +199,12 @@ on MethodDecl:    def method_id kind=Method doc=doc
 on ConstDecl:     def const_id kind=Const doc=doc
 on EnumMember:    def case_id kind=EnumCase doc=case_doc
 
-on UseDecl:       import module=path
+# Note there is deliberately no `on UseDecl: import module=path` line here.
+# An attrs `import` directive emits its own moduleDependsOn edge, so having
+# both produced two edges per import — and the attrs one can only see `$path`,
+# the LAST token of the name, so it reported `UserDto` where the semantics
+# rule below reports the resolvable `App\Dto\UserDto`. The semantics rule is
+# the one that carries the namespace, so it is the one that is kept.
 
 === features
 function_kinds: Function
@@ -209,9 +214,17 @@ qualifier_separators: OBJOP, DCOLON
 vocabulary_token_kinds: DocComment, String
 
 === semantics
-# Import dependency
+# Import dependency.
+#
+# `$path` holds only the LAST token of the qualified name, so a
+# `use App\Dto\UserDto;` bound `UserDto` and the resolver was handed a bare
+# class name with the namespace — the only thing that says WHERE the class
+# lives — already thrown away. `$path_text` is the whole accumulated
+# `App\Dto\UserDto`, which is what has to be resolved and what the edge should
+# record as its `via`.
 on UseDecl {
-  edge moduleDependsOn from $file to $resolve($path) attrs obj("via", $path, "dep_kind", "value")
+  let mod = trim($path_text)
+  edge moduleDependsOn from $file to $resolve(mod) attrs obj("via", mod, "dep_kind", "value")
 }
 
 # ---------------------------------------------------------------------------
@@ -273,18 +286,36 @@ on MethodDecl when $scope("value", "current_class") {
 }
 
 # Enum case
-on EnumMember when $scope("value", "current_enum") {
+# `EnumMember` also matches its `NL` / comment alternatives, which bind no
+# `case_id`. Guarding on the enum frame alone fired on those too and emitted a
+# nameless `Enum::` case, so the guard tests the case name as well and only
+# then looks the frame up.
+on EnumMember when cond($case_id, $scope("value", "current_enum"), "") {
   let parent = $scope("value", "current_enum")
   let sym_id = concat(parent, "::", $case_id)
-  edge declares from parent to sym_id attrs obj("name", $case_id, "kind", "EnumCase", "doc", $case_doc)
+  edge declares from parent to sym_id attrs obj("name", $case_id, "kind", "EnumCase", "doc", trim($case_doc_text))
 }
 
 === resolver
 relative_prefixes: ./, ../
-module_path_style: slash
+# A PHP name is separated by backslashes, so `App\Dto\UserDto` becomes
+# `App/Dto/UserDto` on the way to a path.
+module_path_style: backslash
+# What a namespaced name that NO file backs is called: the first two segments
+# of `Vendor\Package\Class` name the Composer package it came from. This is a
+# fallback, reached only after every probe below has missed — an unresolved
+# name is an external package, but a name is not external merely for having a
+# namespace.
 ns_prefix: vendor/
 ns_segments: 2
 resolve:
+  # Composer projects do not lay their namespaces over the tree one-to-one:
+  # they DECLARE the mapping in composer.json's `autoload.psr-4`, and this is
+  # where `App\` becomes `src/`. The map is read from the nearest composer.json
+  # above the importing file, so each package of a monorepo follows its own.
+  # PSR-0 is the older spelling of the same idea and is tried after it.
+  - namespace_map: composer.json @ autoload.psr-4
+  - namespace_map: composer.json @ autoload.psr-0
   - manifest: composer.json @ require
   - marker: composer.json, composer.lock
   - ext: .php

@@ -455,6 +455,18 @@ aliases:
     replace: src/\1
 resolve:
   - exact:
+  # A TypeScript project declares its own path aliases in tsconfig.json rather
+  # than hard-coding them into every import: `"@app/*": ["src/*"]` says that
+  # `@app/models/user` is `src/models/user`. The map is read from the nearest
+  # tsconfig above the importing file — a monorepo package has its own — and
+  # its values are stated relative to `baseUrl`, so that field is named too.
+  # jsconfig.json is the same file under the name a JS-only project uses.
+  #
+  # This supersedes nothing: the static `aliases:` above still applies to
+  # projects that follow the `@/` convention without declaring it, and a
+  # module that matches no alias falls straight through to the steps below.
+  - namespace_map: tsconfig.json @ compilerOptions.paths + compilerOptions.baseUrl
+  - namespace_map: jsconfig.json @ compilerOptions.paths + compilerOptions.baseUrl
   - manifest: package.json @ exports["."].types | exports["."].import | exports["."] | main | module ? type
   - index: /index.ts, /index.tsx, /index.d.ts, /index.js
   - ext: .ts, .tsx, .d.ts, .js

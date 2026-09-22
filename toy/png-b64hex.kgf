@@ -1,6 +1,21 @@
 kgf 0.6
 language: png-b64hex
-sources: .b64, .txt
+
+=== features
+# Toy specs are format-specific experiments (a PNG hex dump, a base64 JPEG,
+# a law text), not general readers for an extension. Every one of them shared
+# its extension with a sibling — `.b64` with five others, `.hex` with one,
+# `.txt` with seven — so auto-detection picked a winner by registration order
+# and decoded every matching file with it: `logo.png.hex` was read by the
+# JPEG spec and yielded nothing at all.
+#
+# No toy spec is the sole owner of an extension, so none of them claims one:
+# `sources:` is absent and `detection_scope: overlay` marks the spec as
+# selected explicitly (`--spec=<name>`). Dropping the claim is what makes the
+# choice deterministic — an overlay that is the only claimant of a pattern
+# would still be assigned it, and the winner would still depend on load
+# order.
+detection_scope: overlay
 
 === preprocess
 base64ToHex

@@ -221,8 +221,8 @@ Atom2 -> BlockAtom / KW_end / KW_do / KW_fn / LPAREN / RPAREN / LBRACE / RBRACE 
 Other -> Atom2
 
 === attrs
-on ModuleHeader:      def id kind=Module doc=doc
-on ProtocolHeader:    def id kind=Protocol doc=doc
+on ModuleHeader:      def id=id_text kind=Module doc=doc
+on ProtocolHeader:    def id=id_text kind=Protocol doc=doc
 on DefDecl:           def def_id kind=Function doc=doc
 on DefMacroDecl:      def macro_id kind=Macro doc=doc
 on DefGuardDecl:      def guard_id kind=Guard doc=doc

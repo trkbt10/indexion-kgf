@@ -1,9 +1,21 @@
 kgf 0.6
 language: universal
-sources: .txt, .text
 
 # Universal spec for mixed-language text (natural text, code snippets, etc.)
-# Combines mikan.js-style Japanese segmentation with common programming constructs
+# Combines mikan.js-style Japanese segmentation with common programming constructs.
+#
+# This spec is a *tokenizer*, not a document reader: it segments a mixed text
+# into kanji/kana/latin/number/url runs, but declares no `=== attrs` and no
+# `=== semantics`, and says nothing about what a file it reads *is* — no
+# `content_type`, no `coverage_token_kinds`, no `vocabulary_token_kinds`. So
+# nothing downstream can use the tokens it produces.
+#
+# It used to claim `.txt` and `.text`, and — being the last general spec to
+# register — won them from `plaintext`, which does declare all three. Plain
+# text files were then read by a spec that told the pipeline nothing about
+# them. `plaintext` is now the single owner of both patterns, and this spec
+# declares `detection_scope: overlay` so its segmentation stays available
+# under `--spec=universal` without contesting anything.
 
 === lex
 SKIP /[ \t]+/
@@ -57,6 +69,9 @@ Item -> Comment / String / Keyword / Operator / CodePunct
       / Identifier / FullWidthAlnum / Url / Email / Other / NL
 
 === attrs
+
+=== features
+detection_scope: overlay
 
 === semantics
 

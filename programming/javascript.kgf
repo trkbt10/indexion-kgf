@@ -293,6 +293,13 @@ install_cmd: npm install {name}
 build_cmd: npm run build
 resolve:
   - exact:
+  # Path aliases a JS project declares for its tooling: jsconfig.json is the
+  # name a JS-only project uses, tsconfig.json the one a project that also
+  # carries types uses, and both spell the map the same way. The map is read
+  # from the nearest one above the importing file, and its values are stated
+  # relative to `baseUrl`. A module matching no alias falls through untouched.
+  - namespace_map: jsconfig.json @ compilerOptions.paths + compilerOptions.baseUrl
+  - namespace_map: tsconfig.json @ compilerOptions.paths + compilerOptions.baseUrl
   - manifest: package.json @ exports["."] | main | module
   - index: /index.js, /index.mjs
   - ext: .js, .mjs, .cjs

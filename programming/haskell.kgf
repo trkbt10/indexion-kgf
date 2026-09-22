@@ -218,7 +218,10 @@ WhereLine -> ExprAtom / KW_let / KW_in / KW_do / KW_case / KW_of / KW_if / KW_th
 Pattern -> VarIdent / ConIdent / QualConIdent / Number / String / Char / LBRACE ( NL / Atom )* RBRACE / LPAREN Pattern* RPAREN / LBRACKET Pattern* RBRACKET / Operator / COMMA / BACKTICK / AT
 
 # Types
-Type -> TypeAtom ( ( ARROW / DARROW / Operator / COMMA ) TypeAtom )*
+Type -> TypeApp ( ( ARROW / DARROW / Operator / COMMA ) TypeApp )*
+# A type application is a head atom followed by its arguments, written by
+# juxtaposition with nothing in between.
+TypeApp -> TypeAtom TypeAtom*
 TypeAtom -> QualConIdent / QualVarIdent / ConIdent / VarIdent / Number / LPAREN Type? RPAREN / LBRACKET Type? RBRACKET / LBRACE ( NL / Atom )* RBRACE
 
 # Expressions
@@ -244,7 +247,7 @@ on ClassHeader:   def id kind=Class doc=doc
 on FunctionDecl:  def func_id kind=Function doc=doc
 on DataCons:      def cons_id kind=Constructor doc=cons_doc
 on RecordField:   def field_id kind=Field doc=field_doc
-on MethodSig:     def method_id kind=Method doc=method_doc
+on MethodSig:     def method_id=method_id_text kind=Method doc=method_doc
 
 
 === features
@@ -328,7 +331,8 @@ on RecordField {
 # already fired by the time a member is reduced.
 on MethodSig when $scope("value", "current_class") {
   let parent = $scope("value", "current_class")
-  edge declares from parent to concat(parent, "::", $method_id) attrs obj("name", $method_id, "kind", "Method", "doc", trim($method_doc_text))
+  let name = trim($method_id_text)
+  edge declares from parent to concat(parent, "::", name) attrs obj("name", name, "kind", "Method", "doc", trim($method_doc_text))
 }
 
 === resolver

@@ -1,6 +1,15 @@
 kgf 0.6
 language: sql
-sources: .sql
+
+# This spec is a SQL *tokenizer*: it classifies keywords, identifiers, literals
+# and operators, and declares neither `=== attrs` nor `=== semantics`, so it
+# extracts no edges from any file. `sql-ddl` parses the same `.sql` files and
+# does extract edges (`hasColumn`, `tableReferences`), so it is the single
+# owner of the `.sql` pattern and `sources:` is deliberately absent here.
+# Claiming `.sql` only put this spec into a contest it would lose — and used
+# to win on some filesystems, silently reducing every `.sql` file to zero
+# edges. Select it explicitly (`--spec=sql`) for token-level work such as
+# `indexion grep`.
 
 === lex
 SKIP /[ \t]+/

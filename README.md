@@ -9,11 +9,54 @@ KGF is a unified specification format for describing programming languages, DSLs
 ## Installation
 
 ```bash
-# Clone to user config directory (recommended for binary distribution)
+# Clone to the OS data directory (recommended for binary distribution)
 git clone https://github.com/trkbt10/indexion-kgf.git ~/.indexion/kgfs
 
-# Or set environment variable
+# Or point indexion at a checkout anywhere
 export INDEXION_KGFS_DIR=/path/to/indexion-kgf
+```
+
+indexion also finds a `kgfs/` directory in the project it is analysing, or in
+the current working directory, without any configuration.
+
+### Patching a single spec
+
+The resolved spec set is layered: a base set plus any overlays applied on top.
+A spec whose `language:` header matches one already loaded replaces it —
+matched by language name, not by filename or directory. To change one spec,
+you do not copy this repository; you put your file in the project's overlay
+directory:
+
+```
+my-project/
+├── .indexion/
+│   └── kgfs/
+│       └── programming/
+│           └── rust.kgf   ← replaces the installed rust spec
+└── src/
+```
+
+The overlay may mirror the layout above or be flat — only the `language:`
+header decides what a file replaces. Every spec the overlay does not redefine
+keeps coming from the installed set, and an overlay spec may `extends:` a spec
+of the base set.
+
+You can also give the chain explicitly. `--specs-dir` is repeatable: the first
+occurrence is the base set, each later one an overlay layered on top.
+
+```bash
+indexion search "query" src/ --specs-dir=/opt/kgfs --specs-dir=./team-kgfs
+```
+
+Passing `--specs-dir` at all replaces the whole chain, so a single value is
+still "use exactly this directory as the spec set". On `indexion kgf` the
+option is spelled `--kgf-dir`; on `indexion digest`, `--specs`.
+
+### Seeing which file won
+
+```bash
+indexion kgf list     # layers resolved, each spec's origin, and what it replaced
+indexion kgf check    # validate every spec in the resolved set, overlay included
 ```
 
 ## Supported Languages
@@ -39,6 +82,18 @@ language: <language-name>
 sources: <file-extensions>
 extends: <base-language-name>    # optional
 ```
+
+### Which spec owns a file
+
+`sources:` lists the extensions or file names a spec claims. When several
+general-purpose specs claim the same pattern the last one registered wins and
+`indexion kgf check --all` reports the collision; resolve it by giving the
+pattern one owner. A spec that must stay loaded but never be auto-detected
+(an experiment selected with `--spec`, an overlay picked by a specific
+command) simply declares no `sources:`. `detection_scope: overlay` in
+`=== features` keeps a spec out of the *competition* for a pattern, but a
+sole claimant is still assigned it — omitting `sources:` is the only way to
+claim nothing.
 
 ### Spec Inheritance (`extends:`)
 
@@ -111,6 +166,50 @@ TOKEN Keyword /(if|else|while|for|return)\b/
 TOKEN Ident /[a-zA-Z_][a-zA-Z0-9_]*/
 TOKEN Number /[0-9]+(\.[0-9]+)?/
 ```
+
+##### `LAYOUT` — indentation-sensitive languages
+
+`LAYOUT` is a directive rather than a pattern. A regex cannot compare one
+line's indentation with the previous line's, so a regex-only lexer cannot tell
+a nested block from a sibling one — which in Python, YAML or Haskell is the
+whole of the nesting structure. `LAYOUT` declares how the engine recovers it:
+a post-lex pass maintains an indentation stack and injects synthetic
+INDENT/DEDENT tokens, so a grammar rule can bracket a body exactly, at any
+depth.
+
+```
+LAYOUT newline=<Kind>[,<Kind>...] indent=<Kind> dedent=<Kind> [comment=<Kind>] [open=<Kind>,...] [close=<Kind>,...]
+```
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `newline` | yes | token kind(s) whose text is a line break plus the *next* line's leading whitespace; everything after the break characters is that line's indentation. List several when the spec splits indented from column-0 breaks (`NL_INDENT` / `NL`) |
+| `indent` | yes | synthetic kind emitted when a line is indented deeper than the enclosing one |
+| `dedent` | yes | synthetic kind emitted once per level a shallower line closes |
+| `comment` | no | comment token kind; a line whose only token is a comment carries no layout |
+| `open` / `close` | no | bracket kinds; while a bracket is open, layout is suppressed |
+
+```
+TOKEN NL_INDENT /\r?\n[ \t]+/
+TOKEN NL /\r?\n/
+SKIP /[ \t]+/
+TOKEN Comment /#[^\r\n]*/
+LAYOUT newline=NL_INDENT,NL indent=INDENT dedent=DEDENT comment=Comment open=LPAREN,LBRACKET,LBRACE close=RPAREN,RBRACKET,RBRACE
+
+# in the grammar: a suite is exactly one INDENT...DEDENT pair
+FunctionDef -> KW_def id:Ident Params COLON ( SuiteOpen doc:Docstring? BodyItem* DEDENT / SimpleBody )
+SuiteOpen   -> ( LineBreak / Comment )* INDENT
+```
+
+`indent` and `dedent` are synthetic: they must not have a `TOKEN` rule (no
+source text matches them) but they are valid grammar symbols; `kgf check`
+enforces both halves, reports a `LAYOUT` field naming an undefined kind, and
+includes the synthetic kinds in the unreachable-token check. `kgf tokens`
+shows them with an empty text. The pass ignores blank and comment-only lines,
+closes every open level at end of input, and tolerates a dedent to a column
+on no open level (it emits what it can and adopts the new column, since KGF
+analyses files that do not compile). Indentation is compared as the raw
+whitespace string's length, so one tab counts as one space.
 
 #### `=== grammar` - PEG Grammar Rules
 
@@ -246,8 +345,32 @@ relative_prefixes: ./, ../       # Relative import markers
 exts: .js, .ts                   # File extensions to try
 indexes: index                   # Index file names
 bare_prefix: npm:                # External package prefix
-module_path_style: slash         # Path separator style
+module_path_style: slash         # slash | dot | coloncol | backslash
+resolve:                         # Ordered probe chain (optional)
+  - manifest: package.json @ main
+  - namespace_map: tsconfig.json @ compilerOptions.paths + compilerOptions.baseUrl
+  - index: /index.ts
+  - ext: .ts
+  - fallback: npm:
 ```
+
+`module_path_style` names the separator of the language's module paths; the
+resolver converts it to `/` and keeps a leading run of `relative_prefixes`
+intact (`../a.b` → `../a/b`), so a spec can turn its own relative syntax into
+those prefixes in `=== semantics` (python rewrites leading dots this way).
+
+**Namespace mapping.** Import paths rarely map onto the directory tree
+one-to-one. `namespace_map: <manifest> @ <field> [+ <base_field>]` reads a
+prefix→directory map out of the nearest manifest above the importing file —
+composer's `autoload.psr-4`, tsconfig's `compilerOptions.paths` — and rewrites
+the module with it before the usual `ext`/`index`/`sibling` probes run. The
+longest matching key wins; a key may use a `*` wildcard, and `+ <base_field>`
+names a field the values are relative to (tsconfig's `baseUrl`).
+`source_roots: <dirs> [@ <markers>]` does the same for layouts fixed by
+convention rather than declared, such as `src/main/java`, anchored at the
+nearest directory holding one of the markers. When nothing matches, the step
+is skipped and the chain continues. `bare_prefix` and `ns_prefix` name modules
+that were *not* found, so both apply only after every probe has missed.
 
 ### Complete Example
 

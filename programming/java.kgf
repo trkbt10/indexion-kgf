@@ -312,34 +312,18 @@ vocabulary_token_kinds: DocComment, String
 # Resolution is anchored at the project's SOURCE ROOT, not at the importing
 # file's directory. A Java import names a package path from the root of the
 # source tree (`com.example.model.User` -> `com/example/model/User.java`), so
-# resolving it relative to the importer — which is what a plain `$resolve`
-# does — can never find a sibling package and every intra-project import fell
-# back to the `maven:` prefix, leaving the graph with no edge between two files
-# of the same project.
+# resolving it relative to the importer can never find a sibling package: every
+# intra-project import fell back to the `maven:` prefix and the graph had no
+# edge between two files of the same project.
 #
-# The root is found by walking up for the build manifest, and the source root
-# is that directory plus the conventional layout both Maven and Gradle use.
-# `$resolveFrom` then runs the spec's own chain (`module_path_style: dot`
-# turns the dots into slashes, `ext: .java` adds the extension) against that
-# base. When nothing matches — `java.util.Optional`, `org.springframework.…` —
-# the chain's `fallback: maven:` still applies, so external imports keep their
-# prefixed form.
-#
-# Both manifests are tried because the same spec serves Maven and Gradle
-# projects; `$findAncestor` returns "" when a marker is absent, and an empty
-# root simply makes the probe miss and fall through to the next one. Nothing
-# here names a language or a fixture path: the markers and the layout come
-# from this spec, and the dot-to-slash conversion and extension from the
-# `=== resolver` section below.
+# That anchoring now lives in the `=== resolver` section, as a `source_roots`
+# step naming the layout and the build manifests that mark a module's root —
+# which is where a fact about this ecosystem's project layout belongs. So this
+# rule is a plain `$resolve` again: the chain does the anchoring, and when
+# nothing matches — `java.util.Optional`, `org.springframework.…` — the same
+# chain's `fallback: maven:` keeps external imports in their prefixed form.
 on ImportDecl {
-  # The project root is the directory holding the build manifest. The same
-  # spec serves both Maven and Gradle projects, so each manifest is tried in
-  # turn; `$findAncestor` returns "" when a marker is absent, and the final
-  # "." keeps the base project-relative — `concat("", "/src/main/java")` would
-  # start with a slash, which the resolver reads as a filesystem-ABSOLUTE
-  # path, sending the probe outside the project.
-  let proj = cond($findAncestor("pom.xml"), $findAncestor("pom.xml"), cond($findAncestor("build.gradle.kts"), $findAncestor("build.gradle.kts"), cond($findAncestor("build.gradle"), $findAncestor("build.gradle"), ".")))
-  edge moduleDependsOn from $file to $resolveFrom(concat(proj, "/src/main/java"), $path_text) attrs obj("via", $path_text, "dep_kind", "value")
+  edge moduleDependsOn from $file to $resolve($path_text) attrs obj("via", $path_text, "dep_kind", "value")
 }
 
 # ---------------------------------------------------------------------------
@@ -495,6 +479,12 @@ resolve:
   - manifest: build.gradle @ dependencies
   - manifest: build.gradle.kts @ dependencies
   - marker: pom.xml, build.gradle, build.gradle.kts, settings.gradle, settings.gradle.kts
+  # An import names a package path from the root of the SOURCE TREE, not from
+  # the importing file, so resolution is anchored there. Maven and Gradle both
+  # put that tree at `src/main/java` under the directory holding the build
+  # manifest, and the markers below are how that directory is found — in a
+  # multi-module build it is the module's own manifest, not the repository's.
+  - source_roots: src/main/java @ pom.xml, build.gradle.kts, build.gradle
   - index: /src/main/java
   - ext: .java
   - fallback: maven:
