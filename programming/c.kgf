@@ -1,6 +1,9 @@
 kgf 0.6
 language: c
-sources: .c, .h
+sources: .c
+# `.h` is owned by the cpp spec: C++ is a superset of C, so a header parses
+# under it whichever language includes it, and one owner keeps detection
+# unambiguous. The c spec still parses headers when selected with --spec=c.
 
 === lex
 SKIP /[ \t]+/
