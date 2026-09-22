@@ -188,14 +188,29 @@ UsePathSegment -> Ident / STAR / LBRACE UseList RBRACE
 UseList -> NL* UsePath ( NL* COMMA NL* UsePath )* NL* COMMA? NL*
 UsePath -> ( KW_crate / KW_self / KW_super / Ident ) ( DCOLON UsePathSegment )*
 
+# Top-level declarations carry the same outer metadata as members: a doc
+# block and attributes, each on its own line, in either order. The idiomatic
+# shape is
+#
+#   /// Doc comment.
+#   #[derive(Debug, Clone)]
+#   pub struct Thing { ... }
+#
+# which tokenizes as DocComment NL Attribute NL KW_pub. A `( Attribute / NL )*`
+# group on BOTH sides of the doc block absorbs attributes and the newlines
+# around them wherever they fall (see the member-rule note below for why the
+# doc capture still binds). Without the trailing group the NL after the
+# attribute breaks the rule, the declaration falls through to `Other`, and
+# the symbol is lost together with its doc.
+
 # Module declaration
-ModDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_mod id:Ident ( SEMI / Body )
+ModDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_mod id:Ident ( SEMI / Body )
 
 # Function declaration
-FnDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? body:Body?
+FnDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_const? KW_async? KW_unsafe? KW_extern? KW_fn id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? body:Body?
 
 # Struct declaration
-StructDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
+StructDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_struct id:Ident GenericParams? WhereClause? ( StructBody / TupleBody SEMI / SEMI )
 StructBody -> LBRACE StructField* RBRACE
 TupleBody -> LPAREN TupleField* RPAREN
 # Member items (`StructField`, `EnumVariant`, `TraitItem`, …) carry the same
@@ -208,38 +223,45 @@ TupleBody -> LPAREN TupleField* RPAREN
 # is neither an `Attribute` nor an `NL`, so the greedy groups never swallow it.
 # Without this a documented-and-attributed member fails to match and takes its
 # whole struct/enum/trait down with it.
-StructField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? field_id:Ident COLON Type COMMA? / NL / LineComment
-TupleField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? Type COMMA? / NL / LineComment
+StructField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? field_id:Ident COLON Type COMMA? / NL / LineComment / BlockComment
+TupleField -> ( Attribute / NL )* field_doc:DocBlock? ( Attribute / NL )* KW_pub? Type COMMA? / NL / LineComment / BlockComment
 
 # Enum declaration
-EnumDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
+EnumDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_enum id:Ident GenericParams? WhereClause? EnumBody
 EnumBody -> LBRACE EnumVariant* RBRACE
-EnumVariant -> ( Attribute / NL )* variant_doc:DocBlock? ( Attribute / NL )* variant_id:Ident VariantPayload? COMMA? / NL / LineComment
+EnumVariant -> ( Attribute / NL )* variant_doc:DocBlock? ( Attribute / NL )* variant_id:Ident VariantPayload? COMMA? / NL / LineComment / BlockComment
 VariantPayload -> TupleBody / StructBody / EQ Expr
 
 # Trait declaration
-TraitDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
+TraitDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_unsafe? KW_trait id:Ident GenericParams? SuperTraits? WhereClause? TraitBody
 SuperTraits -> COLON TypeBound ( Operator TypeBound )*
 TraitBody -> LBRACE TraitItem* RBRACE
-TraitItem -> ( Attribute / NL )* method_doc:DocBlock? ( Attribute / NL )* KW_fn method_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? ( Body / SEMI ) / NL / LineComment
+# Besides methods a trait body declares associated types (`type Item;`) and
+# associated consts (`const LIMIT: usize;`), both without a value; `TypeDecl`
+# and `ConstDecl` accept the value-less form so a trait that has one does not
+# lose its whole body.
+TraitItem -> ( Attribute / NL )* method_doc:DocBlock? ( Attribute / NL )* KW_fn method_id:Ident GenericParams? LPAREN ParamList? RPAREN ReturnType? WhereClause? ( Body / SEMI ) / TypeDecl / ConstDecl / NL / LineComment / BlockComment
 
 # Impl block
-ImplDecl -> doc:DocBlock? NL? Attribute* KW_unsafe? KW_impl GenericParams? ( KW_dyn? Type KW_for )? Type WhereClause? ImplBody
+ImplDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* KW_unsafe? KW_impl GenericParams? ( KW_dyn? Type KW_for )? Type WhereClause? ImplBody
 ImplBody -> LBRACE ImplItem* RBRACE
-ImplItem -> FnDecl / TypeDecl / ConstDecl / NL / LineComment
+ImplItem -> FnDecl / TypeDecl / ConstDecl / NL / LineComment / BlockComment
 
 # Type alias
-TypeDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_type id:Ident GenericParams? WhereClause? ( EQ Type )? SEMI
+TypeDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_type id:Ident GenericParams? WhereClause? ( EQ Type )? SEMI
 
 # Const declaration
-ConstDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_const id:Ident COLON Type EQ expr:Expr SEMI
+ConstDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_const id:Ident COLON Type ( EQ expr:Expr )? SEMI
 
 # Static declaration
-StaticDecl -> doc:DocBlock? NL? Attribute* vis:KW_pub? KW_static KW_mut? id:Ident COLON Type EQ expr:Expr SEMI
+StaticDecl -> ( Attribute / NL )* doc:DocBlock? ( Attribute / NL )* vis:KW_pub? KW_static KW_mut? id:Ident COLON Type EQ expr:Expr SEMI
 
 # Parameters and types
 ParamList -> Param ( COMMA Param )*
-Param -> Attribute* KW_mut? ( AMP Lifetime? KW_mut? )? param_id:Ident COLON Type / KW_self / AMP Lifetime? KW_mut? KW_self
+# Receivers come in four shapes: `self`, `mut self`, `&self` / `&'a mut self`,
+# and the typed form `self: Box<Self>`. They are tried before the named
+# parameter alternative because `self` is a keyword token, not an `Ident`.
+Param -> Attribute* ( KW_mut? KW_self ( COLON Type )? / AMP Lifetime? KW_mut? KW_self / KW_mut? ( AMP Lifetime? KW_mut? )? param_id:Ident COLON Type )
 ReturnType -> ARROW Type
 GenericParams -> Operator GenericParam ( COMMA GenericParam )* Operator
 GenericParam -> Lifetime / Ident ( COLON TypeBound )?
@@ -305,30 +327,36 @@ on ModuleDoc {
   note module_doc payload obj("doc", $module_doc_text)
 }
 
-# Public declarations only (vis:KW_pub? from grammar)
+# Public declarations only (vis:KW_pub? from grammar).
+#
+# `$doc` holds only the LAST token of the doc block (a label bound to a
+# multi-token rule keeps the last token's value), so a three-line `///`
+# comment would surface as its third line alone. `$doc_text` is the block's
+# full accumulated text, one line per DocComment, which is what consumers
+# such as doc coverage and README generation need.
 on FnDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Function", "doc", trim($doc_text))
 }
 on StructDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Struct", "doc", trim($doc_text))
 }
 on EnumDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Enum", "doc", trim($doc_text))
 }
 on TraitDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Trait", "doc", trim($doc_text))
 }
 on TypeDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Type", "doc", trim($doc_text))
 }
 on ModDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Module", "doc", trim($doc_text))
 }
 on ConstDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Const", "doc", trim($doc_text))
 }
 on StaticDecl when $vis {
-  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Static", "doc", $doc)
+  edge declares from $file to concat($file, "::", $id) attrs obj("name", $id, "kind", "Static", "doc", trim($doc_text))
 }
 # Rust `use` statements — one rule per head variant so the graph faithfully
 # encodes what each `use` form means.
