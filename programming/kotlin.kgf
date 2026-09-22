@@ -12,7 +12,22 @@ TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # String literals
-TOKEN String /"([^"\\$]|\\.|\$[^{])*"|"""[\s\S]*?"""/
+# String literals with templates.
+#
+# A Kotlin string may interpolate either a bare name (`"hello $name"`) or a
+# whole expression (`"count ${n + 1}"`), and the braced form may itself contain
+# quotes: `"v=${m["key"]}"`. The previous pattern admitted `$ident` but
+# EXCLUDED `${` — `[^"\$]` refused every `$`, and the `\$[^{]` alternative
+# accepted a `$` only when NOT followed by `{`. So `${...}` ended the string
+# early, the rest of the line lexed as code, the `"` that really closed it
+# opened a new string that ran to the next quote several lines down, and every
+# declaration it swallowed disappeared.
+#
+# `[$][{][^}]*[}]` matches a braced template as one unit BEFORE the general
+# character class gets to it, which is what lets the quotes inside it through.
+# The raw form is listed first so `"""` is never read as an empty `""`
+# followed by a third quote.
+TOKEN String /"""[\s\S]*?"""|"([^"\\$]|\\.|[$][{][^}]*[}]|[$])*"/
 TOKEN Char /'([^'\\]|\\.)*'/
 
 # Numeric literals

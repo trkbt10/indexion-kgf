@@ -13,7 +13,16 @@ TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # Preprocessor directives
-TOKEN Include /#\s*(include|import)\s*[<"][^>"]+[>"]/
+# `#include "x.h"` / `#include <y>`.
+#
+# The CAPTURE GROUP is the path, and the directive keyword is matched with a
+# NON-capturing `(?:…)`. A token's exported text is its capture group when it
+# has one, so while the group was `(include|import)` every include token
+# carried the literal text "include" and the path — the only part that matters
+# — was unreachable from the semantics. Both bracket forms are kept in the one
+# group so the delimiter survives into the text and the handler can tell a
+# quoted include from an angled one.
+TOKEN Include /#\s*(?:include|import)\s*([<"][^>"]+[>"])/
 # Preprocessor directive. A directive is one logical line, and a backslash
 # immediately before the newline continues it onto the next physical line,
 # which is how any non-trivial macro is written. Matching only the first
@@ -105,8 +114,9 @@ TOKEN Operator /[+\-\/%&|^~!<>=?]+|&&|\|\||<<|>>|\.\.\.|<=>|##/
 Module -> Item*
 
 Item -> NL
-     / Include
+     / IncludeDecl
      / Preprocessor
+     / LinkageBlock
      / NamespaceDecl
      / ClassDecl
      / StructDecl
@@ -142,6 +152,30 @@ NamespaceBody -> LBRACE NamespaceMember* RBRACE
 # member list: without it Item's bracket fallback would consume the `}`
 # and NamespaceDecl could never complete.
 NamespaceMember -> !RBRACE Item
+
+# Language-linkage block: `extern "C" { … }`, and the single-declaration form
+# `extern "C" void f();`.
+#
+# The block is TRANSPARENT: it changes the symbols' linkage, not their scope,
+# so everything written inside it is declared exactly as it would be outside.
+# It therefore reuses `Item` and emits no scope frame of its own. Without this
+# rule the whole block fell to `Other`'s `OpaqueGroup`, which consumes a
+# balanced brace group as ONE unit — so every declaration between the braces
+# vanished from the graph. That is the whole body of a C-compatible header,
+# which is exactly where `extern "C"` is used.
+#
+# `!RBRACE` keeps the block's own closing brace out of the member list, the
+# same guard `NamespaceMember` uses.
+LinkageBlock -> KW_extern String LBRACE LinkageMember* RBRACE
+              / KW_extern String !LBRACE
+LinkageMember -> !RBRACE Item
+
+# `#include` — the file's only import construct.
+#
+# A grammar rule rather than the bare `Include` token, because a semantic block
+# can only attach to a RULE; with no rule there was no place to hang the
+# handler, and C/C++ files produced no dependency edges at all.
+IncludeDecl -> path:Include
 
 # Class declaration.
 #
@@ -362,14 +396,33 @@ on EnumTypedefHeader {
   scope push
   bind ns "value" name "pending_doc" to $doc_text
 }
+# The trailing name of a `typedef struct { … } Name;`.
+#
+# The owner is the ENCLOSING SCOPE, exactly as for a tagged declaration —
+# `typedef` names a type, it does not move it out of its namespace. While the
+# `from` was hardcoded to `$file` a typedef'd type written inside
+# `namespace app` was published at FILE level as `Name` while the tagged
+# `struct Plain` beside it correctly became `app::Plain`, so the same header
+# produced two different id shapes depending only on which spelling was used.
+#
+# These fire BEFORE the matching `scope pop` below, so the frame the typedef
+# header pushed for `pending_doc` is still open; `$scope` searches frames
+# innermost-first and finds no `current_scope` there, falling through to the
+# enclosing namespace's — which is the owner wanted.
 on StructDecl when $tag {
-  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Struct", "doc", $scope("value", "pending_doc"))
+  let outer = $scope("value", "current_scope")
+  let base = cond(outer, outer, $file)
+  edge declares from base to concat(base, "::", $tag) attrs obj("name", $tag, "kind", "Struct", "doc", $scope("value", "pending_doc"))
 }
 on UnionDecl when $tag {
-  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Union", "doc", $scope("value", "pending_doc"))
+  let outer = $scope("value", "current_scope")
+  let base = cond(outer, outer, $file)
+  edge declares from base to concat(base, "::", $tag) attrs obj("name", $tag, "kind", "Union", "doc", $scope("value", "pending_doc"))
 }
 on EnumDecl when $tag {
-  edge declares from $file to concat($file, "::", $tag) attrs obj("name", $tag, "kind", "Enum", "doc", $scope("value", "pending_doc"))
+  let outer = $scope("value", "current_scope")
+  let base = cond(outer, outer, $file)
+  edge declares from base to concat(base, "::", $tag) attrs obj("name", $tag, "kind", "Enum", "doc", $scope("value", "pending_doc"))
 }
 
 # A declaration rule fires after its own body, so it closes the frame its
@@ -378,8 +431,41 @@ on ClassDecl { scope pop }
 on StructDecl { scope pop }
 on UnionDecl { scope pop }
 on EnumDecl { scope pop }
-on FunctionDecl {
-  edge declares from $file to concat($file, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc_text)
+# A function, or an OUT-OF-LINE MEMBER DEFINITION.
+#
+# `void app::Config::load()` and `Config::load()` written inside `namespace app`
+# both define a member of `app::Config` — the qualifier names the owner, and it
+# is the SAME symbol the class body already declared. While this rule ignored
+# both `owner` and the enclosing namespace, every such definition was published
+# as a fresh file-level `Function`, so `config.cpp` reported a `load` and a
+# `to_json` belonging to the file rather than to `app::Config`, and the
+# namespace was lost from the id entirely.
+#
+# `owner` holds the INNERMOST qualifier — `( owner:Name SCOPE )*` rebinds on
+# each repetition, so `Outer::Inner::run` leaves `Inner`, which is the type the
+# member actually belongs to. The enclosing namespace comes from
+# `current_scope`, so a definition written inside `namespace app` and one
+# written as `app::Config::load` outside it produce the same id.
+#
+on FunctionDecl when $owner {
+  let scope_id = $scope("value", "current_scope")
+  let base = cond(scope_id, scope_id, $file)
+  let owner_id = concat(base, "::", $owner)
+  edge declares from owner_id to concat(owner_id, "::", $func_id) attrs obj("name", $func_id, "kind", "Method", "doc", $doc_text)
+} else {
+  let scope_id = $scope("value", "current_scope")
+  let base = cond(scope_id, scope_id, $file)
+  edge declares from base to concat(base, "::", $func_id) attrs obj("name", $func_id, "kind", "Function", "doc", $doc_text)
+}
+
+# Out-of-line constructor/destructor definition (`Config::Config(...) {}`).
+# It has no return type at all, so it can never match `FunctionDecl`, and with
+# no handler of its own it produced no edge whatsoever.
+on OutOfLineCtorDecl {
+  let scope_id = $scope("value", "current_scope")
+  let base = cond(scope_id, scope_id, $file)
+  let owner_id = concat(base, "::", $owner)
+  edge declares from owner_id to concat(owner_id, "::", $ctor_id) attrs obj("name", $ctor_id, "kind", "Constructor", "doc", $doc_text)
 }
 on VarDecl {
   edge declares from $file to concat($file, "::", $var_id) attrs obj("name", $var_id, "kind", "Variable", "doc", $doc_text)
@@ -417,9 +503,55 @@ on EnumValue when cond($value_id, $scope("value", "current_enum")) {
   edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc_text)
 }
 
+# ---------------------------------------------------------------------------
+# #include -> moduleDependsOn
+# ---------------------------------------------------------------------------
+# `#include` is this language's ONLY import construct, and with no handler at
+# all it produced no dependency edge whatsoever: every C/C++ file looked like
+# an island, so no cross-file graph could be built for the ecosystem.
+#
+# The token is the whole directive (`#include "config.hpp"`, `#include <cstdio>`),
+# so the path is cut out of its text rather than captured by the grammar: take
+# what follows the opening delimiter, then what precedes the closing one.
+# The two bracket forms differ only in the delimiter and in what they mean —
+# a quoted include is resolved relative to the including file first, an angled
+# one is a system/library header — so they are matched separately and carry
+# that distinction in `rel`.
+#
+# The chain in `=== resolver` does the actual lookup; `fallback: system:` keeps
+# an unresolvable header (a toolchain or third-party one, which is not in the
+# tree) in a clearly external form instead of inventing a path.
+on IncludeDecl when not(startsWith($path_text, "<")) {
+  let path = stripQuotes($path_text)
+  edge moduleDependsOn from $file to $resolve(path) attrs obj("via", path, "dep_kind", "value", "rel", "quoted")
+}
+on IncludeDecl when startsWith($path_text, "<") {
+  let path = beforeFirst(afterFirst($path_text, "<"), ">")
+  edge moduleDependsOn from $file to $resolve(path) attrs obj("via", path, "dep_kind", "value", "rel", "angled")
+}
+
 === resolver
 relative_prefixes: ./, ../
 module_path_style: slash
 resolve:
+  # `#include "x.h"` names a path relative to the INCLUDING FILE first, then
+  # relative to the project's header roots -- so both anchors are tried, in
+  # that order, before anything is called external.
+  #
+  # `source_roots` supplies the second anchor. The roots are this ecosystem's
+  # conventional header layout, and the markers are the files that mark a
+  # project root, so the roots are resolved against the nearest ancestor
+  # directory holding a manifest rather than against the repository root --
+  # which is what makes it work inside a subproject too.
+  # `exact` comes FIRST at every anchor: an include path already carries its
+  # own extension (`config.hpp`), and `ext` only APPENDS one — it would probe
+  # `config.hpp.hpp` and never find the file. `ext` is kept after it for an
+  # extensionless include.
+  - exact:
   - ext: .hpp, .hxx, .h, .hh, .cpp, .cc, .cxx
+  - source_roots: include, src, . @ vcpkg.json, CMakeLists.txt, meson.build, Makefile
+  - exact:
+  - ext: .hpp, .hxx, .h, .hh, .cpp, .cc, .cxx
+  # An include matching no file in the tree is a toolchain or third-party
+  # header, which is genuinely outside the project.
   - fallback: system:

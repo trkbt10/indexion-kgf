@@ -11,8 +11,22 @@ TOKEN DocComment /\/\/\/(.*)/
 TOKEN LineComment /\/\/[^\r\n]*/
 TOKEN BlockComment /\/\*[\s\S]*?\*\//
 
-# String literals
-TOKEN String /"([^"\\]|\\.)*"|@"[^"]*"|$"([^"\\{]|\\.|\\{[^}]*\\})*"/
+# String literals.
+#
+# The `$` of an interpolated string MUST be written `\$`. Unescaped, `$` is the
+# regexp end-of-input anchor — which is how the engine read it, so the
+# `$"…"` alternative could never match anything and every interpolated string
+# in a file was left as `unrecognized input: "$"`. That is ordinary regexp
+# semantics rather than an engine defect, so the fix belongs here.
+#
+# Alternatives, longest-first (the engine takes the first that matches, not the
+# longest, so a prefix form must not be listed ahead of the form it prefixes):
+#   """…"""            raw string, may contain single quotes
+#   $@"…" / @$"…"      verbatim interpolated, "" escapes a quote
+#   @"…"               verbatim, "" escapes a quote
+#   $"…"               interpolated; `{…}` may itself contain quotes
+#   "…"                plain, backslash escapes
+TOKEN String /"""[\s\S]*?"""|[\$]@"([^"]|"")*"|@[\$]"([^"]|"")*"|@"([^"]|"")*"|[\$]"([^"\\{]|\\.|[{][^}]*[}])*"|"([^"\\]|\\.)*"/
 TOKEN Char /'([^'\\]|\\.)*'/
 
 # Numeric literals

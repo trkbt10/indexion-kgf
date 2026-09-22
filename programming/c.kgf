@@ -16,7 +16,16 @@ TOKEN BlockComment /\/\*[\s\S]*?\*\//
 TOKEN LineComment /\/\/[^\r\n]*/
 
 # Preprocessor directives
-TOKEN Include /#\s*(include|import)\s*[<"][^>"]+[>"]/
+# `#include "x.h"` / `#include <y>`.
+#
+# The CAPTURE GROUP is the path, and the directive keyword is matched with a
+# NON-capturing `(?:…)`. A token's exported text is its capture group when it
+# has one, so while the group was `(include|import)` every include token
+# carried the literal text "include" and the path — the only part that matters
+# — was unreachable from the semantics. Both bracket forms are kept in the one
+# group so the delimiter survives into the text and the handler can tell a
+# quoted include from an angled one.
+TOKEN Include /#\s*(?:include|import)\s*([<"][^>"]+[>"])/
 # Preprocessor directive. A directive is one logical line, and a backslash
 # immediately before the newline continues it onto the next physical line,
 # which is how any non-trivial macro is written. Matching only the first
@@ -81,8 +90,9 @@ TOKEN STAR     /\*/
 Module -> Item*
 
 Item -> NL
-     / Include
+     / IncludeDecl
      / Preprocessor
+     / LinkageBlock
      / StructDecl
      / UnionDecl
      / EnumDecl
@@ -96,6 +106,26 @@ Item -> NL
 # Doc block (consecutive /// comments or /** */)
 DocBlock -> DocComment ( NL DocComment )*
           / DocBlockComment
+
+# Language-linkage block: `extern "C" { … }`.
+#
+# A C header guards its declarations with `#ifdef __cplusplus / extern "C" {`
+# so it can be included from C++ too, so this construct wraps the entire body
+# of most real headers. The block is TRANSPARENT — it sets linkage, not scope —
+# so it reuses `Item` and every declaration inside is published exactly as if
+# it were written at the top level. Without the rule the block fell to
+# `Other`'s `OpaqueGroup`, which takes a balanced brace group as one opaque
+# unit, and the header's entire contents were dropped.
+LinkageBlock -> KW_extern String LBRACE LinkageMember* RBRACE
+              / KW_extern String !LBRACE
+LinkageMember -> !RBRACE Item
+
+# `#include` — the file's only import construct.
+#
+# A grammar rule rather than the bare `Include` token, because a semantic block
+# can only attach to a RULE; with no rule there was no place to hang the
+# handler, and C/C++ files produced no dependency edges at all.
+IncludeDecl -> path:Include
 
 # Struct / union / enum declarations.
 #
@@ -285,9 +315,55 @@ on EnumValue when cond($value_id, $scope("value", "current_enum")) {
   edge declares from parent to sym_id attrs obj("name", $value_id, "kind", "EnumValue", "doc", $value_doc_text)
 }
 
+# ---------------------------------------------------------------------------
+# #include -> moduleDependsOn
+# ---------------------------------------------------------------------------
+# `#include` is this language's ONLY import construct, and with no handler at
+# all it produced no dependency edge whatsoever: every C/C++ file looked like
+# an island, so no cross-file graph could be built for the ecosystem.
+#
+# The token is the whole directive (`#include "config.hpp"`, `#include <cstdio>`),
+# so the path is cut out of its text rather than captured by the grammar: take
+# what follows the opening delimiter, then what precedes the closing one.
+# The two bracket forms differ only in the delimiter and in what they mean —
+# a quoted include is resolved relative to the including file first, an angled
+# one is a system/library header — so they are matched separately and carry
+# that distinction in `rel`.
+#
+# The chain in `=== resolver` does the actual lookup; `fallback: system:` keeps
+# an unresolvable header (a toolchain or third-party one, which is not in the
+# tree) in a clearly external form instead of inventing a path.
+on IncludeDecl when not(startsWith($path_text, "<")) {
+  let path = stripQuotes($path_text)
+  edge moduleDependsOn from $file to $resolve(path) attrs obj("via", path, "dep_kind", "value", "rel", "quoted")
+}
+on IncludeDecl when startsWith($path_text, "<") {
+  let path = beforeFirst(afterFirst($path_text, "<"), ">")
+  edge moduleDependsOn from $file to $resolve(path) attrs obj("via", path, "dep_kind", "value", "rel", "angled")
+}
+
 === resolver
 relative_prefixes: ./, ../
 module_path_style: slash
 resolve:
+  # `#include "x.h"` names a path relative to the INCLUDING FILE first, then
+  # relative to the project's header roots -- so both anchors are tried, in
+  # that order, before anything is called external.
+  #
+  # `source_roots` supplies the second anchor. The roots are this ecosystem's
+  # conventional header layout, and the markers are the files that mark a
+  # project root, so the roots are resolved against the nearest ancestor
+  # directory holding a manifest rather than against the repository root --
+  # which is what makes it work inside a subproject too.
+  # `exact` comes FIRST at every anchor: an include path already carries its
+  # own extension (`config.hpp`), and `ext` only APPENDS one — it would probe
+  # `config.hpp.hpp` and never find the file. `ext` is kept after it for an
+  # extensionless include.
+  - exact:
   - ext: .h, .c
+  - source_roots: include, src, . @ vcpkg.json, CMakeLists.txt, meson.build, Makefile
+  - exact:
+  - ext: .h, .c
+  # An include matching no file in the tree is a toolchain or third-party
+  # header, which is genuinely outside the project.
   - fallback: system:

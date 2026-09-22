@@ -9,11 +9,25 @@ TOKEN NL /\r?\n/
 # Comments - Ruby uses # for comments, YARD uses # @param etc.
 TOKEN Comment /#[^\r\n]*/
 
-# HereDoc
-TOKEN HereDoc /<<[-~]?['"]?[A-Z_]+['"]?/
+# HereDoc.
+#
+# The whole heredoc is one token, opening line THROUGH its terminator, because
+# the body is free text: `#{...}`, quotes, `end`, anything. While only the
+# opening `<<~EOS` was tokenized, the body lexed as ordinary code and a body
+# line such as `  end` closed the enclosing method, silently ending the class.
+# `[\s\S]*?` is lazy, so it stops at the FIRST terminator line.
+TOKEN HereDoc /<<[-~]?"[A-Z_]+"[\s\S]*?\n[ \t]*[A-Z_]+|<<[-~]?'[A-Z_]+'[\s\S]*?\n[ \t]*[A-Z_]+|<<[-~][A-Z_]+[\s\S]*?\n[ \t]*[A-Z_]+/
+
+# Percent literals — `%w[a b]`, `%i[a b]`, and the `()`/`{}` delimiter forms.
+# Without them the `%` lexed as an operator and the contents as bare code.
+TOKEN PercentLit /%[wWiI][\[][^\]]*[\]]|%[wWiI][(][^)]*[)]|%[wWiI][{][^}]*[}]/
 
 # String literals
-TOKEN String /"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/
+# String literals. A double-quoted string may carry `#{...}` interpolation, and
+# the interpolated expression can itself contain quotes (`"id #{h["k"]}"`), so
+# the interpolation is matched as its own alternative INSIDE the string rather
+# than letting the first inner quote end the token.
+TOKEN String /"([^"\\#]|\\.|#[{][^}]*[}]|#(?!\{))*"|'([^'\\]|\\.)*'/
 
 # Regex
 TOKEN Regex /\/([^\/\\]|\\.)*\/[imxo]*/
@@ -56,6 +70,11 @@ KEYWORD KW_while    /while\b/
 KEYWORD KW_until    /until\b/
 KEYWORD KW_for      /for\b/
 KEYWORD KW_in       /in\b/
+KEYWORD KW_retry    /retry\b/
+KEYWORD KW_break    /break\b/
+KEYWORD KW_next     /next\b/
+KEYWORD KW_redo     /redo\b/
+KEYWORD KW_then     /then\b/
 KEYWORD KW_require  /require\b/
 KEYWORD KW_require_relative /require_relative\b/
 KEYWORD KW_include  /include\b/
@@ -76,6 +95,12 @@ TOKEN GlobalVar /\$[a-zA-Z_][a-zA-Z0-9_]*/
 
 # Operators
 TOKEN DCOLON  /::/
+# `->` (lambda) and `&.` (safe navigation) are defined BEFORE the general
+# `Operator` class: the lexer matches token rules in definition order, so while
+# the `[...]+` class came first it consumed the `-` of `->` and the `&` of `&.`
+# and neither form could be recognised.
+TOKEN ARROW   /->/
+TOKEN SAFENAV /&\./
 TOKEN Operator /[+\-*\/%&|^~!<>=]+|&&|\|\||<<|>>|<=>|=~|!~|\.\.\.?/
 
 # Punctuation
@@ -94,13 +119,18 @@ TOKEN PIPE     /\|/
 === grammar
 Module -> Item*
 
+# Declarations come BEFORE the bare `Comment` alternative. PEG takes the first
+# match, so while `Comment` was listed first it consumed the doc block that
+# belongs to the declaration underneath it, and a TOP-LEVEL class never carried
+# its doc — a nested one did, because `ClassMember` already ordered the
+# declarations ahead of `Comment`.
 Item -> NL
-     / Comment
      / RequireDecl
      / ClassDecl
      / ModuleDecl
      / MethodDecl
      / AttrDecl
+     / Comment
      / Other
 
 # Doc block (consecutive # comments before declaration)
@@ -133,8 +163,32 @@ MethodDecl -> doc:DocBlock? NL? KW_def ( KW_self DOT )? method_id:Ident Params? 
 Params -> LPAREN ParamList? RPAREN / ParamList
 ParamList -> Param ( COMMA Param )*
 Param -> Operator? param_id:Ident ( Operator Expr )?
-MethodBody -> ( MethodContent )* KW_end
-MethodContent -> NL / Comment / Expr / Statement
+# A method body runs to ITS `end`. Ruby opens a nested body with `if`, `do`,
+# `begin`, `case`, `while`, `unless`, `until` and a nested `def`/`class`, each
+# closed by its own `end`, so the nested block is matched as a unit and its
+# `end` consumed with it — otherwise the first inner `end` closed the method
+# and the rest of the class was read at the wrong level.
+#
+# `!KW_end` is what stops the repetition: without it `MethodContent`'s
+# `Statement` alternative would consume the method's own terminator and the
+# body could never complete.
+MethodBody -> ( !KW_end MethodContent )* KW_end
+MethodContent -> NL / Comment / NestedBlock / Expr / Statement
+
+# A construct that opens its own `end`-terminated block. Matched as one unit so
+# its `end` is paired with its opener rather than closing the enclosing method.
+NestedBlock -> BlockOpener ( !KW_end MethodContent )* KW_end
+BlockOpener -> KW_do / KW_begin / KW_case / KW_while / KW_until / KW_for
+             / KW_def / KW_class / KW_module
+             / KW_if !Modifier / KW_unless !Modifier
+# `if`/`unless` also exist as trailing MODIFIERS (`return false unless task`),
+# which open no block and take no `end`. A modifier is one that does NOT start
+# a line, but a PEG cannot see column position, so the two are told apart by
+# what the enclosing rule already consumed: a modifier `if` follows an
+# expression on the same line and is reached from inside `Expr`'s statement
+# tail, never at the start of a `MethodContent`. The guard below keeps the
+# block form from matching where a modifier is what was written.
+Modifier -> !NL
 
 # Attr declarations
 AttrDecl -> doc:DocBlock? NL? KW_attr ( Symbol / COLON Ident ) ( COMMA ( Symbol / COLON Ident ) )*
@@ -145,14 +199,45 @@ IncludeDecl -> ( KW_include / KW_extend ) ConstIdent ( DCOLON ConstIdent )*
 # Visibility modifiers
 VisibilityMod -> visibility:( KW_private / KW_protected / KW_public ) ( Symbol / COLON Ident )?
 
-# Statement
-Statement -> KW_if / KW_elsif / KW_else / KW_unless / KW_case / KW_when / KW_while / KW_until / KW_for / KW_begin / KW_rescue / KW_ensure / KW_do / KW_return / KW_yield / KW_raise
+# Statement — every keyword that may stand inside a body.
+#
+# This list is what a method body is allowed to contain, so a keyword MISSING
+# from it makes the enclosing `MethodDecl` unmatchable. The failure was silent
+# and total: the file-level catch-all `Other -> Atom` accepts every keyword, so
+# it re-parsed the whole class one token at a time, the class and its methods
+# vanished from the graph, later methods re-attached to the FILE, and the parse
+# still reported SUCCESS. `super`, `self` and `alias` each did that; they are
+# the three keywords a body is most likely to contain.
+#
+# `KW_alias` takes the two method names that follow it, which may be bare names
+# or symbols, so they are consumed here rather than left to `Expr`.
+Statement -> AliasStmt
+           / KW_if / KW_elsif / KW_else / KW_unless / KW_case / KW_when / KW_in
+           / KW_while / KW_until / KW_for / KW_do
+           / KW_begin / KW_rescue / KW_ensure / KW_retry
+           / KW_return / KW_yield / KW_raise / KW_break / KW_next / KW_redo
+           / KW_super / KW_self
+           / KW_def / KW_class / KW_module
+           / KW_require / KW_require_relative / KW_include / KW_extend
+           / KW_private / KW_protected / KW_public / KW_attr / KW_then
+           / SEMI
+
+AliasStmt -> KW_alias ( Symbol / Ident / ConstIdent ) ( Symbol / Ident / ConstIdent )
 
 # Expressions
 Expr -> ExprAtom+
-ExprAtom -> Ident / ConstIdent / Number / String / Symbol / Regex / BoolLit / NilLit / InstanceVar / ClassVar / GlobalVar / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / PIPE / Operator
+# `MethodCallName` comes FIRST: a keyword written after `.` or `&.` is an
+# ordinary method name (`self.class`, `arr.begin`, `e.retry`), and the lexer —
+# which has no context — still emits a keyword token for it. Pairing the dot
+# with the keyword that follows stops `.class` from being read as a class
+# declaration and `.begin`/`.do` from opening a block that would swallow the
+# enclosing method's `end`.
+ExprAtom -> MethodCallName / Ident / ConstIdent / Number / String / Symbol / Regex / BoolLit / NilLit / InstanceVar / ClassVar / GlobalVar / HereDoc / PercentLit / LPAREN / RPAREN / LBRACE / RBRACE / LBRACKET / RBRACKET / DOT / COMMA / COLON / DCOLON / PIPE / ARROW / SAFENAV / Operator
 
-Atom -> ExprAtom / NL / Comment / HereDoc / KW_def / KW_class / KW_module / KW_end / KW_do / KW_begin / KW_rescue / KW_ensure / KW_raise / KW_return / KW_yield / KW_self / KW_super / KW_alias / KW_attr / KW_private / KW_protected / KW_public / KW_if / KW_elsif / KW_else / KW_unless / KW_case / KW_when / KW_while / KW_until / KW_for / KW_in / KW_require / KW_require_relative / KW_include / KW_extend / SEMI
+MethodCallName -> ( DOT / SAFENAV ) AnyKeyword
+AnyKeyword -> KW_def / KW_class / KW_module / KW_end / KW_do / KW_begin / KW_rescue / KW_ensure / KW_retry / KW_raise / KW_return / KW_yield / KW_break / KW_next / KW_redo / KW_self / KW_super / KW_alias / KW_attr / KW_private / KW_protected / KW_public / KW_if / KW_elsif / KW_else / KW_then / KW_unless / KW_case / KW_when / KW_while / KW_until / KW_for / KW_in / KW_require / KW_require_relative / KW_include / KW_extend
+
+Atom -> ExprAtom / NL / Comment / KW_def / KW_class / KW_module / KW_end / KW_do / KW_begin / KW_rescue / KW_ensure / KW_retry / KW_raise / KW_return / KW_yield / KW_break / KW_next / KW_redo / KW_self / KW_super / KW_alias / KW_attr / KW_private / KW_protected / KW_public / KW_if / KW_elsif / KW_else / KW_then / KW_unless / KW_case / KW_when / KW_while / KW_until / KW_for / KW_in / KW_require / KW_require_relative / KW_include / KW_extend / SEMI
 
 Other -> Atom
 

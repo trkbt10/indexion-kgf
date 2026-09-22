@@ -157,6 +157,12 @@ TOKEN <Name> /<pattern>/ strip=<n>  # Strip n chars from value
 TOKEN <Name> /<pattern>/ skip_value # Ignore matched value
 ```
 
+A token's *value* (what `$label` and `_text` carry) is the text of its first
+participating capture group when the pattern has one, otherwise the matched
+text with surrounding quotes stripped. Use `(?:...)` for grouping that must not
+become the value: `/#(include|import)\s*(.*)/` exports `include`, while
+`/#(?:include|import)\s*(.*)/` exports the path.
+
 Example:
 ```
 SKIP /[ \t]+/
